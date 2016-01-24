@@ -118,7 +118,7 @@ consuming:
 					if ok {
 						print(msg)
 					}
-					if msg.Offset >= endOffset {
+					if endOffset > 0 && msg.Offset >= endOffset {
 						pc.Close()
 						wg.Done()
 						return
