@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/Shopify/sarama"
@@ -33,8 +36,54 @@ func print(msg *sarama.ConsumerMessage) {
 }
 
 func main() {
-	topic := "fg-test"
-	brokers := []string{"localhost:9092"}
+	var (
+		err           error
+		topic         string
+		brokers       []string
+		brokersString string
+		offset        string
+		startOffset   int64
+		endOffset     int64
+	)
+
+	flag.StringVar(&topic, "topic", "", "Topic to consume.")
+	flag.StringVar(&brokersString, "brokers", "localhost:9092", "Comma separated list of brokers.")
+	flag.StringVar(&offset, "offset", "", "Colon separated offsets where to start and end reading messages.")
+
+	flag.Parse()
+
+	if topic == "" {
+		log.Fatalf("Topic name is required.\n")
+	}
+	brokers = strings.Split(brokersString, ",")
+	offsets := strings.Split(offset, ":")
+
+	switch {
+	case len(offsets) > 2:
+		log.Fatalf("Invalid value for offsets: %v\n")
+	case len(offsets) == 0:
+		startOffset = sarama.OffsetOldest
+	case len(offsets) == 1:
+		startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
+		if err != nil {
+			log.Fatalf("Cannot parse start offset %v err=%v", offsets[0], err)
+		}
+	case len(offsets) == 2:
+		startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
+		if err != nil {
+			log.Fatalf("Cannot parse start offset %v err=%v", offsets[0], err)
+		}
+		if len(offsets[1]) == 0 {
+			break
+		}
+		endOffset, err = strconv.ParseInt(offsets[1], 10, 64)
+		if err != nil {
+			log.Fatalf("Cannot parse end offset %v err=%v", offsets[1], err)
+		}
+		if endOffset <= startOffset {
+			log.Fatalf("End offset cannot be less than start offset %v.", startOffset)
+		}
+	}
 
 	closer := listenForInterrupt()
 
@@ -51,7 +100,7 @@ func main() {
 	var wg sync.WaitGroup
 consuming:
 	for partition := range partitions {
-		partitionConsumer, err := consumer.ConsumePartition(topic, int32(partition), 10)
+		partitionConsumer, err := consumer.ConsumePartition(topic, int32(partition), startOffset)
 		if err != nil {
 			log.Printf("Failed to consume partition %v err=%v\n", partition, err)
 			continue consuming
@@ -68,6 +117,11 @@ consuming:
 				case msg, ok := <-pc.Messages():
 					if ok {
 						print(msg)
+					}
+					if msg.Offset >= endOffset {
+						pc.Close()
+						wg.Done()
+						return
 					}
 				}
 			}
