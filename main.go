@@ -97,7 +97,7 @@ func parseArgs() {
 			failStartup(fmt.Sprintf("Cannot parse end offset %v err=%v", offsets[1], err))
 		}
 
-		if config.endOffset <= config.startOffset {
+		if config.endOffset < config.startOffset {
 			failStartup(fmt.Sprintf("End offset cannot be less than start offset %v.", config.startOffset))
 		}
 	}
