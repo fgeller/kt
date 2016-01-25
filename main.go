@@ -13,12 +13,12 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-var (
+var config struct {
 	topic       string
 	brokers     []string
 	startOffset int64
 	endOffset   int64
-)
+}
 
 func listenForInterrupt() chan struct{} {
 	closer := make(chan struct{})
@@ -56,34 +56,34 @@ func parseArgs() {
 		os.Exit(1)
 	}
 
-	flag.StringVar(&topic, "topic", "", "Topic to consume.")
+	flag.StringVar(&config.topic, "topic", "", "Topic to consume.")
 	flag.StringVar(&brokersString, "brokers", "localhost:9092", "Comma separated list of brokers.")
 	flag.StringVar(&offset, "offset", "", "Colon separated offsets where to start and end reading messages.")
 
 	flag.Parse()
 
-	if topic == "" {
+	if config.topic == "" {
 		failStartup("Topic name is required.")
 	}
 
-	brokers = strings.Split(brokersString, ",")
+	config.brokers = strings.Split(brokersString, ",")
 	offsets := strings.Split(offset, ":")
 
 	switch {
 	case len(offsets) > 2:
 		failStartup(fmt.Sprintf("Invalid value for offsets: %v", offsets))
 	case len(offsets) == 1 && len(offsets[0]) == 0:
-		startOffset = sarama.OffsetOldest
+		config.startOffset = sarama.OffsetOldest
 	case len(offsets) == 1:
-		startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
+		config.startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
 		if err != nil {
 			failStartup(fmt.Sprintf("1 Cannot parse start offset %v err=%v", offsets[0], err))
 		}
 	case len(offsets) == 2:
 		if len(offsets[0]) == 0 {
-			startOffset = sarama.OffsetOldest
+			config.startOffset = sarama.OffsetOldest
 		} else {
-			startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
+			config.startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
 			if err != nil {
 				failStartup(fmt.Sprintf("2 Cannot parse start offset %v err=%v", offsets[0], err))
 			}
@@ -92,12 +92,13 @@ func parseArgs() {
 		if len(offsets[1]) == 0 {
 			break
 		}
-		endOffset, err = strconv.ParseInt(offsets[1], 10, 64)
+		config.endOffset, err = strconv.ParseInt(offsets[1], 10, 64)
 		if err != nil {
 			failStartup(fmt.Sprintf("Cannot parse end offset %v err=%v", offsets[1], err))
 		}
-		if endOffset <= startOffset {
-			failStartup(fmt.Sprintf("End offset cannot be less than start offset %v.", startOffset))
+
+		if config.endOffset <= config.startOffset {
+			failStartup(fmt.Sprintf("End offset cannot be less than start offset %v.", config.startOffset))
 		}
 	}
 }
@@ -107,22 +108,22 @@ func main() {
 
 	closer := listenForInterrupt()
 
-	consumer, err := sarama.NewConsumer(brokers, nil)
+	consumer, err := sarama.NewConsumer(config.brokers, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
 		os.Exit(1)
 	}
 
-	partitions, err := consumer.Partitions(topic)
+	partitions, err := consumer.Partitions(config.topic)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", topic, err)
+		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", config.topic, err)
 		os.Exit(1)
 	}
 
 	var wg sync.WaitGroup
 consuming:
 	for partition := range partitions {
-		partitionConsumer, err := consumer.ConsumePartition(topic, int32(partition), startOffset)
+		partitionConsumer, err := consumer.ConsumePartition(config.topic, int32(partition), config.startOffset)
 		if err != nil {
 			log.Printf("Failed to consume partition %v err=%v\n", partition, err)
 			continue consuming
@@ -140,7 +141,7 @@ consuming:
 					if ok {
 						print(msg)
 					}
-					if endOffset > 0 && msg.Offset >= endOffset {
+					if config.endOffset > 0 && msg.Offset >= config.endOffset {
 						pc.Close()
 						wg.Done()
 						return
