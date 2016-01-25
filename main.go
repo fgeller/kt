@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -26,7 +27,7 @@ func listenForInterrupt() chan struct{} {
 }
 
 func print(msg *sarama.ConsumerMessage) {
-	log.Printf(
+	fmt.Printf(
 		"Partition=%v Offset=%v Key=%s Value=%s\n",
 		msg.Partition,
 		msg.Offset,
