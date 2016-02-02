@@ -83,6 +83,13 @@ func parseArgs() {
 	}
 
 	config.brokers = strings.Split(brokersString, ",")
+	
+	for i := range brokers {
+		if !strings.Contains(brokers[i], ":") {
+			brokers[i] = brokers[i] + ":9092"
+		}
+	}
+	
 	offsets := strings.Split(offset, ":")
 
 	switch {
