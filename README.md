@@ -1,5 +1,9 @@
 # kt - a Kafka tool
 
+Mostly for consuming messages at the moment.
+
+Producer counterpart here: https://github.com/echojc/kp
+
 ## Example usage:
 
     $ kt -help
