@@ -25,6 +25,8 @@ Mostly for consuming messages at the moment. Allows to consume messages at speci
     ^C2016/01/26 06:29:29 Received interrupt - shutting down...
     $ kt -topic kt-test -offset 1:1
     Partition=0 Offset=1 Key= Message=Hallo, Welt
+    $ kt -topic kt-test -json
+    {"partition":0,"offset":0,"key":"","message":"Hello, World 0"}
     $
 
 ## Installation
