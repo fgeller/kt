@@ -18,6 +18,7 @@ var config struct {
 	brokers     []string
 	startOffset int64
 	endOffset   int64
+	jsonOutput  bool
 }
 
 func listenForInterrupt() chan struct{} {
@@ -34,8 +35,22 @@ func listenForInterrupt() chan struct{} {
 }
 
 func print(msg *sarama.ConsumerMessage) {
+
+	if config.jsonOutput {
+		fmt.Printf(
+			`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}
+`,
+			msg.Partition,
+			msg.Offset,
+			string(msg.Key),
+			string(msg.Value),
+		)
+
+		return
+	}
+
 	fmt.Printf(
-		"Partition=%v Offset=%v Key=%s Value=%s\n",
+		"Partition=%v Offset=%v Key=%s Message=%s\n",
 		msg.Partition,
 		msg.Offset,
 		msg.Key,
@@ -59,6 +74,7 @@ func parseArgs() {
 	flag.StringVar(&config.topic, "topic", "", "Topic to consume.")
 	flag.StringVar(&brokersString, "brokers", "localhost:9092", "Comma separated list of brokers.")
 	flag.StringVar(&offset, "offset", "", "Colon separated offsets where to start and end reading messages.")
+	flag.BoolVar(&config.jsonOutput, "json", false, "Print output in JSON format.")
 
 	flag.Parse()
 
