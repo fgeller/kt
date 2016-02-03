@@ -72,7 +72,7 @@ func parseArgs() {
 	}
 
 	flag.StringVar(&config.topic, "topic", "", "Topic to consume.")
-	flag.StringVar(&brokersString, "brokers", "localhost:9092", "Comma separated list of brokers.")
+	flag.StringVar(&brokersString, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	flag.StringVar(&offset, "offset", "", "Colon separated offsets where to start and end reading messages.")
 	flag.BoolVar(&config.jsonOutput, "json", false, "Print output in JSON format.")
 
@@ -83,13 +83,13 @@ func parseArgs() {
 	}
 
 	config.brokers = strings.Split(brokersString, ",")
-	
-	for i := range brokers {
-		if !strings.Contains(brokers[i], ":") {
-			brokers[i] = brokers[i] + ":9092"
+
+	for i, b := range config.brokers {
+		if !strings.Contains(b, ":") {
+			config.brokers[i] = b + ":9092"
 		}
 	}
-	
+
 	offsets := strings.Split(offset, ":")
 
 	switch {
