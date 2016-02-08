@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Shopify/sarama"
 )
@@ -19,6 +20,7 @@ var config struct {
 	startOffset int64
 	endOffset   int64
 	jsonOutput  bool
+	timeout     time.Duration
 }
 
 func listenForInterrupt() chan struct{} {
@@ -75,6 +77,7 @@ func parseArgs() {
 	flag.StringVar(&brokersString, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	flag.StringVar(&offset, "offset", "", "Colon separated offsets where to start and end reading messages.")
 	flag.BoolVar(&config.jsonOutput, "json", false, "Print output in JSON format.")
+	flag.DurationVar(&config.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 
 	flag.Parse()
 
@@ -153,9 +156,19 @@ consuming:
 		}
 		wg.Add(1)
 
-		go func(pc sarama.PartitionConsumer) {
+		go func(pc sarama.PartitionConsumer, p int) {
 			for {
+				timeout := make(<-chan time.Time)
+				if config.timeout > 0 {
+					timeout = time.After(config.timeout)
+				}
+
 				select {
+				case <-timeout:
+					log.Printf("Consuming from partition [%v] timed out.", p)
+					pc.Close()
+					wg.Done()
+					return
 				case <-closer:
 					pc.Close()
 					wg.Done()
@@ -171,7 +184,7 @@ consuming:
 					}
 				}
 			}
-		}(partitionConsumer)
+		}(partitionConsumer, partition)
 	}
 	wg.Wait()
 	consumer.Close()

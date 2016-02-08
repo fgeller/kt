@@ -12,21 +12,28 @@ Mostly for consuming messages at the moment. Allows to consume messages at speci
             Print output in JSON format.
       -offset string
             Colon separated offsets where to start and end reading messages.
+      -timeout duration
+            Timeout after not reading messages (default 0 to disable).
       -topic string
             Topic to consume.
+
     $ kt -topic kt-test
     Partition=0 Offset=0 Key= Message=Hello, World 0
     Partition=0 Offset=1 Key= Message=Hallo, Welt
     Partition=0 Offset=2 Key= Message=Bonjour, monde
     ^C2016/01/26 06:29:19 Received interrupt - shutting down...
+
     $ kt -topic kt-test -offset 1:
     Partition=0 Offset=1 Key= Message=Hallo, Welt
     Partition=0 Offset=2 Key= Message=Bonjour, monde
     ^C2016/01/26 06:29:29 Received interrupt - shutting down...
+
     $ kt -topic kt-test -offset 1:1
     Partition=0 Offset=1 Key= Message=Hallo, Welt
+
     $ kt -topic kt-test -json
     {"partition":0,"offset":0,"key":"","message":"Hello, World 0"}
+
     $
 
 ## Installation
