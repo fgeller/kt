@@ -5,36 +5,60 @@ Mostly for consuming messages at the moment. Allows to consume messages at speci
 ## Example usage:
 
     $ kt -help
-    Usage of kt:
+    kt is a tool for Kafka.
+
+    Usage:
+
+            kt command [arguments]
+
+    The commands are:
+
+            consume        consume messages.
+
+    Use "kt [command] -help" for for information about the command.
+
+
+    $ kt consume
+    Usage of consume:
       -brokers string
-            Comma separated list of brokers. (default "localhost:9092")
+            Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
       -json
             Print output in JSON format.
-      -offset string
+      -offsets string
             Colon separated offsets where to start and end reading messages.
       -timeout duration
             Timeout after not reading messages (default 0 to disable).
       -topic string
             Topic to consume.
 
-    $ kt -topic kt-test
-    Partition=0 Offset=0 Key= Message=Hello, World 0
-    Partition=0 Offset=1 Key= Message=Hallo, Welt
-    Partition=0 Offset=2 Key= Message=Bonjour, monde
-    ^C2016/01/26 06:29:19 Received interrupt - shutting down...
+    $ kt consume -topic kt-test
+    Partition=0 Offset=3 Key= Message=Hello, World 0
+    Partition=0 Offset=4 Key= Message=Hello, World.
+    Partition=0 Offset=5 Key= Message=Hallo, Welt.
+    Partition=0 Offset=6 Key= Message=Bonjour, monde.
+    ^C2016/02/08 19:17:40 Received interrupt - shutting down...
 
-    $ kt -topic kt-test -offset 1:
-    Partition=0 Offset=1 Key= Message=Hallo, Welt
-    Partition=0 Offset=2 Key= Message=Bonjour, monde
-    ^C2016/01/26 06:29:29 Received interrupt - shutting down...
+    $ kt consume -topic kt-test -timeout 1s
+    Partition=0 Offset=3 Key= Message=Hello, World 0
+    Partition=0 Offset=4 Key= Message=Hello, World.
+    Partition=0 Offset=5 Key= Message=Hallo, Welt.
+    Partition=0 Offset=6 Key= Message=Bonjour, monde.
+    2016/02/08 19:18:08 Consuming from partition [0] timed out.
 
-    $ kt -topic kt-test -offset 1:1
-    Partition=0 Offset=1 Key= Message=Hallo, Welt
+    $ kt consume -topic kt-test -timeout 50ms -offsets 4:
+    Partition=0 Offset=4 Key= Message=Hello, World.
+    Partition=0 Offset=5 Key= Message=Hallo, Welt.
+    Partition=0 Offset=6 Key= Message=Bonjour, monde.
+    2016/02/08 19:19:12 Consuming from partition [0] timed out.
 
-    $ kt -topic kt-test -json
-    {"partition":0,"offset":0,"key":"","message":"Hello, World 0"}
+    $ kt consume -topic kt-test -timeout 50ms -offsets 4:4
+    Partition=0 Offset=4 Key= Message=Hello, World.
 
-    $
+    $ kt consume -topic kt-test -timeout 50ms -offsets 4: -json
+    {"partition":0,"offset":4,"key":"","message":"Hello, World."}
+    {"partition":0,"offset":5,"key":"","message":"Hallo, Welt."}
+    {"partition":0,"offset":6,"key":"","message":"Bonjour, monde."}
+    2016/02/08 19:19:52 Consuming from partition [0] timed out.
 
 ## Installation
 
