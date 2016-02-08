@@ -1,6 +1,11 @@
 # kt - a Kafka tool
 
-Mostly for consuming messages at the moment. Allows to consume messages at specific offsets and produces output that can be further processed via producer [counterpart](https://github.com/echojc/kp) or via tools like [jq](https://stedolan.github.io/jq/).
+Some reasons why you might be interested:
+
+* Fast start up time.
+* JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/)
+* Consume messages between specific offsets.
+* No buffering of output.
 
 ## Example usage:
 
