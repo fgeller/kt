@@ -71,4 +71,5 @@ You can download kt via the [Releases](https://github.com/fgeller/kt/releases) s
 
 Alternatively, the usual way via the go tool, for example:
 
+    $ GO15VENDOREXPERIMENT=1 go get github.com/fgeller/kt
     $ GO15VENDOREXPERIMENT=1 go install github.com/fgeller/kt
