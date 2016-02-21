@@ -32,6 +32,10 @@ func consumerCommand() command {
 		parseArgs: func(args []string) {
 			var err error
 
+			if len(args) == 0 {
+				consume.Usage()
+			}
+
 			consume.Parse(args)
 
 			failStartup := func(msg string) {

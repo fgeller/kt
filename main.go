@@ -27,8 +27,16 @@ type consumerConfig struct {
 	}
 }
 
+type listConfig struct {
+	brokers []string
+	args    struct {
+		brokers string
+	}
+}
+
 var config struct {
 	consume consumerConfig
+	list    listConfig
 }
 
 func listenForInterrupt() chan struct{} {
@@ -83,6 +91,7 @@ Usage:
 The commands are:
 
 	consume        consume messages.
+	list           list topics.
 
 Use "kt [command] -help" for for information about the command.
 
@@ -100,15 +109,12 @@ func parseArgs() command {
 
 	commands := map[string]command{
 		"consume": consumerCommand(),
+		"list":    listCommand(),
 	}
 
 	cmd, ok := commands[os.Args[1]]
 	if !ok {
 		usage()
-	}
-
-	if len(os.Args) == 2 {
-		cmd.flags.Usage()
 	}
 
 	cmd.parseArgs(os.Args[2:])
