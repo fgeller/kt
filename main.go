@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"time"
-
-	"github.com/Shopify/sarama"
 )
 
 type consumerConfig struct {
@@ -50,30 +48,6 @@ func listenForInterrupt() chan struct{} {
 	}()
 
 	return closer
-}
-
-func print(msg *sarama.ConsumerMessage) {
-
-	if config.consume.json {
-		fmt.Printf(
-			`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}
-`,
-			msg.Partition,
-			msg.Offset,
-			string(msg.Key),
-			string(msg.Value),
-		)
-
-		return
-	}
-
-	fmt.Printf(
-		"Partition=%v Offset=%v Key=%s Message=%s\n",
-		msg.Partition,
-		msg.Offset,
-		msg.Key,
-		msg.Value,
-	)
 }
 
 type command struct {

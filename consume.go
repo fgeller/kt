@@ -13,6 +13,30 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+func print(msg *sarama.ConsumerMessage) {
+
+	if config.consume.json {
+		fmt.Printf(
+			`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}
+`,
+			msg.Partition,
+			msg.Offset,
+			string(msg.Key),
+			string(msg.Value),
+		)
+
+		return
+	}
+
+	fmt.Printf(
+		"Partition=%v Offset=%v Key=%s Message=%s\n",
+		msg.Partition,
+		msg.Offset,
+		msg.Key,
+		msg.Value,
+	)
+}
+
 func consumerCommand() command {
 	consume := flag.NewFlagSet("consume", flag.ExitOnError)
 	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume.")
