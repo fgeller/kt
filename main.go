@@ -32,8 +32,18 @@ type listConfig struct {
 	}
 }
 
+type produceConfig struct {
+	topic   string
+	brokers []string
+	args    struct {
+		topic   string
+		brokers string
+	}
+}
+
 var config struct {
 	consume consumerConfig
+	produce produceConfig
 	list    listConfig
 }
 
@@ -65,6 +75,7 @@ Usage:
 The commands are:
 
 	consume        consume messages.
+	produce        produce messages.
 	list           list topics.
 
 Use "kt [command] -help" for for information about the command.
@@ -83,6 +94,7 @@ func parseArgs() command {
 
 	commands := map[string]command{
 		"consume": consumerCommand(),
+		"produce": produceCommand(),
 		"list":    listCommand(),
 	}
 
