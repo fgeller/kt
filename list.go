@@ -10,6 +10,13 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type listConfig struct {
+	brokers []string
+	args    struct {
+		brokers string
+	}
+}
+
 func listCommand() command {
 	list := flag.NewFlagSet("list", flag.ExitOnError)
 	list.StringVar(&config.list.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")

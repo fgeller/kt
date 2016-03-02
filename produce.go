@@ -10,6 +10,15 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type produceConfig struct {
+	topic   string
+	brokers []string
+	args    struct {
+		topic   string
+		brokers string
+	}
+}
+
 func produceCommand() command {
 	produce := flag.NewFlagSet("produce", flag.ExitOnError)
 	produce.StringVar(&config.produce.args.topic, "topic", "", "Topic to produce to.")

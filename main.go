@@ -6,40 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"time"
 )
-
-type consumeConfig struct {
-	topic       string
-	brokers     []string
-	startOffset int64
-	endOffset   int64
-	json        bool
-	timeout     time.Duration
-	args        struct {
-		topic   string
-		brokers string
-		timeout time.Duration
-		offsets string
-		json    bool
-	}
-}
-
-type listConfig struct {
-	brokers []string
-	args    struct {
-		brokers string
-	}
-}
-
-type produceConfig struct {
-	topic   string
-	brokers []string
-	args    struct {
-		topic   string
-		brokers string
-	}
-}
 
 var config struct {
 	consume consumeConfig
