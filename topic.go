@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Shopify/sarama"
@@ -108,6 +109,8 @@ func topicRun(closer chan struct{}) {
 			topics = append(topics, t)
 		}
 	}
+
+	sort.Strings(topics)
 
 	for _, tn := range topics {
 		t, err := readTopic(client, tn)
