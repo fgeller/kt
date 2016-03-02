@@ -91,20 +91,23 @@ Some reasons why you might be interested:
     Usage of topic:
       -brokers string
             Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
-      -list
-            List all topics.
-      -name string
-            Name of specific topic to show information about (ignored when -list is specified).
+      -filter string
+            Regex to filter topics by name.
       -partitions
             Include detailed partition information.
 
-    $ kt topic -list
+    $ kt topic
     {"name":"__consumer_offsets"}
     {"name":"test"}
     {"name":"kt-test"}
 
-    $ kt topic -name kt-test -partitions
+    $ kt topic -filter test
+    {"name":"test"}
+    {"name":"kt-test"}
+
+    $ kt topic -filter test -partitions
     {"name":"kt-test","partitions":[{"id":0,"oldestOffset":7,"newestOffset":37}]}
+    {"name":"test","partitions":[{"id":0,"oldestOffset":3,"newestOffset":5}]}
 
 ## Installation
 
