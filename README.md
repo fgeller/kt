@@ -25,6 +25,8 @@ Some reasons why you might be interested:
 
     Use "kt [command] -help" for for information about the command.
 
+### consume
+
     $ kt consume -help
     Usage of consume:
       -brokers string
@@ -67,6 +69,8 @@ Some reasons why you might be interested:
     {"partition":0,"offset":6,"key":"","message":"Bonjour, monde."}
     2016/02/08 19:19:52 Consuming from partition [0] timed out.
 
+### produce
+
     $ kt produce -help
     Usage of produce:
       -brokers string
@@ -87,27 +91,37 @@ Some reasons why you might be interested:
     Partition=0 Offset=4 Key= Message=Hallo, Welt
     ^C2016/03/02 22:52:24 Received interrupt - shutting down...
 
+### topic
+
     $ kt topic -help
     Usage of topic:
       -brokers string
             Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
       -filter string
             Regex to filter topics by name.
+      -leaders
+            Include leader information per partition.
       -partitions
-            Include detailed partition information.
+            Include information per partition.
+      -replicas
+            Include replica ids per partition.
 
     $ kt topic
     {"name":"__consumer_offsets"}
-    {"name":"test"}
     {"name":"kt-test"}
+    {"name":"test"}
 
     $ kt topic -filter test
-    {"name":"test"}
     {"name":"kt-test"}
+    {"name":"test"}
 
     $ kt topic -filter test -partitions
-    {"name":"kt-test","partitions":[{"id":0,"oldestOffset":7,"newestOffset":37}]}
     {"name":"test","partitions":[{"id":0,"oldestOffset":3,"newestOffset":5}]}
+    {"name":"kt-test","partitions":[{"id":0,"oldestOffset":7,"newestOffset":37}]}
+
+    $ kt topic -filter test -partitions -replicas -leaders
+    {"name":"kt-test","partitions":[{"id":0,"oldestOffset":7,"newestOffset":37,"leader":"bert:9092","replicas":[0]}]}
+    {"name":"test","partitions":[{"id":0,"oldestOffset":3,"newestOffset":5,"leader":"bert:9092","replicas":[0]}]}
 
 ## Installation
 
