@@ -11,7 +11,7 @@ import (
 var config struct {
 	consume consumeConfig
 	produce produceConfig
-	list    listConfig
+	topic   topicConfig
 }
 
 func listenForInterrupt() chan struct{} {
@@ -43,7 +43,7 @@ The commands are:
 
 	consume        consume messages.
 	produce        produce messages.
-	list           list topics.
+	topic          topic information.
 
 Use "kt [command] -help" for for information about the command.
 
@@ -62,7 +62,7 @@ func parseArgs() command {
 	commands := map[string]command{
 		"consume": consumeCommand(),
 		"produce": produceCommand(),
-		"list":    listCommand(),
+		"topic":   topicCommand(),
 	}
 
 	cmd, ok := commands[os.Args[1]]
