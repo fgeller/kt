@@ -11,15 +11,29 @@ import (
 )
 
 type listConfig struct {
-	brokers []string
-	args    struct {
-		brokers string
+	brokers    []string
+	partitions bool
+	args       struct {
+		brokers    string
+		partitions bool
 	}
+}
+
+type topic struct {
+	Name       string      `json:"name"`
+	Partitions []partition `json:"partitions,omitempty"`
+}
+
+type partition struct {
+	Id           int32 `json:"id"`
+	OldestOffset int64 `json:"oldestOffset"`
+	NewestOffset int64 `json:"newestOffset"`
 }
 
 func listCommand() command {
 	list := flag.NewFlagSet("list", flag.ExitOnError)
 	list.StringVar(&config.list.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	list.BoolVar(&config.list.args.partitions, "partitions", false, "Include detailed partition information.")
 
 	list.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of list:")
@@ -40,6 +54,7 @@ func listCommand() command {
 				}
 			}
 
+			config.list.partitions = config.list.args.partitions
 		},
 
 		run: func(closer chan struct{}) {
@@ -60,26 +75,28 @@ func listCommand() command {
 			for _, tn := range topics {
 				t := topic{Name: tn}
 
-				ps, err := client.Partitions(tn)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %s. err=%v\n", tn, err)
-					os.Exit(1)
-				}
-
-				for _, p := range ps {
-					oldest, err := client.GetOffset(tn, p, sarama.OffsetOldest)
+				if config.list.partitions {
+					ps, err := client.Partitions(tn)
 					if err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to read oldest offset for partition %s on topic %s. err=%v\n", p, tn, err)
+						fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %s. err=%v\n", tn, err)
 						os.Exit(1)
 					}
 
-					newest, err := client.GetOffset(tn, p, sarama.OffsetNewest)
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to read newest offset for partition %s on topic %s. err=%v\n", p, tn, err)
-						os.Exit(1)
-					}
+					for _, p := range ps {
+						oldest, err := client.GetOffset(tn, p, sarama.OffsetOldest)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "Failed to read oldest offset for partition %s on topic %s. err=%v\n", p, tn, err)
+							os.Exit(1)
+						}
 
-					t.Partitions = append(t.Partitions, partition{Id: p, OldestOffset: oldest, NewestOffset: newest})
+						newest, err := client.GetOffset(tn, p, sarama.OffsetNewest)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "Failed to read newest offset for partition %s on topic %s. err=%v\n", p, tn, err)
+							os.Exit(1)
+						}
+
+						t.Partitions = append(t.Partitions, partition{Id: p, OldestOffset: oldest, NewestOffset: newest})
+					}
 				}
 
 				bs, err := json.Marshal(t)
@@ -91,15 +108,4 @@ func listCommand() command {
 			}
 		},
 	}
-}
-
-type topic struct {
-	Name       string      `json:name`
-	Partitions []partition `json:partitions`
-}
-
-type partition struct {
-	Id           int32 `json:id`
-	OldestOffset int64 `json:oldestOffset`
-	NewestOffset int64 `json:newestOffset`
 }
