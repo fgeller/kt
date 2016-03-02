@@ -6,6 +6,7 @@ Some reasons why you might be interested:
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/)
 * Consume messages between specific offsets.
 * No buffering of output.
+* Display topic information (e.g., offsets per partitions)
 
 ## Example usage:
 
@@ -19,11 +20,12 @@ Some reasons why you might be interested:
     The commands are:
 
             consume        consume messages.
+            produce        produce messages.
+            topic          topic information.
 
     Use "kt [command] -help" for for information about the command.
 
-
-    $ kt consume
+    $ kt consume -help
     Usage of consume:
       -brokers string
             Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
@@ -64,6 +66,45 @@ Some reasons why you might be interested:
     {"partition":0,"offset":5,"key":"","message":"Hallo, Welt."}
     {"partition":0,"offset":6,"key":"","message":"Bonjour, monde."}
     2016/02/08 19:19:52 Consuming from partition [0] timed out.
+
+    $ kt produce -help
+    Usage of produce:
+      -brokers string
+            Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
+      -topic string
+            Topic to produce to.
+
+    $ kt produce -topic test
+    Hello, world.
+    Sent message to partition 0 at offset 3.
+    ^C2016/03/02 22:51:47 Received interrupt - shutting down...
+
+    $ echo "Hallo, Welt" | kt produce -topic test
+    Sent message to partition 0 at offset 4.
+
+    $ kt consume -topic test
+    Partition=0 Offset=3 Key= Message=Hello, world.
+    Partition=0 Offset=4 Key= Message=Hallo, Welt
+    ^C2016/03/02 22:52:24 Received interrupt - shutting down...
+
+    $ kt topic -help
+    Usage of topic:
+      -brokers string
+            Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
+      -list
+            List all topics.
+      -name string
+            Name of specific topic to show information about (ignored when -list is specified).
+      -partitions
+            Include detailed partition information.
+
+    $ kt topic -list
+    {"name":"__consumer_offsets"}
+    {"name":"test"}
+    {"name":"kt-test"}
+
+    $ kt topic -name kt-test -partitions
+    {"name":"kt-test","partitions":[{"id":0,"oldestOffset":7,"newestOffset":37}]}
 
 ## Installation
 
