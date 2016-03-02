@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -50,11 +49,12 @@ func produceCommand() command {
 
 			producer, err := sarama.NewSyncProducer(config.produce.brokers, nil)
 			if err != nil {
-				log.Fatalf("Failed to create producer. err=%s\n", err)
+				fmt.Fprintf(os.Stderr, "Failed to create producer. err=%s\n", err)
+				os.Exit(1)
 			}
 			defer func() {
 				if err := producer.Close(); err != nil {
-					log.Printf("Failed to close producer. err=%s\n", err)
+					fmt.Fprintf(os.Stderr, "Failed to close producer. err=%s\n", err)
 				}
 			}()
 
@@ -72,10 +72,10 @@ func produceCommand() command {
 					}
 					partition, offset, err := producer.SendMessage(msg)
 					if err != nil {
-						log.Printf("Failed to send message, quitting. err=%s\n", err)
+						fmt.Fprintf(os.Stderr, "Failed to send message, quitting. err=%s\n", err)
 						return
 					}
-					log.Printf("Sent message to partition %d at offset %d.\n", partition, offset)
+					fmt.Fprintf(os.Stderr, "Sent message to partition %d at offset %d.\n", partition, offset)
 				}
 			}
 		},

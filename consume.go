@@ -135,7 +135,7 @@ func consumeCommand() command {
 			for partition := range partitions {
 				partitionConsumer, err := consumer.ConsumePartition(config.consume.topic, int32(partition), config.consume.startOffset)
 				if err != nil {
-					log.Printf("Failed to consume partition %v err=%v\n", partition, err)
+					fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
 					continue consuming
 				}
 				wg.Add(1)
