@@ -17,11 +17,13 @@ type topicConfig struct {
 	filter     *regexp.Regexp
 	partitions bool
 	leaders    bool
+	replicas   bool
 	args       struct {
 		brokers    string
 		filter     string
 		partitions bool
 		leaders    bool
+		replicas   bool
 	}
 }
 
@@ -31,10 +33,11 @@ type topic struct {
 }
 
 type partition struct {
-	Id           int32  `json:"id"`
-	OldestOffset int64  `json:"oldestOffset"`
-	NewestOffset int64  `json:"newestOffset"`
-	Leader       string `json:"leader,omitempty"`
+	Id           int32   `json:"id"`
+	OldestOffset int64   `json:"oldestOffset"`
+	NewestOffset int64   `json:"newestOffset"`
+	Leader       string  `json:"leader,omitempty"`
+	Replicas     []int32 `json:"replicas,omitempty"`
 }
 
 func topicCommand() command {
@@ -49,6 +52,7 @@ func init() {
 	topic.StringVar(&config.topic.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include information per partition.")
 	topic.BoolVar(&config.topic.args.leaders, "leaders", false, "Include leader information per partition.")
+	topic.BoolVar(&config.topic.args.replicas, "replicas", false, "Include replica ids per partition.")
 	topic.StringVar(&config.topic.args.filter, "filter", "", "Regex to filter topics by name.")
 
 	topic.Usage = func() {
@@ -79,6 +83,7 @@ func topicParseArgs(args []string) {
 	config.topic.filter = re
 	config.topic.partitions = config.topic.args.partitions
 	config.topic.leaders = config.topic.args.leaders
+	config.topic.replicas = config.topic.args.replicas
 }
 
 func topicRun(closer chan struct{}) {
@@ -149,6 +154,14 @@ func readTopic(client sarama.Client, name string) (topic, error) {
 					return t, err
 				}
 				np.Leader = b.Addr()
+			}
+
+			if config.topic.replicas {
+				rs, err := client.Replicas(name, p)
+				if err != nil {
+					return t, err
+				}
+				np.Replicas = rs
 			}
 
 			t.Partitions = append(t.Partitions, np)
