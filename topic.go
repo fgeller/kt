@@ -16,10 +16,12 @@ type topicConfig struct {
 	brokers    []string
 	filter     *regexp.Regexp
 	partitions bool
+	leaders    bool
 	args       struct {
 		brokers    string
 		filter     string
 		partitions bool
+		leaders    bool
 	}
 }
 
@@ -29,9 +31,10 @@ type topic struct {
 }
 
 type partition struct {
-	Id           int32 `json:"id"`
-	OldestOffset int64 `json:"oldestOffset"`
-	NewestOffset int64 `json:"newestOffset"`
+	Id           int32  `json:"id"`
+	OldestOffset int64  `json:"oldestOffset"`
+	NewestOffset int64  `json:"newestOffset"`
+	Leader       string `json:"leader,omitempty"`
 }
 
 func topicCommand() command {
@@ -44,7 +47,8 @@ func topicCommand() command {
 func init() {
 	topic := flag.NewFlagSet("topic", flag.ExitOnError)
 	topic.StringVar(&config.topic.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include detailed partition information.")
+	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include information per partition.")
+	topic.BoolVar(&config.topic.args.leaders, "leaders", false, "Include leader information per partition.")
 	topic.StringVar(&config.topic.args.filter, "filter", "", "Regex to filter topics by name.")
 
 	topic.Usage = func() {
@@ -74,6 +78,7 @@ func topicParseArgs(args []string) {
 
 	config.topic.filter = re
 	config.topic.partitions = config.topic.args.partitions
+	config.topic.leaders = config.topic.args.leaders
 }
 
 func topicRun(closer chan struct{}) {
@@ -124,17 +129,29 @@ func readTopic(client sarama.Client, name string) (topic, error) {
 		}
 
 		for _, p := range ps {
+			np := partition{Id: p}
+
 			oldest, err := client.GetOffset(name, p, sarama.OffsetOldest)
 			if err != nil {
 				return t, err
 			}
+			np.OldestOffset = oldest
 
 			newest, err := client.GetOffset(name, p, sarama.OffsetNewest)
 			if err != nil {
 				return t, err
 			}
+			np.NewestOffset = newest
 
-			t.Partitions = append(t.Partitions, partition{Id: p, OldestOffset: oldest, NewestOffset: newest})
+			if config.topic.leaders {
+				b, err := client.Leader(name, p)
+				if err != nil {
+					return t, err
+				}
+				np.Leader = b.Addr()
+			}
+
+			t.Partitions = append(t.Partitions, np)
 		}
 	}
 
