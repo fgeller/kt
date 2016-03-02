@@ -5,21 +5,20 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/Shopify/sarama"
 )
 
 type topicConfig struct {
-	brokers    []string
-	name       string
-	list       bool
-	partitions bool
 	flags      *flag.FlagSet
+	brokers    []string
+	filter     *regexp.Regexp
+	partitions bool
 	args       struct {
 		brokers    string
-		name       string
-		list       bool
+		filter     string
 		partitions bool
 	}
 }
@@ -46,8 +45,7 @@ func init() {
 	topic := flag.NewFlagSet("topic", flag.ExitOnError)
 	topic.StringVar(&config.topic.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include detailed partition information.")
-	topic.BoolVar(&config.topic.args.list, "list", false, "List all topics.")
-	topic.StringVar(&config.topic.args.name, "name", "", "Name of specific topic to show information about (ignored when -list is specified).")
+	topic.StringVar(&config.topic.args.filter, "filter", "", "Regex to filter topics by name.")
 
 	topic.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
@@ -68,15 +66,14 @@ func topicParseArgs(args []string) {
 		}
 	}
 
-	if !config.topic.args.list && config.topic.args.name == "" {
-		fmt.Fprintln(os.Stderr, "Either -list or -name need to be specified.")
-		fmt.Fprintln(os.Stderr, "Use \"kt topic -help\" for more information.")
-		os.Exit(1)
+	re, err := regexp.Compile(config.topic.args.filter)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Invalid regex for filter. err=%s", err)
+		os.Exit(2)
 	}
 
-	config.topic.list = config.topic.args.list
+	config.topic.filter = re
 	config.topic.partitions = config.topic.args.partitions
-	config.topic.name = config.topic.args.name
 }
 
 func topicRun(closer chan struct{}) {
@@ -89,12 +86,16 @@ func topicRun(closer chan struct{}) {
 	}
 	defer client.Close()
 
-	topics := []string{config.topic.name}
-	if config.topic.list {
-		topics, err = client.Topics()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
-			os.Exit(1)
+	allTopics, err := client.Topics()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
+		os.Exit(1)
+	}
+
+	topics := []string{}
+	for _, t := range allTopics {
+		if config.topic.filter.MatchString(t) {
+			topics = append(topics, t)
 		}
 	}
 
