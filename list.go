@@ -1,10 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/Shopify/sarama"
@@ -39,6 +39,7 @@ func listCommand() command {
 					config.list.brokers[i] = b + ":9092"
 				}
 			}
+
 		},
 
 		run: func(closer chan struct{}) {
@@ -56,11 +57,49 @@ func listCommand() command {
 				os.Exit(1)
 			}
 
-			sort.Strings(topics)
+			for _, tn := range topics {
+				t := topic{Name: tn}
 
-			for _, topic := range topics {
-				fmt.Println(topic)
+				ps, err := client.Partitions(tn)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %s. err=%v\n", tn, err)
+					os.Exit(1)
+				}
+
+				for _, p := range ps {
+					oldest, err := client.GetOffset(tn, p, sarama.OffsetOldest)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to read oldest offset for partition %s on topic %s. err=%v\n", p, tn, err)
+						os.Exit(1)
+					}
+
+					newest, err := client.GetOffset(tn, p, sarama.OffsetNewest)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to read newest offset for partition %s on topic %s. err=%v\n", p, tn, err)
+						os.Exit(1)
+					}
+
+					t.Partitions = append(t.Partitions, partition{Id: p, OldestOffset: oldest, NewestOffset: newest})
+				}
+
+				bs, err := json.Marshal(t)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", tn, err)
+					os.Exit(1)
+				}
+				fmt.Printf("%s\n", bs)
 			}
 		},
 	}
+}
+
+type topic struct {
+	Name       string      `json:name`
+	Partitions []partition `json:partitions`
+}
+
+type partition struct {
+	Id           int32 `json:id`
+	OldestOffset int64 `json:oldestOffset`
+	NewestOffset int64 `json:newestOffset`
 }
