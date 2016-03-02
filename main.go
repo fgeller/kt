@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type consumerConfig struct {
+type consumeConfig struct {
 	topic       string
 	brokers     []string
 	startOffset int64
@@ -42,7 +42,7 @@ type produceConfig struct {
 }
 
 var config struct {
-	consume consumerConfig
+	consume consumeConfig
 	produce produceConfig
 	list    listConfig
 }
@@ -93,7 +93,7 @@ func parseArgs() command {
 	}
 
 	commands := map[string]command{
-		"consume": consumerCommand(),
+		"consume": consumeCommand(),
 		"produce": produceCommand(),
 		"list":    listCommand(),
 	}

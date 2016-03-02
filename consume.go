@@ -37,7 +37,7 @@ func print(msg *sarama.ConsumerMessage) {
 	)
 }
 
-func consumerCommand() command {
+func consumeCommand() command {
 	consume := flag.NewFlagSet("consume", flag.ExitOnError)
 	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume.")
 	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
