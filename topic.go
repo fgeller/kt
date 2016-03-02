@@ -15,6 +15,7 @@ type topicConfig struct {
 	name       string
 	list       bool
 	partitions bool
+	flags      *flag.FlagSet
 	args       struct {
 		brokers    string
 		name       string
@@ -35,6 +36,13 @@ type partition struct {
 }
 
 func topicCommand() command {
+	return command{
+		parseArgs: topicParseArgs,
+		run:       topicRun,
+	}
+}
+
+func init() {
 	topic := flag.NewFlagSet("topic", flag.ExitOnError)
 	topic.StringVar(&config.topic.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include detailed partition information.")
@@ -47,63 +55,61 @@ func topicCommand() command {
 		os.Exit(2)
 	}
 
-	return command{
-		flags: topic,
-		parseArgs: func(args []string) {
+	config.topic.flags = topic
+}
 
-			topic.Parse(args)
+func topicParseArgs(args []string) {
+	config.topic.flags.Parse(args)
 
-			config.topic.brokers = strings.Split(config.topic.args.brokers, ",")
-			for i, b := range config.topic.brokers {
-				if !strings.Contains(b, ":") {
-					config.topic.brokers[i] = b + ":9092"
-				}
-			}
+	config.topic.brokers = strings.Split(config.topic.args.brokers, ",")
+	for i, b := range config.topic.brokers {
+		if !strings.Contains(b, ":") {
+			config.topic.brokers[i] = b + ":9092"
+		}
+	}
 
-			if !config.topic.args.list && config.topic.args.name == "" {
-				fmt.Fprintln(os.Stderr, "Either -list or -name need to be specified.")
-				fmt.Fprintln(os.Stderr, "Use \"kt topic -help\" for more information.")
-				os.Exit(1)
-			}
+	if !config.topic.args.list && config.topic.args.name == "" {
+		fmt.Fprintln(os.Stderr, "Either -list or -name need to be specified.")
+		fmt.Fprintln(os.Stderr, "Use \"kt topic -help\" for more information.")
+		os.Exit(1)
+	}
 
-			config.topic.list = config.topic.args.list
-			config.topic.partitions = config.topic.args.partitions
-			config.topic.name = config.topic.args.name
-		},
+	config.topic.list = config.topic.args.list
+	config.topic.partitions = config.topic.args.partitions
+	config.topic.name = config.topic.args.name
+}
 
-		run: func(closer chan struct{}) {
-			var err error
+func topicRun(closer chan struct{}) {
+	var err error
 
-			client, err := sarama.NewClient(config.topic.brokers, nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-				os.Exit(1)
-			}
-			defer client.Close()
+	client, err := sarama.NewClient(config.topic.brokers, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
 
-			topics := []string{config.topic.name}
-			if config.topic.list {
-				topics, err = client.Topics()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
-					os.Exit(1)
-				}
-			}
+	topics := []string{config.topic.name}
+	if config.topic.list {
+		topics, err = client.Topics()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
+			os.Exit(1)
+		}
+	}
 
-			for _, tn := range topics {
-				t, err := readTopic(client, tn)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to read info for topic %s. err=%v\n", tn, err)
-					os.Exit(1)
-				}
-				bs, err := json.Marshal(t)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", tn, err)
-					os.Exit(1)
-				}
-				fmt.Printf("%s\n", bs)
-			}
-		},
+	for _, tn := range topics {
+		t, err := readTopic(client, tn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read info for topic %s. err=%v\n", tn, err)
+			os.Exit(1)
+		}
+		bs, err := json.Marshal(t)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", tn, err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s\n", bs)
 	}
 }
 
