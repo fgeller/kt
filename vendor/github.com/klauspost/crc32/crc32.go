@@ -59,11 +59,12 @@ var IEEETable = makeTable(IEEE)
 // slicing8Table is array of 8 Tables
 type slicing8Table [8]Table
 
-// iEEETable8 is the slicing8Table for IEEE
-var iEEETable8 *slicing8Table
-var iEEETable8Once sync.Once
+// ieeeTable8 is the slicing8Table for IEEE
+var ieeeTable8 *slicing8Table
+var ieeeTable8Once sync.Once
 
-// MakeTable returns the Table constructed from the specified polynomial.
+// MakeTable returns a Table constructed from the specified polynomial.
+// The contents of this Table must not be modified.
 func MakeTable(poly uint32) *Table {
 	switch poly {
 	case IEEE:
@@ -114,10 +115,12 @@ type digest struct {
 
 // New creates a new hash.Hash32 computing the CRC-32 checksum
 // using the polynomial represented by the Table.
+// Its Sum method will lay the value out in big-endian byte order.
 func New(tab *Table) hash.Hash32 { return &digest{0, tab} }
 
 // NewIEEE creates a new hash.Hash32 computing the CRC-32 checksum
 // using the IEEE polynomial.
+// Its Sum method will lay the value out in big-endian byte order.
 func NewIEEE() hash.Hash32 { return New(IEEETable) }
 
 func (d *digest) Size() int { return Size }
@@ -155,7 +158,8 @@ func updateSlicingBy8(crc uint32, tab *slicing8Table, p []byte) uint32 {
 func Update(crc uint32, tab *Table, p []byte) uint32 {
 	if tab == castagnoliTable {
 		return updateCastagnoli(crc, p)
-	} else if tab == IEEETable {
+	}
+	if tab == IEEETable {
 		return updateIEEE(crc, p)
 	}
 	return update(crc, tab, p)
