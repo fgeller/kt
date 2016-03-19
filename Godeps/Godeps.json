@@ -4,8 +4,8 @@
 	"Deps": [
 		{
 			"ImportPath": "github.com/Shopify/sarama",
-			"Comment": "v1.8.0-17-g8aadb47",
-			"Rev": "8aadb476e66ca998f2f6bb3c993e9a2daa3666b9"
+			"Comment": "v1.8.0",
+			"Rev": "4ba9bba6adb6697bcec3841e1ecdfecf5227c3b9"
 		},
 		{
 			"ImportPath": "github.com/davecgh/go-spew/spew",

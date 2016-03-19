@@ -1,19 +1,5 @@
 # Changelog
 
-#### Version 1.9.0 (trunk)
-
-New Features:
- - Add support for custom offset manager retention durations
-   ([#602](https://github.com/Shopify/sarama/pull/602)).
- - Publish low-level mocks to enable testing of third-party producer/consumer
-   implementations ([#570](https://github.com/Shopify/sarama/pull/570)).
- - Declare support for Golang 1.6
-   ([#611](https://github.com/Shopify/sarama/pull/611)).
-
-Improvements:
- - Simplified broker locking scheme slightly
-   ([#604](https://github.com/Shopify/sarama/pull/604)).
-
 #### Version 1.8.0 (2016-02-01)
 
 New Features:
