@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -19,6 +20,11 @@ type produceConfig struct {
 	}
 }
 
+type message struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 func produceCommand() command {
 	produce := flag.NewFlagSet("produce", flag.ExitOnError)
 	produce.StringVar(&config.produce.args.topic, "topic", "", "Topic to produce to.")
@@ -27,6 +33,40 @@ func produceCommand() command {
 	produce.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of produce:")
 		produce.PrintDefaults()
+
+		fmt.Fprintln(os.Stderr, `
+Input is read from stdin and separated by newlines.
+
+To specify the key and value individually pass it as a JSON object like the
+following:
+
+    {"key": "id-23", "value": "message content"}
+
+In case the input line cannot be interpeted as a JSON object the key and value
+both default to the input line.
+
+Examples:
+
+Send a single message with a specific key:
+
+  $ echo '{"key": "id-23", "value": "ola"}' | kt produce -topic greetings
+  Sent message to partition 0 at offset 3.
+
+  $ kt consume -topic greetings -json -timeout 1s -offsets 3:
+  {"partition":0,"offset":3,"key":"id-23","message":"ola"}
+
+Keep reading input from stdin until interrupted (via ^C).
+
+  $ kt produce -topic greetings
+  hello.
+  Sent message to partition 0 at offset 4.
+  bonjour.
+  Sent message to partition 0 at offset 5.
+
+  $ kt consume -topic greetings -json -timeout 1s -offsets 4:
+  {"partition":0,"offset":4,"key":"hello.","message":"hello."}
+  {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
+`)
 		os.Exit(2)
 	}
 
@@ -75,9 +115,16 @@ func produceCommand() command {
 				case <-closer:
 					return
 				case l := <-stdinLines:
+					var in message
+					err := json.Unmarshal([]byte(l), &in)
+					if err != nil {
+						in = message{Key: l, Value: l}
+					}
+
 					msg := &sarama.ProducerMessage{
 						Topic: config.produce.topic,
-						Value: sarama.StringEncoder(l),
+						Key:   sarama.StringEncoder(in.Key),
+						Value: sarama.StringEncoder(in.Value),
 					}
 					partition, offset, err := producer.SendMessage(msg)
 					if err != nil {
