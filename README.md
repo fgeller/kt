@@ -31,8 +31,6 @@ Some reasons why you might be interested:
     Usage of consume:
       -brokers string
             Comma separated list of brokers. Port defaults to 9092 when omitted. (default "localhost:9092")
-      -json
-            Print output in JSON format.
       -offsets string
             Colon separated offsets where to start and end reading messages.
       -timeout duration
@@ -40,34 +38,25 @@ Some reasons why you might be interested:
       -topic string
             Topic to consume.
 
-    $ kt consume -topic kt-test
-    Partition=0 Offset=3 Key= Message=Hello, World 0
-    Partition=0 Offset=4 Key= Message=Hello, World.
-    Partition=0 Offset=5 Key= Message=Hallo, Welt.
-    Partition=0 Offset=6 Key= Message=Bonjour, monde.
-    ^C2016/02/08 19:17:40 Received interrupt - shutting down...
+    $ kt consume -topic greetings
+    {"partition":0,"offset":0,"key":"id-23","message":"ola"}
+    {"partition":0,"offset":1,"key":"hello.","message":"hello."}
+    {"partition":0,"offset":2,"key":"bonjour.","message":"bonjour."}
+    ^C2016/03/30 16:00:25 Received interrupt - shutting down...
 
-    $ kt consume -topic kt-test -timeout 1s
-    Partition=0 Offset=3 Key= Message=Hello, World 0
-    Partition=0 Offset=4 Key= Message=Hello, World.
-    Partition=0 Offset=5 Key= Message=Hallo, Welt.
-    Partition=0 Offset=6 Key= Message=Bonjour, monde.
-    2016/02/08 19:18:08 Consuming from partition [0] timed out.
+    $ kt consume -topic greetings -timeout 1s
+    {"partition":0,"offset":0,"key":"id-23","message":"ola"}
+    {"partition":0,"offset":1,"key":"hello.","message":"hello."}
+    {"partition":0,"offset":2,"key":"bonjour.","message":"bonjour."}
+    2016/03/30 16:01:04 Consuming from partition [0] timed out.
 
-    $ kt consume -topic kt-test -timeout 50ms -offsets 4:
-    Partition=0 Offset=4 Key= Message=Hello, World.
-    Partition=0 Offset=5 Key= Message=Hallo, Welt.
-    Partition=0 Offset=6 Key= Message=Bonjour, monde.
-    2016/02/08 19:19:12 Consuming from partition [0] timed out.
+    $ kt consume -topic greetings -timeout 50ms -offsets 1:
+    {"partition":0,"offset":1,"key":"hello.","message":"hello."}
+    {"partition":0,"offset":2,"key":"bonjour.","message":"bonjour."}
+    2016/03/30 16:01:30 Consuming from partition [0] timed out.
 
-    $ kt consume -topic kt-test -timeout 50ms -offsets 4:4
-    Partition=0 Offset=4 Key= Message=Hello, World.
-
-    $ kt consume -topic kt-test -timeout 50ms -offsets 4: -json
-    {"partition":0,"offset":4,"key":"","message":"Hello, World."}
-    {"partition":0,"offset":5,"key":"","message":"Hallo, Welt."}
-    {"partition":0,"offset":6,"key":"","message":"Bonjour, monde."}
-    2016/02/08 19:19:52 Consuming from partition [0] timed out.
+    $ kt consume -topic greetings -timeout 50ms -offsets 1:1
+    {"partition":0,"offset":1,"key":"hello.","message":"hello."}
 
 ### produce
 
@@ -78,18 +67,21 @@ Some reasons why you might be interested:
       -topic string
             Topic to produce to.
 
-    $ kt produce -topic test
-    Hello, world.
+    $ echo '{"key": "id-23", "value": "ola"}' | kt produce -topic greetings
     Sent message to partition 0 at offset 3.
-    ^C2016/03/02 22:51:47 Received interrupt - shutting down...
 
-    $ echo "Hallo, Welt" | kt produce -topic test
+    $ kt consume -topic greetings -json -timeout 1s -offsets 3:
+    {"partition":0,"offset":3,"key":"id-23","message":"ola"}
+
+    $ kt produce -topic greetings
+    hello.
     Sent message to partition 0 at offset 4.
+    bonjour.
+    Sent message to partition 0 at offset 5.
 
-    $ kt consume -topic test
-    Partition=0 Offset=3 Key= Message=Hello, world.
-    Partition=0 Offset=4 Key= Message=Hallo, Welt
-    ^C2016/03/02 22:52:24 Received interrupt - shutting down...
+    $ kt consume -topic greetings -json -timeout 1s -offsets 4:
+    {"partition":0,"offset":4,"key":"hello.","message":"hello."}
+    {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
 
 ### topic
 

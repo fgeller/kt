@@ -18,38 +18,23 @@ type consumeConfig struct {
 	brokers     []string
 	startOffset int64
 	endOffset   int64
-	json        bool
 	timeout     time.Duration
 	args        struct {
 		topic   string
 		brokers string
 		timeout time.Duration
 		offsets string
-		json    bool
 	}
 }
 
 func print(msg *sarama.ConsumerMessage) {
-
-	if config.consume.json {
-		fmt.Printf(
-			`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}
-`,
-			msg.Partition,
-			msg.Offset,
-			string(msg.Key),
-			string(msg.Value),
-		)
-
-		return
-	}
-
 	fmt.Printf(
-		"Partition=%v Offset=%v Key=%s Message=%s\n",
+		`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}
+`,
 		msg.Partition,
 		msg.Offset,
-		msg.Key,
-		msg.Value,
+		string(msg.Key),
+		string(msg.Value),
 	)
 }
 
@@ -58,7 +43,6 @@ func consumeCommand() command {
 	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume.")
 	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Colon separated offsets where to start and end reading messages.")
-	consume.BoolVar(&config.consume.json, "json", false, "Print output in JSON format.")
 	consume.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 
 	consume.Usage = func() {
