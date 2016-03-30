@@ -13,13 +13,17 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type interval struct {
+	start int64
+	end   int64
+}
+
 type consumeConfig struct {
-	topic       string
-	brokers     []string
-	startOffset int64
-	endOffset   int64
-	timeout     time.Duration
-	args        struct {
+	topic   string
+	brokers []string
+	offsets map[int32]interval
+	timeout time.Duration
+	args    struct {
 		topic   string
 		brokers string
 		timeout time.Duration
@@ -38,16 +42,83 @@ func print(msg *sarama.ConsumerMessage) {
 	)
 }
 
+func parseOffsets(str string) (map[int32]interval, error) {
+	result := map[int32]interval{}
+
+	partitions := strings.Split(str, ",")
+	for _, partition := range partitions {
+		if len(partition) == 0 {
+			fmt.Printf("Skipping empty partition [%s]\n", partition)
+			continue
+		}
+
+		partition = strings.TrimSuffix(partition, ":")
+		// 0
+		// 0:
+		if !strings.Contains(partition, ":") {
+			p, err := strconv.Atoi(partition)
+			if err != nil {
+				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+			}
+			result[int32(p)] = interval{}
+			continue
+		}
+
+		if strings.Count(partition, ":") != 1 ||
+			strings.Count(partition, "-") > 1 {
+			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+		}
+
+		// 0:1
+		// 0:1-
+		// 0:1-2
+		// 0:-2
+		p, err := strconv.Atoi(partition[:strings.Index(partition, ":")])
+		if err != nil {
+			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+		}
+
+		var i interval
+		start := partition[strings.Index(partition, ":")+1:]
+		end := ""
+		if strings.Contains(start, "-") {
+			end = start[strings.Index(start, "-")+1:]
+			start = start[:strings.Index(start, "-")]
+		}
+
+		if len(start) > 0 {
+			s, err := strconv.Atoi(start)
+			if err != nil {
+				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+			}
+			i.start = int64(s)
+		}
+
+		if len(end) > 0 {
+			e, err := strconv.Atoi(end)
+			if err != nil {
+				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+			}
+			i.end = int64(e)
+		}
+
+		result[int32(p)] = i
+	}
+
+	return result, nil
+}
+
 func consumeCommand() command {
 	consume := flag.NewFlagSet("consume", flag.ExitOnError)
 	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume.")
 	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Colon separated offsets where to start and end reading messages.")
+	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range.")
 	consume.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 
 	consume.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		consume.PrintDefaults()
+		fmt.Fprintln(os.Stderr, ` `) // TODO
 		os.Exit(2)
 	}
 
@@ -80,39 +151,9 @@ func consumeCommand() command {
 				}
 			}
 
-			offsets := strings.Split(config.consume.args.offsets, ":")
-
-			switch {
-			case len(offsets) > 2:
-				failStartup(fmt.Sprintf("Invalid value for offsets: %v", offsets))
-			case len(offsets) == 1 && len(offsets[0]) == 0:
-				config.consume.startOffset = sarama.OffsetOldest
-			case len(offsets) == 1:
-				config.consume.startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
-				if err != nil {
-					failStartup(fmt.Sprintf("Cannot parse start offset %v err=%v", offsets[0], err))
-				}
-			case len(offsets) == 2:
-				if len(offsets[0]) == 0 {
-					config.consume.startOffset = sarama.OffsetOldest
-				} else {
-					config.consume.startOffset, err = strconv.ParseInt(offsets[0], 10, 64)
-					if err != nil {
-						failStartup(fmt.Sprintf("Cannot parse start offset %v err=%v", offsets[0], err))
-					}
-				}
-
-				if len(offsets[1]) == 0 {
-					break
-				}
-				config.consume.endOffset, err = strconv.ParseInt(offsets[1], 10, 64)
-				if err != nil {
-					failStartup(fmt.Sprintf("Cannot parse end offset %v err=%v", offsets[1], err))
-				}
-
-				if config.consume.endOffset < config.consume.startOffset {
-					failStartup(fmt.Sprintf("End offset cannot be less than start offset %v.", config.consume.startOffset))
-				}
+			config.consume.offsets, err = parseOffsets(config.consume.args.offsets)
+			if err != nil {
+				failStartup(fmt.Sprintf("%s", err))
 			}
 		},
 
@@ -124,23 +165,43 @@ func consumeCommand() command {
 				os.Exit(1)
 			}
 
-			partitions, err := consumer.Partitions(config.consume.topic)
+			allPartitions, err := consumer.Partitions(config.consume.topic)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", config.consume.topic, err)
 				os.Exit(1)
 			}
 
+			partitions := []int32{}
+			if len(config.consume.offsets) > 0 {
+				for _, p := range partitions {
+					_, ok := config.consume.offsets[p]
+					if ok {
+						partitions = append(partitions, p)
+					}
+				}
+			} else {
+				partitions = allPartitions
+			}
+
 			var wg sync.WaitGroup
 		consuming:
-			for partition := range partitions {
-				partitionConsumer, err := consumer.ConsumePartition(config.consume.topic, int32(partition), config.consume.startOffset)
+			for _, partition := range partitions {
+				offsets, ok := config.consume.offsets[partition]
+				if !ok {
+					offsets = interval{0, 0}
+				}
+				partitionConsumer, err := consumer.ConsumePartition(
+					config.consume.topic,
+					int32(partition),
+					offsets.start,
+				)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
 					continue consuming
 				}
 				wg.Add(1)
 
-				go func(pc sarama.PartitionConsumer, p int) {
+				go func(pc sarama.PartitionConsumer, p int32) {
 					for {
 						timeout := make(<-chan time.Time)
 						if config.consume.timeout > 0 {
@@ -161,7 +222,7 @@ func consumeCommand() command {
 							if ok {
 								print(msg)
 							}
-							if config.consume.endOffset > 0 && msg.Offset >= config.consume.endOffset {
+							if offsets.end > 0 && msg.Offset >= offsets.end {
 								pc.Close()
 								wg.Done()
 								return
