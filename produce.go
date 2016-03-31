@@ -28,7 +28,7 @@ type message struct {
 
 func produceCommand() command {
 	produce := flag.NewFlagSet("produce", flag.ExitOnError)
-	produce.StringVar(&config.produce.args.topic, "topic", "", "Topic to produce to.")
+	produce.StringVar(&config.produce.args.topic, "topic", "", "Topic to produce to (required).")
 	produce.StringVar(&config.produce.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 
 	produce.Usage = func() {
@@ -64,7 +64,7 @@ Keep reading input from stdin until interrupted (via ^C).
   bonjour.
   Sent message to partition 0 at offset 5.
 
-  $ kt consume -topic greetings -json -timeout 1s -offsets 4:
+  $ kt consume -topic greetings -timeout 1s -offsets 0:4-
   {"partition":0,"offset":4,"key":"hello.","message":"hello."}
   {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
 `)

@@ -118,15 +118,39 @@ func parseOffsets(str string) (map[int32]interval, error) {
 
 func consumeCommand() command {
 	consume := flag.NewFlagSet("consume", flag.ExitOnError)
-	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume.")
+	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
 	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range.")
+	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	consume.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 
 	consume.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		consume.PrintDefaults()
-		fmt.Fprintln(os.Stderr, ` `) // TODO
+		fmt.Fprintln(os.Stderr, `
+Offsets can be specified as a comma-separated list of intervals:
+
+  partition1:start-end,partition2:start-end
+
+Examples:
+
+To consume messages from partition 0 between offsets 10 and 20 (inclusive).
+
+  0:10-20
+
+To consume messages until offset 10 from all partitions:
+
+  -10
+
+To consume from multiple partitions:
+
+  0:4-,2:1-10,6
+
+This would consume messages from three partitions:
+
+  - Anything from partition 0 starting at offset 4.
+  - Messages between offsets 1 and 10 from partition 2.
+  - Anything from partition 6.
+`)
 		os.Exit(2)
 	}
 
