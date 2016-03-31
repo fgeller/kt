@@ -21,8 +21,9 @@ type produceConfig struct {
 }
 
 type message struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Partition int32  `json:"partition"`
 }
 
 func produceCommand() command {
@@ -37,22 +38,22 @@ func produceCommand() command {
 		fmt.Fprintln(os.Stderr, `
 Input is read from stdin and separated by newlines.
 
-To specify the key and value individually pass it as a JSON object like the
-following:
+To specify the key, value and partition individually pass it as a JSON object
+like the following:
 
-    {"key": "id-23", "value": "message content"}
+    {"key": "id-23", "value": "message content", "partition": 0}
 
 In case the input line cannot be interpeted as a JSON object the key and value
-both default to the input line.
+both default to the input line and partition to 0.
 
 Examples:
 
 Send a single message with a specific key:
 
-  $ echo '{"key": "id-23", "value": "ola"}' | kt produce -topic greetings
+  $ echo '{"key": "id-23", "value": "ola", "partition": 0}' | kt produce -topic greetings
   Sent message to partition 0 at offset 3.
 
-  $ kt consume -topic greetings -json -timeout 1s -offsets 3:
+  $ kt consume -topic greetings -timeout 1s -offsets 0:3-
   {"partition":0,"offset":3,"key":"id-23","message":"ola"}
 
 Keep reading input from stdin until interrupted (via ^C).
@@ -96,14 +97,22 @@ Keep reading input from stdin until interrupted (via ^C).
 
 		run: func(closer chan struct{}) {
 
-			producer, err := sarama.NewSyncProducer(config.produce.brokers, nil)
+			broker := sarama.NewBroker(config.produce.brokers[0])
+			conf := sarama.NewConfig()
+			conf.Producer.RequiredAcks = sarama.WaitForAll
+			err := broker.Open(conf)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to create producer. err=%s\n", err)
+				fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
 				os.Exit(1)
 			}
+			if connected, err := broker.Connected(); !connected || err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
+				os.Exit(1)
+			}
+
 			defer func() {
-				if err := producer.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to close producer. err=%s\n", err)
+				if err := broker.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
 				}
 			}()
 
@@ -118,20 +127,33 @@ Keep reading input from stdin until interrupted (via ^C).
 					var in message
 					err := json.Unmarshal([]byte(l), &in)
 					if err != nil {
-						in = message{Key: l, Value: l}
+						in = message{Key: l, Value: l, Partition: 0}
 					}
 
-					msg := &sarama.ProducerMessage{
-						Topic: config.produce.topic,
-						Key:   sarama.StringEncoder(in.Key),
-						Value: sarama.StringEncoder(in.Value),
+					req := &sarama.ProduceRequest{
+						RequiredAcks: sarama.WaitForAll,
+						Timeout:      1000,
 					}
-					partition, offset, err := producer.SendMessage(msg)
+					msg := sarama.Message{
+						Codec: sarama.CompressionNone,
+						Key:   []byte(in.Key),
+						Value: []byte(in.Value),
+						Set:   nil,
+					}
+					req.AddMessage(config.produce.topic, in.Partition, &msg)
+
+					resp, err := broker.Produce(req)
 					if err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to send message, quitting. err=%s\n", err)
 						return
 					}
-					fmt.Fprintf(os.Stderr, "Sent message to partition %d at offset %d.\n", partition, offset)
+
+					block := resp.GetBlock(config.produce.topic, in.Partition)
+					if block.Err != sarama.ErrNoError {
+						fmt.Fprintf(os.Stderr, "Failed to send message, quitting. err=%s\n", block.Err.Error())
+						return
+					}
+					fmt.Fprintf(os.Stderr, "Sent to partition %d at offset %d with key %s.\n", in.Partition, block.Offset, in.Key)
 				}
 			}
 		},
