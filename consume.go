@@ -43,12 +43,15 @@ func print(msg *sarama.ConsumerMessage) {
 }
 
 func parseOffsets(str string) (map[int32]interval, error) {
+	if len(str) == 0 { // everything when omitted
+		return map[int32]interval{-1: {0, 0}}, nil
+	}
+
 	result := map[int32]interval{}
 
 	partitions := strings.Split(str, ",")
 	for _, partition := range partitions {
 		if len(partition) == 0 {
-			fmt.Printf("Skipping empty partition [%s]\n", partition)
 			continue
 		}
 
@@ -60,12 +63,17 @@ func parseOffsets(str string) (map[int32]interval, error) {
 			if err != nil {
 				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
 			}
-			result[int32(p)] = interval{}
+
+			if p < 0 {
+				result[-1] = interval{0, -int64(p)}
+			} else {
+				result[int32(p)] = interval{}
+			}
 			continue
 		}
 
 		if strings.Count(partition, ":") != 1 ||
-			strings.Count(partition, "-") > 1 {
+			strings.Count(partition, "-") > 2 {
 			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
 		}
 
@@ -172,7 +180,8 @@ func consumeCommand() command {
 			}
 
 			partitions := []int32{}
-			if len(config.consume.offsets) > 0 {
+			_, hasDefaultOffset := config.consume.offsets[-1]
+			if len(config.consume.offsets) > 0 && !hasDefaultOffset {
 				for _, p := range partitions {
 					_, ok := config.consume.offsets[p]
 					if ok {
@@ -188,7 +197,7 @@ func consumeCommand() command {
 			for _, partition := range partitions {
 				offsets, ok := config.consume.offsets[partition]
 				if !ok {
-					offsets = interval{0, 0}
+					offsets, ok = config.consume.offsets[-1]
 				}
 				partitionConsumer, err := consumer.ConsumePartition(
 					config.consume.topic,

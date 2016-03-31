@@ -13,6 +13,11 @@ func TestParseOffsets(t *testing.T) {
 		expectedErr error
 	}{
 		{
+			input:       "",
+			expected:    map[int32]interval{-1: {0, 0}},
+			expectedErr: nil,
+		},
+		{
 			input:       "0",
 			expected:    map[int32]interval{0: {0, 0}},
 			expectedErr: nil,
@@ -40,6 +45,26 @@ func TestParseOffsets(t *testing.T) {
 		{
 			input:       "0:4-,2:1-10,6",
 			expected:    map[int32]interval{0: {4, 0}, 2: {1, 10}, 6: {0, 0}},
+			expectedErr: nil,
+		},
+		{
+			input:       "0:-1",
+			expected:    map[int32]interval{0: {0, 1}},
+			expectedErr: nil,
+		},
+		{
+			input:       "-1",
+			expected:    map[int32]interval{-1: {0, 1}},
+			expectedErr: nil,
+		},
+		{
+			input:       "0:-3,-1",
+			expected:    map[int32]interval{0: {0, 3}, -1: {0, 1}},
+			expectedErr: nil,
+		},
+		{
+			input:       "1:-4,-1:2-3",
+			expected:    map[int32]interval{1: {0, 4}, -1: {2, 3}},
 			expectedErr: nil,
 		},
 	}
