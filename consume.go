@@ -216,6 +216,11 @@ This would consume messages from three partitions:
 				partitions = allPartitions
 			}
 
+			if len(partitions) == 0 {
+				fmt.Fprintf(os.Stderr, "Found no partitions to consume.\n")
+				os.Exit(1)
+			}
+
 			var wg sync.WaitGroup
 		consuming:
 			for _, partition := range partitions {
