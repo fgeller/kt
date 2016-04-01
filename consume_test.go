@@ -3,6 +3,8 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"github.com/Shopify/sarama"
 )
 
 func TestParseOffsets(t *testing.T) {
@@ -14,17 +16,17 @@ func TestParseOffsets(t *testing.T) {
 	}{
 		{
 			input:       "",
-			expected:    map[int32]interval{-1: {0, 0}},
+			expected:    map[int32]interval{-1: {sarama.OffsetOldest, 0}},
 			expectedErr: nil,
 		},
 		{
 			input:       "0",
-			expected:    map[int32]interval{0: {0, 0}},
+			expected:    map[int32]interval{0: {sarama.OffsetOldest, 0}},
 			expectedErr: nil,
 		},
 		{
 			input:       "0:",
-			expected:    map[int32]interval{0: {0, 0}},
+			expected:    map[int32]interval{0: {sarama.OffsetOldest, 0}},
 			expectedErr: nil,
 		},
 		{
@@ -39,32 +41,32 @@ func TestParseOffsets(t *testing.T) {
 		},
 		{
 			input:       "0,2,6",
-			expected:    map[int32]interval{0: {0, 0}, 2: {0, 0}, 6: {0, 0}},
+			expected:    map[int32]interval{0: {sarama.OffsetOldest, 0}, 2: {sarama.OffsetOldest, 0}, 6: {sarama.OffsetOldest, 0}},
 			expectedErr: nil,
 		},
 		{
 			input:       "0:4-,2:1-10,6",
-			expected:    map[int32]interval{0: {4, 0}, 2: {1, 10}, 6: {0, 0}},
+			expected:    map[int32]interval{0: {4, 0}, 2: {1, 10}, 6: {sarama.OffsetOldest, 0}},
 			expectedErr: nil,
 		},
 		{
 			input:       "0:-1",
-			expected:    map[int32]interval{0: {0, 1}},
+			expected:    map[int32]interval{0: {sarama.OffsetOldest, 1}},
 			expectedErr: nil,
 		},
 		{
 			input:       "-1",
-			expected:    map[int32]interval{-1: {0, 1}},
+			expected:    map[int32]interval{-1: {sarama.OffsetOldest, 1}},
 			expectedErr: nil,
 		},
 		{
 			input:       "0:-3,-1",
-			expected:    map[int32]interval{0: {0, 3}, -1: {0, 1}},
+			expected:    map[int32]interval{0: {sarama.OffsetOldest, 3}, -1: {sarama.OffsetOldest, 1}},
 			expectedErr: nil,
 		},
 		{
 			input:       "1:-4,-1:2-3",
-			expected:    map[int32]interval{1: {0, 4}, -1: {2, 3}},
+			expected:    map[int32]interval{1: {sarama.OffsetOldest, 4}, -1: {2, 3}},
 			expectedErr: nil,
 		},
 	}

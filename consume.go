@@ -44,7 +44,7 @@ func print(msg *sarama.ConsumerMessage) {
 
 func parseOffsets(str string) (map[int32]interval, error) {
 	if len(str) == 0 { // everything when omitted
-		return map[int32]interval{-1: {0, 0}}, nil
+		return map[int32]interval{-1: {sarama.OffsetOldest, 0}}, nil
 	}
 
 	result := map[int32]interval{}
@@ -65,9 +65,9 @@ func parseOffsets(str string) (map[int32]interval, error) {
 			}
 
 			if p < 0 {
-				result[-1] = interval{0, -int64(p)}
+				result[-1] = interval{sarama.OffsetOldest, -int64(p)}
 			} else {
-				result[int32(p)] = interval{}
+				result[int32(p)] = interval{sarama.OffsetOldest, 0}
 			}
 			continue
 		}
@@ -86,7 +86,7 @@ func parseOffsets(str string) (map[int32]interval, error) {
 			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
 		}
 
-		var i interval
+		i := interval{sarama.OffsetOldest, 0}
 		start := partition[strings.Index(partition, ":")+1:]
 		end := ""
 		if strings.Contains(start, "-") {
