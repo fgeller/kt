@@ -203,10 +203,10 @@ This would consume messages from three partitions:
 				os.Exit(1)
 			}
 
-			partitions := []int32{}
 			_, hasDefaultOffset := config.consume.offsets[-1]
-			if len(config.consume.offsets) > 0 && !hasDefaultOffset {
-				for _, p := range partitions {
+			partitions := []int32{}
+			if !hasDefaultOffset {
+				for _, p := range allPartitions {
 					_, ok := config.consume.offsets[p]
 					if ok {
 						partitions = append(partitions, p)
