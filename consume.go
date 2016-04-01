@@ -54,33 +54,61 @@ func parseOffsets(str string) (map[int32]interval, error) {
 		if len(partition) == 0 {
 			continue
 		}
+		if strings.Count(partition, "-") > 3 {
+			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+		}
+		if strings.Count(partition, ":") > 1 {
+			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+		}
 
 		partition = strings.TrimSuffix(partition, ":")
 		// 0
 		// 0:
+		// -1
+		// -1-
 		if !strings.Contains(partition, ":") {
+			if strings.Count(partition, "-") == 1 {
+				p, err := strconv.Atoi(partition)
+				if err != nil {
+					return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+				}
+				result[-1] = interval{sarama.OffsetOldest, -int64(p)}
+				continue
+			}
+
+			if strings.Count(partition, "-") == 2 {
+				start, err := strconv.Atoi(partition[:strings.LastIndex(partition, "-")])
+				if err != nil {
+					return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+				}
+
+				end := 0
+				if strings.LastIndex(partition, "-")+1 < len(partition) {
+					end, err = strconv.Atoi(partition[strings.LastIndex(partition, "-")+1:])
+					if err != nil {
+						return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+					}
+				}
+
+				result[-1] = interval{int64(start), int64(end)}
+				continue
+			}
+
 			p, err := strconv.Atoi(partition)
 			if err != nil {
 				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
 			}
 
-			if p < 0 {
-				result[-1] = interval{sarama.OffsetOldest, -int64(p)}
-			} else {
-				result[int32(p)] = interval{sarama.OffsetOldest, 0}
-			}
+			result[int32(p)] = interval{sarama.OffsetOldest, 0}
 			continue
-		}
-
-		if strings.Count(partition, ":") != 1 ||
-			strings.Count(partition, "-") > 2 {
-			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
 		}
 
 		// 0:1
 		// 0:1-
 		// 0:1-2
 		// 0:-2
+		// 0:-1-
+		// -1:-1-
 		p, err := strconv.Atoi(partition[:strings.Index(partition, ":")])
 		if err != nil {
 			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
@@ -90,8 +118,8 @@ func parseOffsets(str string) (map[int32]interval, error) {
 		start := partition[strings.Index(partition, ":")+1:]
 		end := ""
 		if strings.Contains(start, "-") {
-			end = start[strings.Index(start, "-")+1:]
-			start = start[:strings.Index(start, "-")]
+			end = start[strings.LastIndex(start, "-")+1:]
+			start = start[:strings.LastIndex(start, "-")]
 		}
 
 		if len(start) > 0 {
