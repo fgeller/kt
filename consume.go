@@ -144,16 +144,45 @@ func parseOffsets(str string) (map[int32]interval, error) {
 	return result, nil
 }
 
-func consumeCommand() command {
-	consume := flag.NewFlagSet("consume", flag.ExitOnError)
-	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
-	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
-	consume.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+func failStartup(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	fmt.Fprintln(os.Stderr, "Use \"kt consume -help\" for more information.")
+	os.Exit(1)
+}
 
-	consume.Usage = func() {
+func consumeParseArgs(f *flag.FlagSet) func([]string) {
+	return func(args []string) {
+		var err error
+
+		if len(args) == 0 {
+			f.Usage()
+		}
+
+		f.Parse(args)
+
+		if config.consume.args.topic == "" {
+			failStartup("Topic name is required.")
+		}
+		config.consume.topic = config.consume.args.topic
+
+		config.consume.brokers = strings.Split(config.consume.args.brokers, ",")
+		for i, b := range config.consume.brokers {
+			if !strings.Contains(b, ":") {
+				config.consume.brokers[i] = b + ":9092"
+			}
+		}
+
+		config.consume.offsets, err = parseOffsets(config.consume.args.offsets)
+		if err != nil {
+			failStartup(fmt.Sprintf("%s", err))
+		}
+	}
+}
+
+func consumeUsage(f *flag.FlagSet) func() {
+	return func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
-		consume.PrintDefaults()
+		f.PrintDefaults()
 		fmt.Fprintln(os.Stderr, `
 Offsets can be specified as a comma-separated list of intervals:
 
@@ -165,7 +194,11 @@ To consume messages from partition 0 between offsets 10 and 20 (inclusive).
 
   0:10-20
 
-To consume messages until offset 10 from all partitions:
+To define an interval for all partitions use -1 as the partition identifier:
+
+  -1:2-10
+
+Short version to consume messages from all partitions until offset 10:
 
   -10
 
@@ -181,41 +214,20 @@ This would consume messages from three partitions:
 `)
 		os.Exit(2)
 	}
+}
+
+func consumeCommand() command {
+	consume := flag.NewFlagSet("consume", flag.ExitOnError)
+	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
+	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
+	consume.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+
+	consume.Usage = consumeUsage(consume)
 
 	return command{
-		flags: consume,
-		parseArgs: func(args []string) {
-			var err error
-
-			if len(args) == 0 {
-				consume.Usage()
-			}
-
-			consume.Parse(args)
-
-			failStartup := func(msg string) {
-				fmt.Fprintln(os.Stderr, msg)
-				fmt.Fprintln(os.Stderr, "Use \"kt consume -help\" for more information.")
-				os.Exit(1)
-			}
-
-			if config.consume.args.topic == "" {
-				failStartup("Topic name is required.")
-			}
-			config.consume.topic = config.consume.args.topic
-
-			config.consume.brokers = strings.Split(config.consume.args.brokers, ",")
-			for i, b := range config.consume.brokers {
-				if !strings.Contains(b, ":") {
-					config.consume.brokers[i] = b + ":9092"
-				}
-			}
-
-			config.consume.offsets, err = parseOffsets(config.consume.args.offsets)
-			if err != nil {
-				failStartup(fmt.Sprintf("%s", err))
-			}
-		},
+		flags:     consume,
+		parseArgs: consumeParseArgs(consume),
 
 		run: func(closer chan struct{}) {
 
@@ -225,25 +237,7 @@ This would consume messages from three partitions:
 				os.Exit(1)
 			}
 
-			allPartitions, err := consumer.Partitions(config.consume.topic)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", config.consume.topic, err)
-				os.Exit(1)
-			}
-
-			_, hasDefaultOffset := config.consume.offsets[-1]
-			partitions := []int32{}
-			if !hasDefaultOffset {
-				for _, p := range allPartitions {
-					_, ok := config.consume.offsets[p]
-					if ok {
-						partitions = append(partitions, p)
-					}
-				}
-			} else {
-				partitions = allPartitions
-			}
-
+			partitions := findPartitions(consumer, config.consume.topic, config.consume.offsets)
 			if len(partitions) == 0 {
 				fmt.Fprintf(os.Stderr, "Found no partitions to consume.\n")
 				os.Exit(1)
@@ -302,4 +296,27 @@ This would consume messages from three partitions:
 			consumer.Close()
 		},
 	}
+}
+
+func findPartitions(consumer sarama.Consumer, topic string, offsets map[int32]interval) []int32 {
+	allPartitions, err := consumer.Partitions(topic)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", topic, err)
+		os.Exit(1)
+	}
+
+	_, hasDefaultOffset := offsets[-1]
+	partitions := []int32{}
+	if !hasDefaultOffset {
+		for _, p := range allPartitions {
+			_, ok := offsets[p]
+			if ok {
+				partitions = append(partitions, p)
+			}
+		}
+	} else {
+		partitions = allPartitions
+	}
+
+	return partitions
 }
