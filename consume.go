@@ -217,17 +217,17 @@ This would consume messages from three partitions:
 }
 
 func consumeCommand() command {
-	consume := flag.NewFlagSet("consume", flag.ExitOnError)
-	consume.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
-	consume.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	consume.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
-	consume.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+	flags := flag.NewFlagSet("consume", flag.ExitOnError)
+	flags.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
+	flags.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
+	flags.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 
-	consume.Usage = consumeUsage(consume)
+	flags.Usage = consumeUsage(flags)
 
 	return command{
-		flags:     consume,
-		parseArgs: consumeParseArgs(consume),
+		flags:     flags,
+		parseArgs: consumeParseArgs(flags),
 
 		run: func(closer chan struct{}) {
 
@@ -236,6 +236,7 @@ func consumeCommand() command {
 				fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
 				os.Exit(1)
 			}
+			defer consumer.Close()
 
 			partitions := findPartitions(consumer, config.consume)
 			if len(partitions) == 0 {
@@ -243,58 +244,74 @@ func consumeCommand() command {
 				os.Exit(1)
 			}
 
-			var wg sync.WaitGroup
-		consuming:
-			for _, partition := range partitions {
-				offsets, ok := config.consume.offsets[partition]
-				if !ok {
-					offsets, ok = config.consume.offsets[-1]
-				}
-				partitionConsumer, err := consumer.ConsumePartition(
-					config.consume.topic,
-					int32(partition),
-					offsets.start,
-				)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
-					continue consuming
-				}
-				wg.Add(1)
-
-				go func(pc sarama.PartitionConsumer, p int32) {
-					for {
-						timeout := make(<-chan time.Time)
-						if config.consume.timeout > 0 {
-							timeout = time.After(config.consume.timeout)
-						}
-
-						select {
-						case <-timeout:
-							log.Printf("Consuming from partition [%v] timed out.", p)
-							pc.Close()
-							wg.Done()
-							return
-						case <-closer:
-							pc.Close()
-							wg.Done()
-							return
-						case msg, ok := <-pc.Messages():
-							if ok {
-								print(msg)
-							}
-							if offsets.end > 0 && msg.Offset >= offsets.end {
-								pc.Close()
-								wg.Done()
-								return
-							}
-						}
-					}
-				}(partitionConsumer, partition)
-			}
-
-			wg.Wait()
-			consumer.Close()
+			consume(closer, consumer, partitions)
 		},
+	}
+}
+
+func consume(
+	closer chan struct{},
+	consumer sarama.Consumer,
+	partitions []int32,
+) {
+	var wg sync.WaitGroup
+consuming:
+	for _, partition := range partitions {
+		offsets, ok := config.consume.offsets[partition]
+		if !ok {
+			offsets, ok = config.consume.offsets[-1]
+		}
+		partitionConsumer, err := consumer.ConsumePartition(
+			config.consume.topic,
+			partition,
+			offsets.start,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
+			continue consuming
+		}
+
+		wg.Add(1)
+		go consumePartition(&wg, closer, partitionConsumer, partition, offsets.end)
+	}
+
+	wg.Wait()
+
+}
+
+func consumePartition(
+	wg *sync.WaitGroup,
+	closer chan struct{},
+	pc sarama.PartitionConsumer,
+	p int32,
+	end int64,
+) {
+	for {
+		timeout := make(<-chan time.Time)
+		if config.consume.timeout > 0 {
+			timeout = time.After(config.consume.timeout)
+		}
+
+		select {
+		case <-timeout:
+			log.Printf("Consuming from partition [%v] timed out.", p)
+			pc.Close()
+			wg.Done()
+			return
+		case <-closer:
+			pc.Close()
+			wg.Done()
+			return
+		case msg, ok := <-pc.Messages():
+			if ok {
+				print(msg)
+			}
+			if end > 0 && msg.Offset >= end {
+				pc.Close()
+				wg.Done()
+				return
+			}
+		}
 	}
 }
 
