@@ -143,6 +143,22 @@ func TestFindPartitionsToConsume(t *testing.T) {
 			},
 			expected: []int32{10},
 		},
+		{
+			config: consumeConfig{
+				topic:   "a",
+				offsets: map[int32]interval{-1: {3, 41}},
+			},
+			consumer: tConsumer{
+				topics:              []string{"a"},
+				topicsErr:           nil,
+				partitions:          map[string][]int32{"a": []int32{0, 10}},
+				partitionsErr:       map[string]error{"a": nil},
+				consumePartition:    map[tConsumePartition]tPartitionConsumer{},
+				consumePartitionErr: map[tConsumePartition]error{},
+				closeErr:            nil,
+			},
+			expected: []int32{0, 10},
+		},
 	}
 
 	for _, d := range data {
