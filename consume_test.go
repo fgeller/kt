@@ -122,33 +122,45 @@ Input:    %v
 }
 
 func TestFindPartitionsToConsume(t *testing.T) {
-	topic := "a"
-	c := tConsumer{
-		topics:              []string{topic},
-		topicsErr:           nil,
-		partitions:          map[string][]int32{topic: []int32{0, 10}},
-		partitionsErr:       map[string]error{topic: nil},
-		consumePartition:    map[tConsumePartition]tPartitionConsumer{},
-		consumePartitionErr: map[tConsumePartition]error{},
-		closeErr:            nil,
-	}
-	conf := consumeConfig{
-		topic:   "a",
-		offsets: map[int32]interval{10: {2, 4}},
+	data := []struct {
+		config   consumeConfig
+		consumer tConsumer
+		expected []int32
+	}{
+		{
+			config: consumeConfig{
+				topic:   "a",
+				offsets: map[int32]interval{10: {2, 4}},
+			},
+			consumer: tConsumer{
+				topics:              []string{"a"},
+				topicsErr:           nil,
+				partitions:          map[string][]int32{"a": []int32{0, 10}},
+				partitionsErr:       map[string]error{"a": nil},
+				consumePartition:    map[tConsumePartition]tPartitionConsumer{},
+				consumePartitionErr: map[tConsumePartition]error{},
+				closeErr:            nil,
+			},
+			expected: []int32{10},
+		},
 	}
 
-	expected := []int32{10}
-	actual := findPartitions(c, conf)
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf(
-			`
-Expected: %+v, err=%v
-Actual:   %+v, err=%v
-`,
-			expected,
-			actual,
-		)
-		return
+	for _, d := range data {
+		actual := findPartitions(d.consumer, d.config)
+
+		if !reflect.DeepEqual(actual, d.expected) {
+			t.Errorf(
+				`
+Expected: %+v
+Actual:   %+v
+Input:    config=%+v
+	`,
+				d.expected,
+				actual,
+				d.config,
+			)
+			return
+		}
 	}
 }
 
