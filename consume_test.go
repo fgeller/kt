@@ -3,6 +3,7 @@ package main
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 )
@@ -180,17 +181,63 @@ Input:    config=%+v
 	}
 }
 
+func TestConsume(t *testing.T) {
+	closer := make(chan struct{})
+	config := consumeConfig{
+		topic:   "hans",
+		offsets: map[int32]interval{-1: {1, 5}},
+	}
+	messageChan := make(<-chan *sarama.ConsumerMessage)
+	calls := make(chan tConsumePartition)
+	consumer := tConsumer{
+		consumePartition: map[tConsumePartition]tPartitionConsumer{
+			tConsumePartition{"hans", 1, 1}: tPartitionConsumer{messages: messageChan},
+			tConsumePartition{"hans", 2, 1}: tPartitionConsumer{messages: messageChan},
+		},
+		calls: calls,
+	}
+	partitions := []int32{1, 2}
+
+	go consume(config, closer, consumer, partitions)
+	defer close(closer)
+
+	end := make(chan struct{})
+	go func(c chan tConsumePartition, e chan struct{}) {
+		for {
+			actual := []tConsumePartition{}
+			expected := []tConsumePartition{
+				tConsumePartition{"hans", 1, 1},
+				tConsumePartition{"hans", 2, 1},
+			}
+			for {
+				select {
+				case call := <-c:
+					actual = append(actual, call)
+					if reflect.DeepEqual(actual, expected) {
+						e <- struct{}{}
+						return
+					}
+				case _, ok := <-e:
+					if !ok {
+						return
+					}
+				}
+			}
+		}
+	}(calls, end)
+
+	select {
+	case <-end:
+	case <-time.After(1 * time.Second):
+		t.Errorf("Did not receive calls to consume partitions before timeout.")
+		close(end)
+	}
+}
+
 type tConsumePartition struct {
 	topic     string
 	partition int32
 	offset    int64
-}
-
-type tConsumerMessage struct {
-	Key, Value []byte
-	Topic      string
-	Partition  int32
-	Offset     int64
 }
 
 type tConsumerError struct {
@@ -228,6 +275,7 @@ type tConsumer struct {
 	consumePartition    map[tConsumePartition]tPartitionConsumer
 	consumePartitionErr map[tConsumePartition]error
 	closeErr            error
+	calls               chan tConsumePartition
 }
 
 func (c tConsumer) Topics() ([]string, error) {
@@ -240,6 +288,7 @@ func (c tConsumer) Partitions(topic string) ([]int32, error) {
 
 func (c tConsumer) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
 	cp := tConsumePartition{topic, partition, offset}
+	c.calls <- cp
 	return c.consumePartition[cp], c.consumePartitionErr[cp]
 }
 

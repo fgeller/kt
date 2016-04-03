@@ -244,12 +244,13 @@ func consumeCommand() command {
 				os.Exit(1)
 			}
 
-			consume(closer, consumer, partitions)
+			consume(config.consume, closer, consumer, partitions)
 		},
 	}
 }
 
 func consume(
+	config consumeConfig,
 	closer chan struct{},
 	consumer sarama.Consumer,
 	partitions []int32,
@@ -257,12 +258,12 @@ func consume(
 	var wg sync.WaitGroup
 consuming:
 	for _, partition := range partitions {
-		offsets, ok := config.consume.offsets[partition]
+		offsets, ok := config.offsets[partition]
 		if !ok {
-			offsets, ok = config.consume.offsets[-1]
+			offsets, ok = config.offsets[-1]
 		}
 		partitionConsumer, err := consumer.ConsumePartition(
-			config.consume.topic,
+			config.topic,
 			partition,
 			offsets.start,
 		)
