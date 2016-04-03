@@ -237,7 +237,7 @@ func consumeCommand() command {
 				os.Exit(1)
 			}
 
-			partitions := findPartitions(consumer, config.consume.topic, config.consume.offsets)
+			partitions := findPartitions(consumer, config.consume)
 			if len(partitions) == 0 {
 				fmt.Fprintf(os.Stderr, "Found no partitions to consume.\n")
 				os.Exit(1)
@@ -298,18 +298,18 @@ func consumeCommand() command {
 	}
 }
 
-func findPartitions(consumer sarama.Consumer, topic string, offsets map[int32]interval) []int32 {
-	allPartitions, err := consumer.Partitions(topic)
+func findPartitions(consumer sarama.Consumer, config consumeConfig) []int32 {
+	allPartitions, err := consumer.Partitions(config.topic)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", topic, err)
+		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", config.topic, err)
 		os.Exit(1)
 	}
 
-	_, hasDefaultOffset := offsets[-1]
+	_, hasDefaultOffset := config.offsets[-1]
 	partitions := []int32{}
 	if !hasDefaultOffset {
 		for _, p := range allPartitions {
-			_, ok := offsets[p]
+			_, ok := config.offsets[p]
 			if ok {
 				partitions = append(partitions, p)
 			}

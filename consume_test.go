@@ -123,7 +123,6 @@ Input:    %v
 
 func TestFindPartitionsToConsume(t *testing.T) {
 	topic := "a"
-	offsets := map[int32]interval{10: {2, 4}}
 	c := tConsumer{
 		topics:              []string{topic},
 		topicsErr:           nil,
@@ -133,9 +132,13 @@ func TestFindPartitionsToConsume(t *testing.T) {
 		consumePartitionErr: map[tConsumePartition]error{},
 		closeErr:            nil,
 	}
+	conf := consumeConfig{
+		topic:   "a",
+		offsets: map[int32]interval{10: {2, 4}},
+	}
 
 	expected := []int32{10}
-	actual := findPartitions(c, topic, offsets)
+	actual := findPartitions(c, conf)
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf(
 			`
