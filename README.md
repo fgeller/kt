@@ -1,4 +1,4 @@
-# kt - a Kafka tool
+# kt - a Kafka tool that likes JSON.
 
 Some reasons why you might be interested:
 
@@ -6,6 +6,7 @@ Some reasons why you might be interested:
 * Display topic information (e.g., offsets per partitions)
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate use of tools like [jsonify](https://github.com/fgeller/jsonify).
+* Configure brokers and topic via environment variables for a shell session
 * Fast start up time.
 * No buffering of output.
 
