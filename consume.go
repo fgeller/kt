@@ -150,40 +150,38 @@ func failStartup(msg string) {
 	os.Exit(1)
 }
 
-func consumeParseArgs(f *flag.FlagSet) func([]string) {
-	return func(args []string) {
-		var err error
+func consumeParseArgs() {
+	var err error
+	if config.consume.args.topic == "" {
+		failStartup("Topic name is required.")
+	}
+	config.consume.topic = config.consume.args.topic
 
-		if len(args) == 0 {
-			f.Usage()
+	config.consume.brokers = strings.Split(config.consume.args.brokers, ",")
+	for i, b := range config.consume.brokers {
+		if !strings.Contains(b, ":") {
+			config.consume.brokers[i] = b + ":9092"
 		}
+	}
 
-		f.Parse(args)
-
-		if config.consume.args.topic == "" {
-			failStartup("Topic name is required.")
-		}
-		config.consume.topic = config.consume.args.topic
-
-		config.consume.brokers = strings.Split(config.consume.args.brokers, ",")
-		for i, b := range config.consume.brokers {
-			if !strings.Contains(b, ":") {
-				config.consume.brokers[i] = b + ":9092"
-			}
-		}
-
-		config.consume.offsets, err = parseOffsets(config.consume.args.offsets)
-		if err != nil {
-			failStartup(fmt.Sprintf("%s", err))
-		}
+	config.consume.offsets, err = parseOffsets(config.consume.args.offsets)
+	if err != nil {
+		failStartup(fmt.Sprintf("%s", err))
 	}
 }
 
-func consumeUsage(f *flag.FlagSet) func() {
-	return func() {
+func consumeFlags() *flag.FlagSet {
+	flags := flag.NewFlagSet("consume", flag.ExitOnError)
+	flags.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
+	flags.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
+	flags.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+
+	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
-		f.PrintDefaults()
+		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, `
+
 Offsets can be specified as a comma-separated list of intervals:
 
   partition1:start-end,partition2:start-end
@@ -212,23 +210,18 @@ This would consume messages from three partitions:
   - Messages between offsets 1 and 10 from partition 2.
   - Anything from partition 6.
 `)
+
 		os.Exit(2)
 	}
+
+	return flags
 }
 
 func consumeCommand() command {
-	flags := flag.NewFlagSet("consume", flag.ExitOnError)
-	flags.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
-	flags.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
-
-	flags.Usage = consumeUsage(flags)
 
 	return command{
-		flags:     flags,
-		parseArgs: consumeParseArgs(flags),
-
+		flags:     consumeFlags(),
+		parseArgs: consumeParseArgs,
 		run: func(closer chan struct{}) {
 
 			consumer, err := sarama.NewConsumer(config.consume.brokers, nil)

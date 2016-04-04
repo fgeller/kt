@@ -73,8 +73,7 @@ Keep reading input from stdin until interrupted (via ^C).
 
 	return command{
 		flags: produce,
-		parseArgs: func(args []string) {
-			produce.Parse(args)
+		parseArgs: func() {
 
 			failStartup := func(msg string) {
 				fmt.Fprintln(os.Stderr, msg)

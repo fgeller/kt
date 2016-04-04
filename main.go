@@ -29,7 +29,7 @@ func listenForInterrupt() chan struct{} {
 
 type command struct {
 	flags     *flag.FlagSet
-	parseArgs func([]string)
+	parseArgs func()
 	run       func(chan struct{})
 }
 
@@ -70,7 +70,8 @@ func parseArgs() command {
 		usage()
 	}
 
-	cmd.parseArgs(os.Args[2:])
+	cmd.flags.Parse(os.Args[2:])
+	cmd.parseArgs()
 
 	return cmd
 }

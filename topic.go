@@ -43,12 +43,13 @@ type partition struct {
 
 func topicCommand() command {
 	return command{
+		flags:     topicFlags(),
 		parseArgs: topicParseArgs,
 		run:       topicRun,
 	}
 }
 
-func init() {
+func topicFlags() *flag.FlagSet {
 	topic := flag.NewFlagSet("topic", flag.ExitOnError)
 	topic.StringVar(&config.topic.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include information per partition.")
@@ -62,12 +63,10 @@ func init() {
 		os.Exit(2)
 	}
 
-	config.topic.flags = topic
+	return topic
 }
 
-func topicParseArgs(args []string) {
-	config.topic.flags.Parse(args)
-
+func topicParseArgs() {
 	config.topic.brokers = strings.Split(config.topic.args.brokers, ",")
 	for i, b := range config.topic.brokers {
 		if !strings.Contains(b, ":") {
