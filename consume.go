@@ -152,11 +152,24 @@ func failStartup(msg string) {
 
 func consumeParseArgs() {
 	var err error
+	envTopic := os.Getenv("KT_TOPIC")
 	if config.consume.args.topic == "" {
-		failStartup("Topic name is required.")
+		if envTopic == "" {
+			failStartup("Topic name is required.")
+		} else {
+			config.consume.args.topic = envTopic
+		}
 	}
 	config.consume.topic = config.consume.args.topic
 
+	envBrokers := os.Getenv("KT_BROKERS")
+	if config.consume.args.brokers == "" {
+		if envBrokers != "" {
+			config.consume.args.brokers = envBrokers
+		} else {
+			config.consume.args.brokers = "localhost:9092"
+		}
+	}
 	config.consume.brokers = strings.Split(config.consume.args.brokers, ",")
 	for i, b := range config.consume.brokers {
 		if !strings.Contains(b, ":") {
@@ -173,7 +186,7 @@ func consumeParseArgs() {
 func consumeFlags() *flag.FlagSet {
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
 	flags.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&config.consume.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.StringVar(&config.consume.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 
@@ -181,6 +194,8 @@ func consumeFlags() *flag.FlagSet {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, `
+The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.
 
 Offsets can be specified as a comma-separated list of intervals:
 

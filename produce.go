@@ -26,16 +26,19 @@ type message struct {
 	Partition int32  `json:"partition"`
 }
 
-func produceCommand() command {
-	produce := flag.NewFlagSet("produce", flag.ExitOnError)
-	produce.StringVar(&config.produce.args.topic, "topic", "", "Topic to produce to (required).")
-	produce.StringVar(&config.produce.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+func produceFlags() *flag.FlagSet {
+	flags := flag.NewFlagSet("produce", flag.ExitOnError)
+	flags.StringVar(&config.produce.args.topic, "topic", "", "Topic to produce to (required).")
+	flags.StringVar(&config.produce.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 
-	produce.Usage = func() {
+	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of produce:")
-		produce.PrintDefaults()
+		flags.PrintDefaults()
 
 		fmt.Fprintln(os.Stderr, `
+The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.
+
 Input is read from stdin and separated by newlines.
 
 To specify the key, value and partition individually pass it as a JSON object
@@ -71,29 +74,47 @@ Keep reading input from stdin until interrupted (via ^C).
 		os.Exit(2)
 	}
 
+	return flags
+}
+
+func produceParseArgs() {
+	failStartup := func(msg string) {
+		fmt.Fprintln(os.Stderr, msg)
+		fmt.Fprintln(os.Stderr, "Use \"kt produce -help\" for more information.")
+		os.Exit(1)
+	}
+
+	envTopic := os.Getenv("KT_TOPIC")
+	if config.produce.args.topic == "" {
+		if envTopic == "" {
+			failStartup("Topic name is required.")
+		} else {
+			config.produce.args.topic = envTopic
+		}
+	}
+	config.produce.topic = config.produce.args.topic
+
+	envBrokers := os.Getenv("KT_BROKERS")
+	if config.produce.args.brokers == "" {
+		if envBrokers != "" {
+			config.produce.args.brokers = envBrokers
+		} else {
+			config.produce.args.brokers = "localhost:9092"
+		}
+	}
+	config.produce.brokers = strings.Split(config.produce.args.brokers, ",")
+	for i, b := range config.produce.brokers {
+		if !strings.Contains(b, ":") {
+			config.produce.brokers[i] = b + ":9092"
+		}
+	}
+
+}
+
+func produceCommand() command {
 	return command{
-		flags: produce,
-		parseArgs: func() {
-
-			failStartup := func(msg string) {
-				fmt.Fprintln(os.Stderr, msg)
-				fmt.Fprintln(os.Stderr, "Use \"kt produce -help\" for more information.")
-				os.Exit(1)
-			}
-
-			if config.produce.args.topic == "" {
-				failStartup("Topic name is required.")
-			}
-			config.produce.topic = config.produce.args.topic
-
-			config.produce.brokers = strings.Split(config.produce.args.brokers, ",")
-			for i, b := range config.produce.brokers {
-				if !strings.Contains(b, ":") {
-					config.produce.brokers[i] = b + ":9092"
-				}
-			}
-		},
-
+		flags:     produceFlags(),
+		parseArgs: produceParseArgs,
 		run: func(closer chan struct{}) {
 
 			broker := sarama.NewBroker(config.produce.brokers[0])

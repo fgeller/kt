@@ -51,7 +51,7 @@ func topicCommand() command {
 
 func topicFlags() *flag.FlagSet {
 	topic := flag.NewFlagSet("topic", flag.ExitOnError)
-	topic.StringVar(&config.topic.args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	topic.StringVar(&config.topic.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include information per partition.")
 	topic.BoolVar(&config.topic.args.leaders, "leaders", false, "Include leader information per partition.")
 	topic.BoolVar(&config.topic.args.replicas, "replicas", false, "Include replica ids per partition.")
@@ -60,6 +60,10 @@ func topicFlags() *flag.FlagSet {
 	topic.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
 		topic.PrintDefaults()
+		fmt.Fprintln(os.Stderr, `
+The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.
+`)
 		os.Exit(2)
 	}
 
@@ -67,6 +71,14 @@ func topicFlags() *flag.FlagSet {
 }
 
 func topicParseArgs() {
+	envBrokers := os.Getenv("KT_BROKERS")
+	if config.topic.args.brokers == "" {
+		if envBrokers != "" {
+			config.topic.args.brokers = envBrokers
+		} else {
+			config.topic.args.brokers = "localhost:9092"
+		}
+	}
 	config.topic.brokers = strings.Split(config.topic.args.brokers, ",")
 	for i, b := range config.topic.brokers {
 		if !strings.Contains(b, ":") {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -294,4 +295,73 @@ func (c tConsumer) ConsumePartition(topic string, partition int32, offset int64)
 
 func (c tConsumer) Close() error {
 	return c.closeErr
+}
+
+func TestConsumeParseArgs(t *testing.T) {
+	configBefore := config
+	defer func() {
+		config = configBefore
+	}()
+
+	expectedTopic := "test-topic"
+	givenBroker := "hans:9092"
+	expectedBrokers := []string{givenBroker}
+
+	config.consume.args.topic = ""
+	config.consume.args.brokers = ""
+	os.Setenv("KT_TOPIC", expectedTopic)
+	os.Setenv("KT_BROKERS", givenBroker)
+
+	consumeParseArgs()
+	if config.consume.topic != expectedTopic ||
+		!reflect.DeepEqual(config.consume.brokers, expectedBrokers) {
+		t.Errorf(
+			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
+			expectedTopic,
+			expectedBrokers,
+			config.consume.topic,
+			config.consume.brokers,
+		)
+		return
+	}
+
+	// default brokers to localhost:9092
+	os.Setenv("KT_TOPIC", "")
+	os.Setenv("KT_BROKERS", "")
+	config.consume.args.topic = expectedTopic
+	config.consume.args.brokers = ""
+	expectedBrokers = []string{"localhost:9092"}
+
+	consumeParseArgs()
+	if config.consume.topic != expectedTopic ||
+		!reflect.DeepEqual(config.consume.brokers, expectedBrokers) {
+		t.Errorf(
+			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
+			expectedTopic,
+			expectedBrokers,
+			config.consume.topic,
+			config.consume.brokers,
+		)
+		return
+	}
+
+	// command line arg wins
+	os.Setenv("KT_TOPIC", "BLUBB")
+	os.Setenv("KT_BROKERS", "BLABB")
+	config.consume.args.topic = expectedTopic
+	config.consume.args.brokers = givenBroker
+	expectedBrokers = []string{givenBroker}
+
+	consumeParseArgs()
+	if config.consume.topic != expectedTopic ||
+		!reflect.DeepEqual(config.consume.brokers, expectedBrokers) {
+		t.Errorf(
+			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
+			expectedTopic,
+			expectedBrokers,
+			config.consume.topic,
+			config.consume.brokers,
+		)
+		return
+	}
 }
