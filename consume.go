@@ -199,7 +199,19 @@ The values supplied on the command line win over environment variable values.
 
 Offsets can be specified as a comma-separated list of intervals:
 
-  partition1:start-end,partition2:start-end
+  [[[partition:][start]-[end]],...]
+
+The default is to consume from the beginning on every partition for the given topic.
+
+ - partition is the numeric identifier for a partition. You can use -1 to
+   specify a default interval for all partitions.
+
+ - start is the included offset where consumption should start.
+
+ - end is the included offset where consumption should end.
+
+Following github.com/Shopify/sarama, special values can be used to identify the
+earliest (-2) and latest (-1) offset respectively.
 
 Examples:
 
@@ -224,6 +236,15 @@ This would consume messages from three partitions:
   - Anything from partition 0 starting at offset 4.
   - Messages between offsets 1 and 10 from partition 2.
   - Anything from partition 6.
+
+To start at the latest offset for each partition:
+
+  -1:-1-
+
+Or shorter:
+
+  -1-
+
 `)
 
 		os.Exit(2)
