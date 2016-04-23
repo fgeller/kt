@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Shopify/sarama"
 )
@@ -121,21 +121,33 @@ func topicRun(closer chan struct{}) {
 		}
 	}
 
-	sort.Strings(topics)
-
+	var wg sync.WaitGroup
 	for _, tn := range topics {
-		t, err := readTopic(client, tn)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read info for topic %s. err=%v\n", tn, err)
-			os.Exit(1)
-		}
-		bs, err := json.Marshal(t)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", tn, err)
-			os.Exit(1)
-		}
-		fmt.Printf("%s\n", bs)
+		wg.Add(1)
+		go func(t string) {
+			printTopic(client, t)
+			wg.Done()
+		}(tn)
 	}
+	wg.Wait()
+}
+
+func printTopic(client sarama.Client, name string) {
+	var t topic
+	var out []byte
+	var err error
+
+	if t, err = readTopic(client, name); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read info for topic %s. err=%v\n", name, err)
+		return
+	}
+
+	if out, err = json.Marshal(t); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", name, err)
+		return
+	}
+
+	fmt.Printf("%s\n", out)
 }
 
 func readTopic(client sarama.Client, name string) (topic, error) {
