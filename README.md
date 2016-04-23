@@ -41,7 +41,7 @@ Alternatively, the usual way via the go tool, for example:
 Read details about topics that match the regex `output`
 
     $ kt topic -filter output -partitions
-    {"name":"output","partitions":[{"id":0,"oldestOffset":0,"newestOffset":0}]}
+    {"name":"output","partitions":[{"id":0,"oldest":0,"newest":0}]}
 
 Generate sample data using [jsonify](https://github.com/fgeller/jsonify):
 

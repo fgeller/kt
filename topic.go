@@ -35,8 +35,8 @@ type topic struct {
 
 type partition struct {
 	Id           int32   `json:"id"`
-	OldestOffset int64   `json:"oldestOffset"`
-	NewestOffset int64   `json:"newestOffset"`
+	OldestOffset int64   `json:"oldest"`
+	NewestOffset int64   `json:"newest"`
 	Leader       string  `json:"leader,omitempty"`
 	Replicas     []int32 `json:"replicas,omitempty"`
 }
