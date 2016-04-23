@@ -10,6 +10,8 @@ Some reasons why you might be interested:
 * Fast start up time.
 * No buffering of output.
 
+[![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
+
 ## Usage:
 
     $ kt -help
