@@ -5,7 +5,7 @@ build: GOOS ?= darwin
 build: GOARCH ?= amd64
 build:
 	rm -f kt
-	GOOS=${GOOS} GOARCH=${GOARCH} go build .
+	GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "-X main.buildTime=`date --iso-8601=s` -X main.buildVersion=`git rev-parse HEAD | cut -c-7`" .
 
 release-linux:
 	GOOS=linux $(MAKE) build

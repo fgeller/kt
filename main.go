@@ -8,6 +8,8 @@ import (
 	"os/signal"
 )
 
+var buildVersion, buildTime string
+
 var config struct {
 	consume consumeConfig
 	produce produceConfig
@@ -33,7 +35,7 @@ type command struct {
 	run       func(chan struct{})
 }
 
-var usageMessage = `kt is a tool for Kafka.
+var usageMessage = fmt.Sprintf(`kt is a tool for Kafka.
 
 Usage:
 
@@ -47,7 +49,8 @@ The commands are:
 
 Use "kt [command] -help" for for information about the command.
 
-`
+More at https://github.com/fgeller/kt
+Build %v from %v.`, buildVersion, buildTime)
 
 func usage() {
 	fmt.Fprintln(os.Stderr, usageMessage)
