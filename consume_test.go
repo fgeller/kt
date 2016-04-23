@@ -17,88 +17,273 @@ func TestParseOffsets(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			input:       "",
-			expected:    map[int32]interval{-1: {sarama.OffsetOldest, 0}},
+			input: "",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0",
-			expected:    map[int32]interval{0: {sarama.OffsetOldest, 0}},
+			input: "all",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:",
-			expected:    map[int32]interval{0: {sarama.OffsetOldest, 0}},
+			input: "	all ",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:1",
-			expected:    map[int32]interval{0: {1, 0}},
+			input: "all=+0:",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 0},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:1-",
-			expected:    map[int32]interval{0: {1, 0}},
+			input: "1,2,4",
+			expected: map[int32]interval{
+				1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+				2: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+				4: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0,2,6",
-			expected:    map[int32]interval{0: {sarama.OffsetOldest, 0}, 2: {sarama.OffsetOldest, 0}, 6: {sarama.OffsetOldest, 0}},
+			input: "0=",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:4-,2:1-10,6",
-			expected:    map[int32]interval{0: {4, 0}, 2: {1, 10}, 6: {sarama.OffsetOldest, 0}},
+			input: "0=1",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: absOffset, start: 1},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:-1",
-			expected:    map[int32]interval{0: {sarama.OffsetOldest, 1}},
+			input: "0=1:",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: absOffset, start: 1},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "-1",
-			expected:    map[int32]interval{-1: {sarama.OffsetOldest, 1}},
+			input: "0=4:,2=1:10,6",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: absOffset, start: 4},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+				2: interval{
+					start: offset{typ: absOffset, start: 1},
+					end:   offset{typ: absOffset, start: 10},
+				},
+				6: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:-3,-1",
-			expected:    map[int32]interval{0: {sarama.OffsetOldest, 3}, -1: {sarama.OffsetOldest, 1}},
+			input: "0=-1",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "1:-4,-1:2-3",
-			expected:    map[int32]interval{1: {sarama.OffsetOldest, 4}, -1: {2, 3}},
+			input: "0=-1:",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "-1-",
-			expected:    map[int32]interval{-1: {sarama.OffsetNewest, 0}},
+			input: "0=+1",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:-1-",
-			expected:    map[int32]interval{0: {sarama.OffsetNewest, 0}},
+			input: "0=+1:",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{typ: absOffset, start: 1<<63 - 1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "0:-1-1000",
-			expected:    map[int32]interval{0: {sarama.OffsetNewest, 1000}},
+			input: "0=+1:-1",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "-1:-1-",
-			expected:    map[int32]interval{-1: {sarama.OffsetNewest, 0}},
+			input: "0=+1:-1,all=1:10",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
+				},
+				-1: interval{
+					start: offset{typ: absOffset, start: 1, diff: 0},
+					end:   offset{typ: absOffset, start: 10, diff: 0},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "-1:-1-1",
-			expected:    map[int32]interval{-1: {sarama.OffsetNewest, 1}},
+			input: "0=oldest:newest",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 0},
+					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
+				},
+			},
 			expectedErr: nil,
 		},
 		{
-			input:       "-1:-1-100",
-			expected:    map[int32]interval{-1: {sarama.OffsetNewest, 100}},
+			input: "0=oldest+10:newest-10",
+			expected: map[int32]interval{
+				0: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 10},
+					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: -10},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "newest",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "10",
+			expected: map[int32]interval{
+				10: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 0},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "newest",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "all=newest:",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "newest-10:",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -10},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "oldest+10:",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 10},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "-10:",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -10},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			input: "+10:",
+			expected: map[int32]interval{
+				-1: interval{
+					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 10},
+					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+				},
+			},
 			expectedErr: nil,
 		},
 	}
@@ -131,8 +316,10 @@ func TestFindPartitionsToConsume(t *testing.T) {
 	}{
 		{
 			config: consumeConfig{
-				topic:   "a",
-				offsets: map[int32]interval{10: {2, 4}},
+				topic: "a",
+				offsets: map[int32]interval{
+					10: {offset{absOffset, 2, 0}, offset{absOffset, 4, 0}},
+				},
 			},
 			consumer: tConsumer{
 				topics:              []string{"a"},
@@ -147,8 +334,10 @@ func TestFindPartitionsToConsume(t *testing.T) {
 		},
 		{
 			config: consumeConfig{
-				topic:   "a",
-				offsets: map[int32]interval{-1: {3, 41}},
+				topic: "a",
+				offsets: map[int32]interval{
+					-1: {offset{absOffset, 3, 0}, offset{absOffset, 41, 0}},
+				},
 			},
 			consumer: tConsumer{
 				topics:              []string{"a"},
@@ -186,7 +375,10 @@ func TestConsume(t *testing.T) {
 	closer := make(chan struct{})
 	config := consumeConfig{
 		topic:   "hans",
-		offsets: map[int32]interval{-1: {1, 5}},
+		brokers: []string{"localhost:9092"},
+		offsets: map[int32]interval{
+			-1: {offset{absOffset, 1, 0}, offset{absOffset, 5, 0}},
+		},
 	}
 	messageChan := make(<-chan *sarama.ConsumerMessage)
 	calls := make(chan tConsumePartition)

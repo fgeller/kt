@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,9 +14,41 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type interval struct {
+type offsetType int
+
+const (
+	absOffset offsetType = iota
+	relOffset
+)
+
+type offset struct {
+	typ   offsetType
 	start int64
-	end   int64
+	diff  int64
+}
+
+func (o offset) value(clientMaker func() sarama.Client, partition int32) (int64, error) {
+	if o.typ == absOffset {
+		return o.start, nil
+	}
+
+	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
+		v, err := clientMaker().GetOffset(config.consume.topic, partition, o.start)
+		if err != nil {
+			return 0, err
+		}
+		if o.start == sarama.OffsetNewest {
+			v = v - 1
+		}
+		return v + o.diff, nil
+	}
+
+	return o.start + o.diff, nil
+}
+
+type interval struct {
+	start offset
+	end   offset
 }
 
 type consumeConfig struct {
@@ -42,103 +75,104 @@ func print(msg *sarama.ConsumerMessage) {
 	)
 }
 
+func parseOffset(str string) (offset, error) {
+	result := offset{}
+	re := regexp.MustCompile("(oldest|newest)?(-|\\+)?(\\d+)?")
+	matches := re.FindAllStringSubmatch(str, -1)
+
+	if len(matches) == 0 || len(matches[0]) < 4 {
+		return result, fmt.Errorf("Could not parse offset [%v]", str)
+	}
+
+	startStr := matches[0][1]
+	qualifierStr := matches[0][2]
+	intStr := matches[0][3]
+
+	value, err := strconv.ParseInt(intStr, 10, 64)
+	if err != nil && len(intStr) > 0 {
+		return result, fmt.Errorf("Invalid partition [%v]", str)
+	}
+	result.start = value
+
+	result.diff = int64(0)
+
+	result.typ = absOffset
+	if len(qualifierStr) > 0 {
+		result.typ = relOffset
+		result.diff = value
+		result.start = sarama.OffsetOldest
+		if qualifierStr == "-" {
+			result.start = sarama.OffsetNewest
+			result.diff = -result.diff
+		}
+	}
+
+	switch startStr {
+	case "newest":
+		result.typ = relOffset
+		result.start = sarama.OffsetNewest
+	case "oldest":
+		result.typ = relOffset
+		result.start = sarama.OffsetOldest
+	}
+
+	return result, nil
+}
+
 func parseOffsets(str string) (map[int32]interval, error) {
-	if len(str) == 0 { // everything when omitted
-		return map[int32]interval{-1: {sarama.OffsetOldest, 0}}, nil
+	defaultInterval := interval{
+		start: offset{typ: relOffset, start: sarama.OffsetOldest},
+		end:   offset{typ: absOffset, start: 1<<63 - 1},
+	}
+
+	if len(str) == 0 {
+		return map[int32]interval{-1: defaultInterval}, nil
 	}
 
 	result := map[int32]interval{}
-
-	partitions := strings.Split(str, ",")
-	for _, partition := range partitions {
-		if len(partition) == 0 {
-			continue
-		}
-		if strings.Count(partition, "-") > 3 {
-			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
-		}
-		if strings.Count(partition, ":") > 1 {
-			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+	for _, partitionInfo := range strings.Split(str, ",") {
+		re := regexp.MustCompile("(all|\\d+)?=?([^:]+)?:?(.+)?")
+		matches := re.FindAllStringSubmatch(strings.TrimSpace(partitionInfo), -1)
+		if len(matches) != 1 || len(matches[0]) < 3 {
+			return result, fmt.Errorf("Invalid partition info [%v]", partitionInfo)
 		}
 
-		partition = strings.TrimSuffix(partition, ":")
-		// 0
-		// 0:
-		// -1
-		// -1-
-		if !strings.Contains(partition, ":") {
-			if strings.Count(partition, "-") == 1 {
-				p, err := strconv.Atoi(partition)
-				if err != nil {
-					return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
-				}
-				result[-1] = interval{sarama.OffsetOldest, -int64(p)}
-				continue
-			}
+		var partition int32
+		start := defaultInterval.start
+		end := defaultInterval.end
+		partitionMatches := matches[0]
 
-			if strings.Count(partition, "-") == 2 {
-				start, err := strconv.Atoi(partition[:strings.LastIndex(partition, "-")])
-				if err != nil {
-					return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
-				}
-
-				end := 0
-				if strings.LastIndex(partition, "-")+1 < len(partition) {
-					end, err = strconv.Atoi(partition[strings.LastIndex(partition, "-")+1:])
-					if err != nil {
-						return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
-					}
-				}
-
-				result[-1] = interval{int64(start), int64(end)}
-				continue
-			}
-
-			p, err := strconv.Atoi(partition)
+		// partition
+		partitionStr := partitionMatches[1]
+		if partitionStr == "all" || len(partitionStr) == 0 {
+			partition = -1
+		} else {
+			i, err := strconv.Atoi(partitionStr)
 			if err != nil {
-				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+				return result, fmt.Errorf("Invalid partition [%v]", partitionStr)
 			}
-
-			result[int32(p)] = interval{sarama.OffsetOldest, 0}
-			continue
+			partition = int32(i)
 		}
 
-		// 0:1
-		// 0:1-
-		// 0:1-2
-		// 0:-2
-		// 0:-1-
-		// -1:-1-
-		p, err := strconv.Atoi(partition[:strings.Index(partition, ":")])
-		if err != nil {
-			return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
-		}
-
-		i := interval{sarama.OffsetOldest, 0}
-		start := partition[strings.Index(partition, ":")+1:]
-		end := ""
-		if strings.Contains(start, "-") {
-			end = start[strings.LastIndex(start, "-")+1:]
-			start = start[:strings.LastIndex(start, "-")]
-		}
-
-		if len(start) > 0 {
-			s, err := strconv.Atoi(start)
-			if err != nil {
-				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+		// start
+		if len(partitionMatches) > 2 && len(strings.TrimSpace(partitionMatches[2])) > 0 {
+			startStr := strings.TrimSpace(partitionMatches[2])
+			o, err := parseOffset(startStr)
+			if err == nil {
+				start = o
 			}
-			i.start = int64(s)
 		}
 
-		if len(end) > 0 {
-			e, err := strconv.Atoi(end)
-			if err != nil {
-				return result, fmt.Errorf("Invalid offsets definition: %s.", partition)
+		// end
+		if len(partitionMatches) > 3 && len(strings.TrimSpace(partitionMatches[3])) > 0 {
+			endStr := strings.TrimSpace(partitionMatches[3])
+			o, err := parseOffset(endStr)
+			if err == nil {
+				end = o
 			}
-			i.end = int64(e)
 		}
 
-		result[int32(p)] = i
+		result[partition] = interval{start, end}
 	}
 
 	return result, nil
@@ -199,37 +233,54 @@ The values supplied on the command line win over environment variable values.
 
 Offsets can be specified as a comma-separated list of intervals:
 
-  [[[partition:][start]-[end]],...]
+  [[partition=start:end],...]
 
-The default is to consume from the beginning on every partition for the given topic.
+The default is to consume from the oldest offset on every partition for the given topic.
 
- - partition is the numeric identifier for a partition. You can use -1 to
+ - partition is the numeric identifier for a partition. You can use "all" to
    specify a default interval for all partitions.
 
  - start is the included offset where consumption should start.
 
  - end is the included offset where consumption should end.
 
-Following github.com/Shopify/sarama, special values can be used to identify the
-earliest (-2) and latest (-1) offset respectively.
+The following syntax is supported for each offset:
 
-Examples:
+  (oldest|newest)?(+|-)?(\d+)?
+
+ - "oldest" and "newest" refer to the oldest and newest offsets known for a
+   given partition.
+
+ - You can use "+" with a numeric value to skip the given number of messages
+   since the oldest offset. For example, "1=+20" will skip 20 offset value since
+   the oldest offset for partition 1.
+
+ - You can use "-" with a numeric value to refer to only the given number of
+   messages before the newest offset. For example, "1=-10" will refer to the
+   last 10 offset values before the newest offset for partition 1.
+
+ - Relative offsets are based on numeric values and will not take skipped
+   offsets (e.g. due to compaction) into account.
+
+ - Given only a numeric value, it is interpreted as an absolute offset value.
+
+More examples:
 
 To consume messages from partition 0 between offsets 10 and 20 (inclusive).
 
-  0:10-20
+  0=10:20
 
 To define an interval for all partitions use -1 as the partition identifier:
 
-  -1:2-10
+  all=2:10
 
-Short version to consume messages from all partitions until offset 10:
+You can also override the offsets for a single partition, in this case 2:
 
-  -10
+  all=1-10,2=5-10
 
 To consume from multiple partitions:
 
-  0:4-,2:1-10,6
+  0=4:,2=1:10,6
 
 This would consume messages from three partitions:
 
@@ -239,11 +290,29 @@ This would consume messages from three partitions:
 
 To start at the latest offset for each partition:
 
-  -1:-1-
+  all=newest:
 
 Or shorter:
 
-  -1-
+  newest:
+
+To consume the last 10 messages:
+
+  newest-10:
+
+To skip the first 15 messages starting with the oldest offset:
+
+  oldest+10:
+
+In both cases you can omit "newest" and "oldest":
+
+  -10:
+
+and
+
+  +10:
+
+Will achieve the same as the two examples above.
 
 `)
 
@@ -291,10 +360,33 @@ consuming:
 		if !ok {
 			offsets, ok = config.offsets[-1]
 		}
+
+		clientMaker := func() sarama.Client {
+			client, err := sarama.NewClient(config.brokers, nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
+				os.Exit(1)
+			}
+
+			return client
+		}
+
+		start, err := offsets.start.value(clientMaker, partition)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read start offset err=%v\n", err)
+			os.Exit(1)
+		}
+
+		end, err := offsets.end.value(clientMaker, partition)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read end offset err=%v\n", err)
+			os.Exit(1)
+		}
+
 		partitionConsumer, err := consumer.ConsumePartition(
 			config.topic,
 			partition,
-			offsets.start,
+			start,
 		)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
@@ -302,7 +394,7 @@ consuming:
 		}
 
 		wg.Add(1)
-		go consumePartition(&wg, closer, partitionConsumer, partition, offsets.end)
+		go consumePartition(&wg, closer, partitionConsumer, partition, end)
 	}
 
 	wg.Wait()
