@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -377,7 +378,7 @@ func TestConsume(t *testing.T) {
 		topic:   "hans",
 		brokers: []string{"localhost:9092"},
 		offsets: map[int32]interval{
-			-1: {offset{absOffset, 1, 0}, offset{absOffset, 5, 0}},
+			-1: interval{start: offset{absOffset, 1, 0}, end: offset{absOffset, 5, 0}},
 		},
 	}
 	messageChan := make(<-chan *sarama.ConsumerMessage)
@@ -396,24 +397,33 @@ func TestConsume(t *testing.T) {
 
 	end := make(chan struct{})
 	go func(c chan tConsumePartition, e chan struct{}) {
+		actual := []tConsumePartition{}
+		expected := []tConsumePartition{
+			tConsumePartition{"hans", 1, 1},
+			tConsumePartition{"hans", 2, 1},
+		}
 		for {
-			actual := []tConsumePartition{}
-			expected := []tConsumePartition{
-				tConsumePartition{"hans", 1, 1},
-				tConsumePartition{"hans", 2, 1},
-			}
-			for {
-				select {
-				case call := <-c:
-					actual = append(actual, call)
-					if reflect.DeepEqual(actual, expected) {
-						e <- struct{}{}
-						return
-					}
-				case _, ok := <-e:
-					if !ok {
-						return
-					}
+			select {
+			case call := <-c:
+				actual = append(actual, call)
+				sort.Sort(ByPartitionOffset(actual))
+				if reflect.DeepEqual(actual, expected) {
+					e <- struct{}{}
+					return
+				}
+				if len(actual) == len(expected) {
+					t.Errorf(
+						`Got expected number of calls, but they are different.
+Expected: %#v
+Actual:   %#v
+`,
+						expected,
+						actual,
+					)
+				}
+			case _, ok := <-e:
+				if !ok {
+					return
 				}
 			}
 		}
@@ -431,6 +441,18 @@ type tConsumePartition struct {
 	topic     string
 	partition int32
 	offset    int64
+}
+
+type ByPartitionOffset []tConsumePartition
+
+func (a ByPartitionOffset) Len() int {
+	return len(a)
+}
+func (a ByPartitionOffset) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
+}
+func (a ByPartitionOffset) Less(i, j int) bool {
+	return a[i].partition < a[j].partition || a[i].offset < a[j].offset
 }
 
 type tConsumerError struct {

@@ -347,6 +347,16 @@ func consumeCommand() command {
 	}
 }
 
+func clientMaker() sarama.Client {
+	client, err := sarama.NewClient(config.consume.brokers, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
+		os.Exit(1)
+	}
+
+	return client
+}
+
 func consume(
 	config consumeConfig,
 	closer chan struct{},
@@ -354,55 +364,54 @@ func consume(
 	partitions []int32,
 ) {
 	var wg sync.WaitGroup
-consuming:
 	for _, partition := range partitions {
-		offsets, ok := config.offsets[partition]
-		if !ok {
-			offsets, ok = config.offsets[-1]
-		}
-
-		clientMaker := func() sarama.Client {
-			client, err := sarama.NewClient(config.brokers, nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
-				os.Exit(1)
-			}
-
-			return client
-		}
-
-		start, err := offsets.start.value(clientMaker, partition)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read start offset err=%v\n", err)
-			os.Exit(1)
-		}
-
-		end, err := offsets.end.value(clientMaker, partition)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read end offset err=%v\n", err)
-			os.Exit(1)
-		}
-
-		partitionConsumer, err := consumer.ConsumePartition(
-			config.topic,
-			partition,
-			start,
-		)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
-			continue consuming
-		}
-
 		wg.Add(1)
-		go consumePartition(&wg, closer, partitionConsumer, partition, end)
+		go func(p int32) {
+			defer wg.Done()
+			consumePartition(config, closer, consumer, p)
+		}(partition)
 	}
-
 	wg.Wait()
-
 }
 
 func consumePartition(
-	wg *sync.WaitGroup,
+	config consumeConfig,
+	closer chan struct{},
+	consumer sarama.Consumer,
+	partition int32,
+) {
+
+	offsets, ok := config.offsets[partition]
+	if !ok {
+		offsets, ok = config.offsets[-1]
+	}
+
+	start, err := offsets.start.value(clientMaker, partition)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read start offset for partition %v err=%v\n", partition, err)
+		return
+	}
+
+	end, err := offsets.end.value(clientMaker, partition)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read end offset for partition %v err=%v\n", partition, err)
+		return
+	}
+
+	partitionConsumer, err := consumer.ConsumePartition(
+		config.topic,
+		partition,
+		start,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
+		return
+	}
+
+	consumePartitionLoop(closer, partitionConsumer, partition, end)
+}
+
+func consumePartitionLoop(
 	closer chan struct{},
 	pc sarama.PartitionConsumer,
 	p int32,
@@ -418,11 +427,9 @@ func consumePartition(
 		case <-timeout:
 			log.Printf("Consuming from partition [%v] timed out.", p)
 			pc.Close()
-			wg.Done()
 			return
 		case <-closer:
 			pc.Close()
-			wg.Done()
 			return
 		case msg, ok := <-pc.Messages():
 			if ok {
@@ -430,7 +437,6 @@ func consumePartition(
 			}
 			if end > 0 && msg.Offset >= end {
 				pc.Close()
-				wg.Done()
 				return
 			}
 		}
