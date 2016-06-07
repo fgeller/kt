@@ -64,17 +64,6 @@ type consumeConfig struct {
 	}
 }
 
-func print(msg *sarama.ConsumerMessage) {
-	fmt.Printf(
-		`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}
-`,
-		msg.Partition,
-		msg.Offset,
-		string(msg.Key),
-		string(msg.Value),
-	)
-}
-
 func parseOffset(str string) (offset, error) {
 	result := offset{}
 	re := regexp.MustCompile("(oldest|newest)?(-|\\+)?(\\d+)?")
@@ -364,11 +353,21 @@ func consume(
 	partitions []int32,
 ) {
 	var wg sync.WaitGroup
+	out := make(chan string)
+	go func() {
+		for {
+			select {
+			case m := <-out:
+				fmt.Println(m)
+			}
+		}
+	}()
+
 	for _, partition := range partitions {
 		wg.Add(1)
 		go func(p int32) {
 			defer wg.Done()
-			consumePartition(config, closer, consumer, p)
+			consumePartition(config, closer, out, consumer, p)
 		}(partition)
 	}
 	wg.Wait()
@@ -377,6 +376,7 @@ func consume(
 func consumePartition(
 	config consumeConfig,
 	closer chan struct{},
+	out chan string,
 	consumer sarama.Consumer,
 	partition int32,
 ) {
@@ -408,11 +408,12 @@ func consumePartition(
 		return
 	}
 
-	consumePartitionLoop(closer, partitionConsumer, partition, end)
+	consumePartitionLoop(closer, out, partitionConsumer, partition, end)
 }
 
 func consumePartitionLoop(
 	closer chan struct{},
+	out chan string,
 	pc sarama.PartitionConsumer,
 	p int32,
 	end int64,
@@ -433,7 +434,13 @@ func consumePartitionLoop(
 			return
 		case msg, ok := <-pc.Messages():
 			if ok {
-				print(msg)
+				out <- fmt.Sprintf(
+					`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}`,
+					msg.Partition,
+					msg.Offset,
+					string(msg.Key),
+					string(msg.Value),
+				)
 			}
 			if end > 0 && msg.Offset >= end {
 				pc.Close()
