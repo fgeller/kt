@@ -56,11 +56,13 @@ type consumeConfig struct {
 	brokers []string
 	offsets map[int32]interval
 	timeout time.Duration
+	verbose bool
 	args    struct {
 		topic   string
 		brokers string
 		timeout time.Duration
 		offsets string
+		verbose bool
 	}
 }
 
@@ -184,6 +186,7 @@ func consumeParseArgs() {
 		}
 	}
 	config.consume.topic = config.consume.args.topic
+	config.consume.verbose = config.consume.args.verbose
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if config.consume.args.brokers == "" {
@@ -212,6 +215,7 @@ func consumeFlags() *flag.FlagSet {
 	flags.StringVar(&config.consume.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+	flags.BoolVar(&config.consume.verbose, "verbose", false, "More verbose logging to stderr.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -317,7 +321,9 @@ func consumeCommand() command {
 		flags:     consumeFlags(),
 		parseArgs: consumeParseArgs,
 		run: func(closer chan struct{}) {
-
+			if config.consume.verbose {
+				sarama.Logger = log.New(os.Stdout, "", log.LstdFlags)
+			}
 			consumer, err := sarama.NewConsumer(config.consume.brokers, nil)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)

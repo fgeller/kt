@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -19,12 +20,14 @@ type topicConfig struct {
 	partitions bool
 	leaders    bool
 	replicas   bool
+	verbose    bool
 	args       struct {
 		brokers    string
 		filter     string
 		partitions bool
 		leaders    bool
 		replicas   bool
+		verbose    bool
 	}
 }
 
@@ -56,6 +59,7 @@ func topicFlags() *flag.FlagSet {
 	topic.BoolVar(&config.topic.args.leaders, "leaders", false, "Include leader information per partition.")
 	topic.BoolVar(&config.topic.args.replicas, "replicas", false, "Include replica ids per partition.")
 	topic.StringVar(&config.topic.args.filter, "filter", "", "Regex to filter topics by name.")
+	topic.BoolVar(&config.topic.args.verbose, "verbose", false, "More verbose logging to stderr.")
 
 	topic.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
@@ -96,10 +100,14 @@ func topicParseArgs() {
 	config.topic.partitions = config.topic.args.partitions
 	config.topic.leaders = config.topic.args.leaders
 	config.topic.replicas = config.topic.args.replicas
+	config.topic.verbose = config.topic.args.verbose
 }
 
 func topicRun(closer chan struct{}) {
 	var err error
+	if config.topic.verbose {
+		sarama.Logger = log.New(os.Stdout, "", log.LstdFlags)
+	}
 
 	client, err := sarama.NewClient(config.topic.brokers, nil)
 	if err != nil {

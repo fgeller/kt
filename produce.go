@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -61,7 +62,7 @@ func produceFlags() *flag.FlagSet {
 	)
 	flags.BoolVar(
 		&config.produce.args.verbose,
-		"v",
+		"verbose",
 		false,
 		"Verbose output",
 	)
@@ -146,6 +147,7 @@ func produceParseArgs() {
 
 	config.produce.batch = config.produce.args.batch
 	config.produce.timeout = config.produce.args.timeout
+	config.produce.verbose = config.produce.args.verbose
 }
 
 func produceCommand() command {
@@ -153,6 +155,9 @@ func produceCommand() command {
 		flags:     produceFlags(),
 		parseArgs: produceParseArgs,
 		run: func(closer chan struct{}) {
+			if config.produce.verbose {
+				sarama.Logger = log.New(os.Stdout, "", log.LstdFlags)
+			}
 
 			broker := sarama.NewBroker(config.produce.brokers[0])
 			conf := sarama.NewConfig()
