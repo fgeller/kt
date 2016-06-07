@@ -129,20 +129,30 @@ func topicRun(closer chan struct{}) {
 		}
 	}
 
+	out := make(chan string)
+	go func() {
+		for {
+			select {
+			case m := <-out:
+				fmt.Println(m)
+			}
+		}
+	}()
+
 	var wg sync.WaitGroup
 	for _, tn := range topics {
 		wg.Add(1)
 		go func(t string) {
-			printTopic(client, t)
+			printTopic(client, t, out)
 			wg.Done()
 		}(tn)
 	}
 	wg.Wait()
 }
 
-func printTopic(client sarama.Client, name string) {
+func printTopic(client sarama.Client, name string, out chan string) {
 	var t topic
-	var out []byte
+	var byts []byte
 	var err error
 
 	if t, err = readTopic(client, name); err != nil {
@@ -150,12 +160,12 @@ func printTopic(client sarama.Client, name string) {
 		return
 	}
 
-	if out, err = json.Marshal(t); err != nil {
+	if byts, err = json.Marshal(t); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", name, err)
 		return
 	}
 
-	fmt.Printf("%s\n", out)
+	out <- string(byts)
 }
 
 func readTopic(client sarama.Client, name string) (topic, error) {
