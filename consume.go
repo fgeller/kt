@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -417,6 +418,13 @@ func consumePartition(
 	consumePartitionLoop(closer, out, partitionConsumer, partition, end)
 }
 
+type consumedMessage struct {
+	Partition int32   `json:"partition"`
+	Offset    int64   `json:"offset"`
+	Key       *string `json:"key"`
+	Value     *string `json:"value"`
+}
+
 func consumePartitionLoop(
 	closer chan struct{},
 	out chan string,
@@ -440,13 +448,26 @@ func consumePartitionLoop(
 			return
 		case msg, ok := <-pc.Messages():
 			if ok {
-				out <- fmt.Sprintf(
-					`{"partition":%v,"offset":%v,"key":%#v,"message":%#v}`,
-					msg.Partition,
-					msg.Offset,
-					string(msg.Key),
-					string(msg.Value),
-				)
+				m := consumedMessage{
+					Partition: msg.Partition,
+					Offset:    msg.Offset,
+				}
+				k := string(msg.Key)
+				if msg.Key != nil {
+					m.Key = &k
+				}
+				v := string(msg.Value)
+				if msg.Value != nil {
+					m.Value = &v
+				}
+
+				byts, err := json.Marshal(m)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
+					close(closer)
+					return
+				}
+				out <- string(byts)
 			}
 			if end > 0 && msg.Offset >= end {
 				pc.Close()

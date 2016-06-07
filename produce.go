@@ -29,9 +29,9 @@ type produceConfig struct {
 }
 
 type message struct {
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	Partition int32  `json:"partition"`
+	Key       *string `json:"key"`
+	Value     *string `json:"value"`
+	Partition int32   `json:"partition"`
 }
 
 func produceFlags() *flag.FlagSet {
@@ -198,7 +198,7 @@ func produceCommand() command {
 						if config.produce.verbose {
 							fmt.Printf("Failed to unmarshal input, falling back to defaults. err=%v\n", err)
 						}
-						in = message{Key: l, Value: l, Partition: 0}
+						in = message{Key: &l, Value: &l, Partition: 0}
 					}
 					messages <- in
 				}
@@ -252,12 +252,14 @@ func produce(closer chan struct{}, broker *sarama.Broker, in chan []message) {
 				Timeout:      1000,
 			}
 			for _, m := range batch {
-				msg := sarama.Message{
-					Codec: sarama.CompressionNone,
-					Key:   []byte(m.Key),
-					Value: []byte(m.Value),
-					Set:   nil,
+				msg := sarama.Message{Codec: sarama.CompressionNone}
+				if m.Key != nil {
+					msg.Key = []byte(*m.Key)
 				}
+				if m.Value != nil {
+					msg.Value = []byte(*m.Value)
+				}
+
 				req.AddMessage(config.produce.topic, m.Partition, &msg)
 			}
 			resp, err := broker.Produce(req)
