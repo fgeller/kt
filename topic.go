@@ -106,7 +106,7 @@ func topicParseArgs() {
 func topicRun(closer chan struct{}) {
 	var err error
 	if config.topic.verbose {
-		sarama.Logger = log.New(os.Stdout, "", log.LstdFlags)
+		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
 	client, err := sarama.NewClient(config.topic.brokers, nil)

@@ -323,7 +323,7 @@ func consumeCommand() command {
 		parseArgs: consumeParseArgs,
 		run: func(closer chan struct{}) {
 			if config.consume.verbose {
-				sarama.Logger = log.New(os.Stdout, "", log.LstdFlags)
+				sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 			}
 			consumer, err := sarama.NewConsumer(config.consume.brokers, nil)
 			if err != nil {
