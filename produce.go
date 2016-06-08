@@ -151,6 +151,73 @@ func produceParseArgs() {
 	config.produce.verbose = config.produce.args.verbose
 }
 
+func mustFindLeaders() map[int32]*sarama.Broker {
+	topic := config.produce.topic
+	conf := sarama.NewConfig()
+	conf.Producer.RequiredAcks = sarama.WaitForAll
+	metaReq := sarama.MetadataRequest{[]string{topic}}
+
+tryingBrokers:
+	for _, brokerString := range config.produce.brokers {
+		broker := sarama.NewBroker(brokerString)
+		err := broker.Open(conf)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", brokerString, err)
+			continue tryingBrokers
+		}
+		if connected, err := broker.Connected(); !connected || err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", brokerString, err)
+			continue tryingBrokers
+		}
+
+		metaResp, err := broker.GetMetadata(&metaReq)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get metadata from [%v]. err=%v\n", brokerString, err)
+			continue tryingBrokers
+		}
+
+		brokers := map[int32]*sarama.Broker{}
+		for _, b := range metaResp.Brokers {
+			brokers[b.ID()] = b
+		}
+
+		for _, tm := range metaResp.Topics {
+			if tm.Name == topic {
+				if tm.Err != sarama.ErrNoError {
+					fmt.Fprintf(os.Stderr, "Failed to get metadata from %v. err=%v\n", brokerString, tm.Err)
+					continue tryingBrokers
+				}
+
+				bs := map[int32]*sarama.Broker{}
+				for _, pm := range tm.Partitions {
+					b, ok := brokers[pm.Leader]
+					if !ok {
+						fmt.Fprintf(os.Stderr, "Failed to find leader in broker response, giving up.\n")
+						os.Exit(1)
+					}
+
+					err := b.Open(conf)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
+						os.Exit(1)
+					}
+					if connected, err := broker.Connected(); !connected || err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
+						os.Exit(1)
+					}
+
+					bs[pm.ID] = b
+				}
+				return bs
+			}
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "Failed to find leader for given topic.\n")
+	os.Exit(1)
+	return nil
+}
+
 func produceCommand() command {
 	return command{
 		flags:     produceFlags(),
@@ -159,23 +226,12 @@ func produceCommand() command {
 			if config.produce.verbose {
 				sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 			}
-
-			broker := sarama.NewBroker(config.produce.brokers[0])
-			conf := sarama.NewConfig()
-			conf.Producer.RequiredAcks = sarama.WaitForAll
-			err := broker.Open(conf)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
-				os.Exit(1)
-			}
-			if connected, err := broker.Connected(); !connected || err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
-				os.Exit(1)
-			}
-
+			leaders := mustFindLeaders()
 			defer func() {
-				if err := broker.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
+				for _, b := range leaders {
+					if err := b.Close(); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
+					}
 				}
 			}()
 
@@ -189,7 +245,7 @@ func produceCommand() command {
 			go readInput(&wg, closer, stdin, lines)
 			go deserializeLines(&wg, lines, messages)
 			go batchRecords(&wg, messages, batchedMessages)
-			go produce(&wg, broker, batchedMessages)
+			go produce(&wg, leaders, batchedMessages)
 
 			wg.Wait()
 		},
@@ -267,60 +323,72 @@ func (m message) asSaramaMessage() *sarama.Message {
 	return &msg
 }
 
-func produceBatch(broker *sarama.Broker, batch []message) error {
-	req := &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 1000}
-	partitions := []int32{}
-	for _, m := range batch {
-		msg := m.asSaramaMessage()
-		partitions = append(partitions, m.Partition)
-		req.AddMessage(config.produce.topic, m.Partition, msg)
-	}
-	resp, err := broker.Produce(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to send message. err=%s\n", err)
-		return err
+func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
+	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
+	for _, msg := range batch {
+		broker, ok := leaders[msg.Partition]
+		if !ok {
+			err := fmt.Errorf("Non-configured partition %v", msg.Partition)
+			fmt.Fprintf(os.Stderr, "%v.\n", err)
+			return err
+		}
+		req, ok := requests[broker]
+		if !ok {
+			req = &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 1000}
+			requests[broker] = req
+		}
+
+		req.AddMessage(config.produce.topic, msg.Partition, msg.asSaramaMessage())
 	}
 
-	offsets, err := readPartitionOffsetResults(resp, partitions)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read producer response. err=%s\n", err)
-		return err
-	}
+	for broker, req := range requests {
+		resp, err := broker.Produce(req)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to send request to broker. err=%s\n", broker, err)
+			return err
+		}
 
-	for p, o := range offsets {
-		fmt.Fprintf(
-			os.Stdout,
-			`{"partition": %v, "startOffset": %v, "count": %v}
+		offsets, err := readPartitionOffsetResults(resp)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read producer response. err=%s\n", err)
+			return err
+		}
+
+		for p, o := range offsets {
+			fmt.Fprintf(
+				os.Stdout,
+				`{"partition": %v, "startOffset": %v, "count": %v}
 `,
-			p,
-			o.start,
-			o.count,
-		)
+				p,
+				o.start,
+				o.count,
+			)
+		}
 	}
 
 	return nil
 }
 
-func readPartitionOffsetResults(resp *sarama.ProduceResponse, partitions []int32) (map[int32]partitionProduceResult, error) {
+func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partitionProduceResult, error) {
 	offsets := map[int32]partitionProduceResult{}
-	for _, p := range partitions {
-		block := resp.GetBlock(config.produce.topic, p)
-		if block.Err != sarama.ErrNoError {
-			fmt.Fprintf(os.Stderr, "Failed to send message. err=%s\n", block.Err.Error())
-			return offsets, block.Err
-		}
+	for _, blocks := range resp.Blocks {
+		for partition, block := range blocks {
+			if block.Err != sarama.ErrNoError {
+				fmt.Fprintf(os.Stderr, "Failed to send message. err=%s\n", block.Err.Error())
+				return offsets, block.Err
+			}
 
-		if r, ok := offsets[p]; ok {
-			offsets[p] = partitionProduceResult{start: block.Offset, count: r.count + 1}
-		} else {
-			offsets[p] = partitionProduceResult{start: block.Offset, count: 1}
+			if r, ok := offsets[partition]; ok {
+				offsets[partition] = partitionProduceResult{start: block.Offset, count: r.count + 1}
+			} else {
+				offsets[partition] = partitionProduceResult{start: block.Offset, count: 1}
+			}
 		}
 	}
-
 	return offsets, nil
 }
 
-func produce(wg *sync.WaitGroup, broker *sarama.Broker, in chan []message) {
+func produce(wg *sync.WaitGroup, leaders map[int32]*sarama.Broker, in chan []message) {
 	defer wg.Done()
 
 	for {
@@ -329,7 +397,7 @@ func produce(wg *sync.WaitGroup, broker *sarama.Broker, in chan []message) {
 			if !ok {
 				return
 			}
-			if err := produceBatch(broker, b); err != nil {
+			if err := produceBatch(leaders, b); err != nil {
 				return
 			}
 		}
