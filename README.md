@@ -73,6 +73,6 @@ Consume all message on the topic `output` and use [jq](https://github.com/stedol
 to find the messages that have a negative `success` flag.
 
     $ kt consume -topic output -timeout 100ms | jq -M -c '.message |= fromjson | select(.message.success == false)'
-    {"partition":0,"offset":1,"key":"client-1","message":{"success":false,"ts":"2016-04-01T07:09:14,729303000+13:00"}}
-    {"partition":0,"offset":3,"key":"client-1","message":{"success":false,"ts":"2016-04-01T07:09:14,762924000+13:00"}}
+    {"partition":0,"offset":1,"key":"client-1","value":{"success":false,"ts":"2016-04-01T07:09:14,729303000+13:00"}}
+    {"partition":0,"offset":3,"key":"client-1","value":{"success":false,"ts":"2016-04-01T07:09:14,762924000+13:00"}}
     2016/04/01 07:12:27 Consuming from partition [0] timed out.
