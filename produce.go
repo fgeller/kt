@@ -157,7 +157,7 @@ func produceCommand() command {
 		parseArgs: produceParseArgs,
 		run: func(closer chan struct{}) {
 			if config.produce.verbose {
-				sarama.Logger = log.New(os.Stdout, "", log.LstdFlags)
+				sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 			}
 
 			broker := sarama.NewBroker(config.produce.brokers[0])
