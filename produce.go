@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -178,36 +179,53 @@ func produceCommand() command {
 				}
 			}()
 
-			stdinLines := make(chan string)
+			stdin := make(chan string)
+			lines := make(chan string)
 			messages := make(chan message)
 			batchedMessages := make(chan []message)
-			go readStdinLines(closer, stdinLines)
-			go batchRecords(closer, messages, batchedMessages)
-			go produce(closer, broker, batchedMessages)
+			go readStdinLines(stdin)
+			var wg sync.WaitGroup
+			wg.Add(4)
+			go readInput(&wg, closer, stdin, lines)
+			go deserializeLines(&wg, lines, messages)
+			go batchRecords(&wg, messages, batchedMessages)
+			go produce(&wg, broker, batchedMessages)
 
-			for {
-				select {
-				case _, ok := <-closer:
-					if !ok {
-						return
-					}
-				case l := <-stdinLines:
-					var in message
-					err := json.Unmarshal([]byte(l), &in)
-					if err != nil {
-						if config.produce.verbose {
-							fmt.Printf("Failed to unmarshal input, falling back to defaults. err=%v\n", err)
-						}
-						in = message{Key: &l, Value: &l, Partition: 0}
-					}
-					messages <- in
-				}
-			}
+			wg.Wait()
 		},
 	}
 }
 
-func batchRecords(closer chan struct{}, in chan message, out chan []message) {
+func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message) {
+	defer func() {
+		close(out)
+		wg.Done()
+	}()
+
+	for {
+		select {
+		case l, ok := <-in:
+			if !ok {
+				return
+			}
+			var msg message
+			if err := json.Unmarshal([]byte(l), &msg); err != nil {
+				if config.produce.verbose {
+					fmt.Printf("Failed to unmarshal input, falling back to defaults. err=%v\n", err)
+				}
+				msg = message{Key: &l, Value: &l, Partition: 0}
+			}
+			out <- msg
+		}
+	}
+}
+
+func batchRecords(wg *sync.WaitGroup, in chan message, out chan []message) {
+	defer func() {
+		close(out)
+		wg.Done()
+	}()
+
 	messages := []message{}
 	send := func() {
 		out <- messages
@@ -216,12 +234,11 @@ func batchRecords(closer chan struct{}, in chan message, out chan []message) {
 
 	for {
 		select {
-		case _, ok := <-closer:
+		case m, ok := <-in:
 			if !ok {
-				fmt.Fprintf(os.Stderr, "Stopping, discarding %v messages.\n", len(messages))
 				return
 			}
-		case m := <-in:
+
 			messages = append(messages, m)
 			if len(messages) > 0 && len(messages) >= config.produce.batch {
 				send()
@@ -239,69 +256,109 @@ type partitionProduceResult struct {
 	count int64
 }
 
-func produce(closer chan struct{}, broker *sarama.Broker, in chan []message) {
+func (m message) asSaramaMessage() *sarama.Message {
+	msg := sarama.Message{Codec: sarama.CompressionNone}
+	if m.Key != nil {
+		msg.Key = []byte(*m.Key)
+	}
+	if m.Value != nil {
+		msg.Value = []byte(*m.Value)
+	}
+	return &msg
+}
+
+func produceBatch(broker *sarama.Broker, batch []message) error {
+	req := &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 1000}
+	partitions := []int32{}
+	for _, m := range batch {
+		msg := m.asSaramaMessage()
+		partitions = append(partitions, m.Partition)
+		req.AddMessage(config.produce.topic, m.Partition, msg)
+	}
+	resp, err := broker.Produce(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to send message. err=%s\n", err)
+		return err
+	}
+
+	offsets, err := readPartitionOffsetResults(resp, partitions)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read producer response. err=%s\n", err)
+		return err
+	}
+
+	for p, o := range offsets {
+		fmt.Fprintf(
+			os.Stdout,
+			`{"partition": %v, "startOffset": %v, "count": %v}
+`,
+			p,
+			o.start,
+			o.count,
+		)
+	}
+
+	return nil
+}
+
+func readPartitionOffsetResults(resp *sarama.ProduceResponse, partitions []int32) (map[int32]partitionProduceResult, error) {
+	offsets := map[int32]partitionProduceResult{}
+	for _, p := range partitions {
+		block := resp.GetBlock(config.produce.topic, p)
+		if block.Err != sarama.ErrNoError {
+			fmt.Fprintf(os.Stderr, "Failed to send message. err=%s\n", block.Err.Error())
+			return offsets, block.Err
+		}
+
+		if r, ok := offsets[p]; ok {
+			offsets[p] = partitionProduceResult{start: block.Offset, count: r.count + 1}
+		} else {
+			offsets[p] = partitionProduceResult{start: block.Offset, count: 1}
+		}
+	}
+
+	return offsets, nil
+}
+
+func produce(wg *sync.WaitGroup, broker *sarama.Broker, in chan []message) {
+	defer wg.Done()
+
 	for {
 		select {
-		case _, ok := <-closer:
+		case b, ok := <-in:
 			if !ok {
 				return
 			}
-		case batch := <-in:
-			req := &sarama.ProduceRequest{
-				RequiredAcks: sarama.WaitForAll,
-				Timeout:      1000,
-			}
-			for _, m := range batch {
-				msg := sarama.Message{Codec: sarama.CompressionNone}
-				if m.Key != nil {
-					msg.Key = []byte(*m.Key)
-				}
-				if m.Value != nil {
-					msg.Value = []byte(*m.Value)
-				}
-
-				req.AddMessage(config.produce.topic, m.Partition, &msg)
-			}
-			resp, err := broker.Produce(req)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to send message, quitting. err=%s\n", err)
+			if err := produceBatch(broker, b); err != nil {
 				return
-			}
-
-			offsets := map[int32]partitionProduceResult{}
-			for _, m := range batch {
-				block := resp.GetBlock(config.produce.topic, m.Partition)
-				if block.Err != sarama.ErrNoError {
-					fmt.Fprintf(os.Stderr, "Failed to send message, quitting. err=%s\n", block.Err.Error())
-					return
-				}
-
-				if r, ok := offsets[m.Partition]; ok {
-					offsets[m.Partition] = partitionProduceResult{start: block.Offset, count: r.count + 1}
-				} else {
-					offsets[m.Partition] = partitionProduceResult{start: block.Offset, count: 1}
-				}
-			}
-
-			for p, o := range offsets {
-				fmt.Fprintf(
-					os.Stdout,
-					`{"partition": %v, "startOffset": %v, "count": %v}
-`,
-					p,
-					o.start,
-					o.count,
-				)
 			}
 		}
 	}
 }
 
-func readStdinLines(stop chan struct{}, out chan string) {
+func readStdinLines(out chan string) {
+	defer close(out)
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		line := scanner.Text()
-		out <- line
+		out <- scanner.Text()
 	}
-	close(stop)
+}
+
+func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out chan string) {
+	defer func() {
+		close(out)
+		wg.Done()
+	}()
+
+	for {
+		select {
+		case l, ok := <-stdin:
+			if !ok {
+				return
+			}
+			out <- l
+		case <-signals:
+			return
+		}
+	}
 }
