@@ -40,6 +40,10 @@ func TestHashCode(t *testing.T) {
 			in:       "c03a3475-3ed6-4ed1-8ae5-1c432da43e73",
 			expected: 1116730239,
 		},
+		{
+			in:       "random",
+			expected: -938285885,
+		},
 	}
 
 	for _, d := range data {
