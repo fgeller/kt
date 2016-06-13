@@ -436,18 +436,9 @@ func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out
 //
 // TODO: utf16 vs utf8
 func hashCode(s string) int32 {
-	var hc, n int32
-	for range s {
-		n++
-	}
-
-	for i, r := range s {
-		var p int32 = 1
-		for j := i + 1; j < int(n); j++ {
-			p *= 31
-		}
-
-		hc += r * p
+	var hc int32
+	for _, r := range s {
+		hc = hc*31 + r
 	}
 
 	return hc
