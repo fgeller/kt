@@ -430,3 +430,25 @@ func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out
 		}
 	}
 }
+
+// hashCode imitates the behavior of the JDK's Object#hashCode method.
+// https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
+//
+// TODO: utf16 vs utf8
+func hashCode(s string) int32 {
+	var hc, n int32
+	for range s {
+		n++
+	}
+
+	for i, r := range s {
+		var p int32 = 1
+		for j := i + 1; j < int(n); j++ {
+			p *= 31
+		}
+
+		hc += r * p
+	}
+
+	return hc
+}

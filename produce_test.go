@@ -6,6 +6,46 @@ import (
 	"testing"
 )
 
+func TestHashCode(t *testing.T) {
+
+	data := []struct {
+		in       string
+		expected int32
+	}{
+		{
+			in:       "",
+			expected: 0,
+		},
+		{
+			in:       "a",
+			expected: 97,
+		},
+		{
+			in:       "b",
+			expected: 98,
+		},
+		{
+			in:       "⌘",
+			expected: 8984,
+		},
+		{
+			in:       "hashCode",
+			expected: 147696667,
+		},
+		{
+			in:       "c03a3475-3ed6-4ed1-8ae5-1c432da43e73",
+			expected: 1116730239,
+		},
+	}
+
+	for _, d := range data {
+		actual := hashCode(d.in)
+		if actual != d.expected {
+			t.Errorf("expected %v but found %v\n", d.expected, actual)
+		}
+	}
+}
+
 func TestProduceParseArgs(t *testing.T) {
 	configBefore := config
 	defer func() {
