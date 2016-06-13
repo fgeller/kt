@@ -435,11 +435,9 @@ func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out
 // https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
 //
 // TODO: utf16 vs utf8
-func hashCode(s string) int32 {
-	var hc int32
+func hashCode(s string) (hc int32) {
 	for _, r := range s {
 		hc = hc*31 + r
 	}
-
-	return hc
+	return
 }
