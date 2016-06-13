@@ -29,6 +29,10 @@ func TestHashCode(t *testing.T) {
 			expected: 8984,
 		},
 		{
+			in:       "😼", //non-bmp character, 4bytes in utf16
+			expected: 1772959,
+		},
+		{
 			in:       "hashCode",
 			expected: 147696667,
 		},

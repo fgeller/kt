@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/Shopify/sarama"
 )
@@ -434,10 +435,16 @@ func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out
 // hashCode imitates the behavior of the JDK's String#hashCode method.
 // https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
 //
-// TODO: utf16 vs utf8
+// As strings are encoded in utf16 on the JVM, this implementation checks wether
+// s contains non-bmp runes and uses utf16 surrogate pairs for those.
 func hashCode(s string) (hc int32) {
 	for _, r := range s {
-		hc = hc*31 + r
+		r1, r2 := utf16.EncodeRune(r)
+		if r1 == 0xfffd && r1 == r2 {
+			hc = hc*31 + r
+		} else {
+			hc = (hc*31+r1)*31 + r2
+		}
 	}
 	return
 }
