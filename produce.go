@@ -448,3 +448,22 @@ func hashCode(s string) (hc int32) {
 	}
 	return
 }
+
+func kafkaAbs(i int32) int32 {
+	switch {
+	case i == -2147483648: // Integer.MIN_VALUE
+		return 0
+	case i < 0:
+		return i * -1
+	default:
+		return i
+	}
+}
+
+func hashCodePartition(key string, partitions int32) int32 {
+	if partitions <= 0 {
+		return -1
+	}
+
+	return kafkaAbs(hashCode(key)) % partitions
+}

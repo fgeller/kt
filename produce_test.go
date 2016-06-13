@@ -54,6 +54,68 @@ func TestHashCode(t *testing.T) {
 	}
 }
 
+func TestHashCodePartition(t *testing.T) {
+
+	data := []struct {
+		key        string
+		partitions int32
+		expected   int32
+	}{
+		{
+			key:        "",
+			partitions: 0,
+			expected:   -1,
+		},
+		{
+			key:        "",
+			partitions: 1,
+			expected:   0,
+		},
+		{
+			key:        "super-duper-key",
+			partitions: 1,
+			expected:   0,
+		},
+		{
+			key:        "",
+			partitions: 1,
+			expected:   0,
+		},
+		{
+			key:        "",
+			partitions: 2,
+			expected:   0,
+		},
+		{
+			key:        "a",
+			partitions: 2,
+			expected:   1,
+		},
+		{
+			key:        "b",
+			partitions: 2,
+			expected:   0,
+		},
+		{
+			key:        "random",
+			partitions: 2,
+			expected:   1,
+		},
+		{
+			key:        "random",
+			partitions: 5,
+			expected:   0,
+		},
+	}
+
+	for _, d := range data {
+		actual := hashCodePartition(d.key, d.partitions)
+		if actual != d.expected {
+			t.Errorf("expected %v but found %v for key %#v and %v partitions\n", d.expected, actual, d.key, d.partitions)
+		}
+	}
+}
+
 func TestProduceParseArgs(t *testing.T) {
 	configBefore := config
 	defer func() {
