@@ -16,24 +16,26 @@ import (
 )
 
 type produceConfig struct {
-	topic   string
-	brokers []string
-	batch   int
-	timeout time.Duration
-	verbose bool
-	args    struct {
-		topic   string
-		brokers string
-		batch   int
-		timeout time.Duration
-		verbose bool
+	topic       string
+	brokers     []string
+	batch       int
+	timeout     time.Duration
+	verbose     bool
+	partitioner string
+	args        struct {
+		topic       string
+		brokers     string
+		batch       int
+		timeout     time.Duration
+		verbose     bool
+		partitioner string
 	}
 }
 
 type message struct {
 	Key       *string `json:"key"`
 	Value     *string `json:"value"`
-	Partition int32   `json:"partition"`
+	Partition *int32  `json:"partition"`
 }
 
 func produceFlags() *flag.FlagSet {
@@ -67,6 +69,12 @@ func produceFlags() *flag.FlagSet {
 		"verbose",
 		false,
 		"Verbose output",
+	)
+	flags.StringVar(
+		&config.produce.args.partitioner,
+		"partitioner",
+		"",
+		"Optional partitioner to use. Available: hashCode",
 	)
 
 	flags.Usage = func() {
@@ -244,7 +252,7 @@ func produceCommand() command {
 			var wg sync.WaitGroup
 			wg.Add(4)
 			go readInput(&wg, closer, stdin, lines)
-			go deserializeLines(&wg, lines, messages)
+			go deserializeLines(&wg, lines, messages, int32(len(leaders)))
 			go batchRecords(&wg, messages, batchedMessages)
 			go produce(&wg, leaders, batchedMessages)
 
@@ -253,7 +261,7 @@ func produceCommand() command {
 	}
 }
 
-func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message) {
+func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message, partitionCount int32) {
 	defer func() {
 		close(out)
 		wg.Done()
@@ -268,10 +276,23 @@ func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message) {
 			var msg message
 			if err := json.Unmarshal([]byte(l), &msg); err != nil {
 				if config.produce.verbose {
-					fmt.Printf("Failed to unmarshal input, falling back to defaults. err=%v\n", err)
+					fmt.Printf("Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
 				}
-				msg = message{Key: &l, Value: &l, Partition: 0}
+				var v *string = &l
+				if len(l) == 0 {
+					v = nil
+				}
+				msg = message{Key: nil, Value: v}
 			}
+
+			var p int32 = 0
+			if msg.Key != nil && config.produce.partitioner == "hashCode" {
+				p = hashCodePartition(*msg.Key, partitionCount)
+			}
+			if msg.Partition == nil {
+				msg.Partition = &p
+			}
+
 			out <- msg
 		}
 	}
@@ -327,9 +348,9 @@ func (m message) asSaramaMessage() *sarama.Message {
 func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
-		broker, ok := leaders[msg.Partition]
+		broker, ok := leaders[*msg.Partition]
 		if !ok {
-			err := fmt.Errorf("Non-configured partition %v", msg.Partition)
+			err := fmt.Errorf("Non-configured partition %v", *msg.Partition)
 			fmt.Fprintf(os.Stderr, "%v.\n", err)
 			return err
 		}
@@ -339,7 +360,7 @@ func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 			requests[broker] = req
 		}
 
-		req.AddMessage(config.produce.topic, msg.Partition, msg.asSaramaMessage())
+		req.AddMessage(config.produce.topic, *msg.Partition, msg.asSaramaMessage())
 	}
 
 	for broker, req := range requests {

@@ -3,7 +3,9 @@ package main
 import (
 	"os"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestHashCode(t *testing.T) {
@@ -182,5 +184,70 @@ func TestProduceParseArgs(t *testing.T) {
 			config.produce.brokers,
 		)
 		return
+	}
+}
+
+func newMessage(key, value string, partition int32) message {
+	var k *string
+	if key != "" {
+		k = &key
+	}
+
+	var v *string
+	if value != "" {
+		v = &value
+	}
+
+	return message{
+		Key:       k,
+		Value:     v,
+		Partition: &partition,
+	}
+}
+
+func TestDeserializeLines(t *testing.T) {
+	config.produce.partitioner = "hashCode"
+	data := []struct {
+		in             string
+		partitionCount int32
+		expected       message
+	}{
+		{
+			in:             "",
+			partitionCount: 1,
+			expected:       newMessage("", "", 0),
+		},
+		{
+			in:             `{"key":"hans","value":"123"}`,
+			partitionCount: 4,
+			expected:       newMessage("hans", "123", hashCodePartition("hans", 4)),
+		},
+		{
+			in:             `{"key":"hans","value":"123","partition":1}`,
+			partitionCount: 3,
+			expected:       newMessage("hans", "123", 1),
+		},
+		{
+			in:             `so lange schon`,
+			partitionCount: 3,
+			expected:       newMessage("", "so lange schon", 0),
+		},
+	}
+
+	for _, d := range data {
+		var wg sync.WaitGroup
+		in := make(chan string, 1)
+		out := make(chan message)
+		go deserializeLines(&wg, in, out, d.partitionCount)
+		in <- d.in
+
+		select {
+		case <-time.After(50 * time.Millisecond):
+			t.Errorf("did not receive output in time")
+		case actual := <-out:
+			if !reflect.DeepEqual(d.expected, actual) {
+				t.Errorf("\nexpected %#v\nactual   %#v", d.expected, actual)
+			}
+		}
 	}
 }
