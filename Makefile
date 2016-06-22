@@ -1,7 +1,8 @@
 export SHELL:=/usr/bin/env bash -O extglob -c
 export GO15VENDOREXPERIMENT:=1
+export OS=$(shell uname | tr '[:upper:]' '[:lower:]')
 
-build: GOOS ?= darwin
+build: GOOS ?= ${OS}
 build: GOARCH ?= amd64
 build: test
 	rm -f kt
