@@ -21,6 +21,7 @@ type produceConfig struct {
 	batch       int
 	timeout     time.Duration
 	verbose     bool
+	literal     bool
 	partitioner string
 	args        struct {
 		topic       string
@@ -28,6 +29,7 @@ type produceConfig struct {
 		batch       int
 		timeout     time.Duration
 		verbose     bool
+		literal     bool
 		partitioner string
 	}
 }
@@ -69,6 +71,12 @@ func produceFlags() *flag.FlagSet {
 		"verbose",
 		false,
 		"Verbose output",
+	)
+	flags.BoolVar(
+		&config.produce.args.literal,
+		"literal",
+		false,
+		"Interpret stdin line literally and pass it as value, key as null.",
 	)
 	flags.StringVar(
 		&config.produce.args.partitioner,
@@ -158,6 +166,7 @@ func produceParseArgs() {
 	config.produce.batch = config.produce.args.batch
 	config.produce.timeout = config.produce.args.timeout
 	config.produce.verbose = config.produce.args.verbose
+	config.produce.literal = config.produce.args.literal
 }
 
 func mustFindLeaders() map[int32]*sarama.Broker {
@@ -274,15 +283,21 @@ func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message, part
 				return
 			}
 			var msg message
-			if err := json.Unmarshal([]byte(l), &msg); err != nil {
-				if config.produce.verbose {
-					fmt.Printf("Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
+
+			switch {
+			case config.produce.literal:
+				msg.Value = &l
+			default:
+				if err := json.Unmarshal([]byte(l), &msg); err != nil {
+					if config.produce.verbose {
+						fmt.Printf("Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
+					}
+					var v *string = &l
+					if len(l) == 0 {
+						v = nil
+					}
+					msg = message{Key: nil, Value: v}
 				}
-				var v *string = &l
-				if len(l) == 0 {
-					v = nil
-				}
-				msg = message{Key: nil, Value: v}
 			}
 
 			var p int32 = 0

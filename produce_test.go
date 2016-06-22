@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 func TestHashCode(t *testing.T) {
@@ -209,26 +211,37 @@ func TestDeserializeLines(t *testing.T) {
 	config.produce.partitioner = "hashCode"
 	data := []struct {
 		in             string
+		literal        bool
 		partitionCount int32
 		expected       message
 	}{
 		{
 			in:             "",
+			literal:        false,
 			partitionCount: 1,
 			expected:       newMessage("", "", 0),
 		},
 		{
 			in:             `{"key":"hans","value":"123"}`,
+			literal:        false,
 			partitionCount: 4,
 			expected:       newMessage("hans", "123", hashCodePartition("hans", 4)),
 		},
 		{
 			in:             `{"key":"hans","value":"123","partition":1}`,
+			literal:        false,
 			partitionCount: 3,
 			expected:       newMessage("hans", "123", 1),
 		},
 		{
+			in:             `{"other":"json","values":"avail"}`,
+			literal:        true,
+			partitionCount: 4,
+			expected:       newMessage("", `{"other":"json","values":"avail"}`, 0),
+		},
+		{
 			in:             `so lange schon`,
+			literal:        false,
 			partitionCount: 3,
 			expected:       newMessage("", "so lange schon", 0),
 		},
@@ -238,6 +251,7 @@ func TestDeserializeLines(t *testing.T) {
 		var wg sync.WaitGroup
 		in := make(chan string, 1)
 		out := make(chan message)
+		config.produce.literal = d.literal
 		go deserializeLines(&wg, in, out, d.partitionCount)
 		in <- d.in
 
@@ -245,8 +259,8 @@ func TestDeserializeLines(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 			t.Errorf("did not receive output in time")
 		case actual := <-out:
-			if !reflect.DeepEqual(d.expected, actual) {
-				t.Errorf("\nexpected %#v\nactual   %#v", d.expected, actual)
+			if !(reflect.DeepEqual(d.expected, actual)) {
+				t.Errorf(spew.Sprintf("\nexpected %#v\nactual   %#v", d.expected, actual))
 			}
 		}
 	}
