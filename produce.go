@@ -329,6 +329,7 @@ func batchRecords(wg *sync.WaitGroup, in chan message, out chan []message) {
 		select {
 		case m, ok := <-in:
 			if !ok {
+				send()
 				return
 			}
 
