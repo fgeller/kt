@@ -58,12 +58,14 @@ type consumeConfig struct {
 	offsets map[int32]interval
 	timeout time.Duration
 	verbose bool
+	version sarama.KafkaVersion
 	args    struct {
 		topic   string
 		brokers string
 		timeout time.Duration
 		offsets string
 		verbose bool
+		version string
 	}
 }
 
@@ -188,6 +190,7 @@ func consumeParseArgs() {
 	}
 	config.consume.topic = config.consume.args.topic
 	config.consume.verbose = config.consume.args.verbose
+	config.consume.version = kafkaVersion(config.consume.args.version)
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if config.consume.args.brokers == "" {
@@ -215,8 +218,9 @@ func consumeFlags() *flag.FlagSet {
 	flags.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&config.consume.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
-	flags.DurationVar(&config.consume.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
-	flags.BoolVar(&config.consume.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.DurationVar(&config.consume.args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+	flags.BoolVar(&config.consume.args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.StringVar(&config.consume.args.version, "version", "", "Kafka protocol version")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -344,7 +348,9 @@ func consumeCommand() command {
 }
 
 func clientMaker() sarama.Client {
-	client, err := sarama.NewClient(config.consume.brokers, nil)
+	conf := sarama.NewConfig()
+	conf.Version = config.consume.version
+	client, err := sarama.NewClient(config.consume.brokers, conf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
 		os.Exit(1)

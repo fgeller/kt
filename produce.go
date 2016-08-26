@@ -21,6 +21,7 @@ type produceConfig struct {
 	batch       int
 	timeout     time.Duration
 	verbose     bool
+	version     sarama.KafkaVersion
 	literal     bool
 	partitioner string
 	args        struct {
@@ -29,6 +30,7 @@ type produceConfig struct {
 		batch       int
 		timeout     time.Duration
 		verbose     bool
+		version     string
 		literal     bool
 		partitioner string
 	}
@@ -78,6 +80,7 @@ func produceFlags() *flag.FlagSet {
 		false,
 		"Interpret stdin line literally and pass it as value, key as null.",
 	)
+	flags.StringVar(&config.produce.args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(
 		&config.produce.args.partitioner,
 		"partitioner",
@@ -167,11 +170,13 @@ func produceParseArgs() {
 	config.produce.timeout = config.produce.args.timeout
 	config.produce.verbose = config.produce.args.verbose
 	config.produce.literal = config.produce.args.literal
+	config.produce.version = kafkaVersion(config.produce.args.version)
 }
 
 func mustFindLeaders() map[int32]*sarama.Broker {
 	topic := config.produce.topic
 	conf := sarama.NewConfig()
+	conf.Version = config.produce.version
 	conf.Producer.RequiredAcks = sarama.WaitForAll
 	metaReq := sarama.MetadataRequest{[]string{topic}}
 

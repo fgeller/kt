@@ -21,6 +21,7 @@ type topicConfig struct {
 	leaders    bool
 	replicas   bool
 	verbose    bool
+	version    sarama.KafkaVersion
 	args       struct {
 		brokers    string
 		filter     string
@@ -28,6 +29,7 @@ type topicConfig struct {
 		leaders    bool
 		replicas   bool
 		verbose    bool
+		version    string
 	}
 }
 
@@ -60,6 +62,7 @@ func topicFlags() *flag.FlagSet {
 	topic.BoolVar(&config.topic.args.replicas, "replicas", false, "Include replica ids per partition.")
 	topic.StringVar(&config.topic.args.filter, "filter", "", "Regex to filter topics by name.")
 	topic.BoolVar(&config.topic.args.verbose, "verbose", false, "More verbose logging to stderr.")
+	topic.StringVar(&config.topic.args.version, "version", "", "Kafka protocol version")
 
 	topic.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
@@ -92,7 +95,7 @@ func topicParseArgs() {
 
 	re, err := regexp.Compile(config.topic.args.filter)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Invalid regex for filter. err=%s", err)
+		fmt.Fprintf(os.Stderr, "Invalid regex for filter. err=%s\n", err)
 		os.Exit(2)
 	}
 
@@ -101,6 +104,7 @@ func topicParseArgs() {
 	config.topic.leaders = config.topic.args.leaders
 	config.topic.replicas = config.topic.args.replicas
 	config.topic.verbose = config.topic.args.verbose
+	config.topic.version = kafkaVersion(config.topic.args.version)
 }
 
 func topicRun(closer chan struct{}) {
@@ -109,7 +113,9 @@ func topicRun(closer chan struct{}) {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	client, err := sarama.NewClient(config.topic.brokers, nil)
+	conf := sarama.NewConfig()
+	conf.Version = config.topic.version
+	client, err := sarama.NewClient(config.topic.brokers, conf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
 		os.Exit(1)
