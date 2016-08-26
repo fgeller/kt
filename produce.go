@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"strings"
 	"sync"
 	"time"
@@ -176,8 +177,16 @@ func produceParseArgs() {
 func mustFindLeaders() map[int32]*sarama.Broker {
 	topic := config.produce.topic
 	conf := sarama.NewConfig()
-	conf.Version = config.produce.version
 	conf.Producer.RequiredAcks = sarama.WaitForAll
+	conf.Version = config.produce.version
+	u, err := user.Current()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	conf.ClientID = "kt-produce-" + u.Username
+	if config.produce.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+	}
 	metaReq := sarama.MetadataRequest{[]string{topic}}
 
 tryingBrokers:

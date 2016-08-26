@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"regexp"
 	"strings"
 	"sync"
@@ -115,6 +116,15 @@ func topicRun(closer chan struct{}) {
 
 	conf := sarama.NewConfig()
 	conf.Version = config.topic.version
+	u, err := user.Current()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	conf.ClientID = "kt-topic-" + u.Username
+	if config.topic.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+	}
+
 	client, err := sarama.NewClient(config.topic.brokers, conf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)

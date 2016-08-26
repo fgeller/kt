@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"regexp"
 	"strconv"
 	"strings"
@@ -350,6 +351,14 @@ func consumeCommand() command {
 func clientMaker() sarama.Client {
 	conf := sarama.NewConfig()
 	conf.Version = config.consume.version
+	u, err := user.Current()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	conf.ClientID = "kt-consume-" + u.Username
+	if config.consume.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+	}
 	client, err := sarama.NewClient(config.consume.brokers, conf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
