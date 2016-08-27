@@ -330,7 +330,19 @@ func consumeCommand() command {
 			if config.consume.verbose {
 				sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 			}
-			consumer, err := sarama.NewConsumer(config.consume.brokers, nil)
+
+			conf := sarama.NewConfig()
+			conf.Version = config.consume.version
+			u, err := user.Current()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+			}
+			conf.ClientID = "kt-consume-" + u.Username
+			if config.consume.verbose {
+				fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+			}
+
+			consumer, err := sarama.NewConsumer(config.consume.brokers, conf)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
 				os.Exit(1)
