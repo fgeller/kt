@@ -386,7 +386,7 @@ func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 		}
 		req, ok := requests[broker]
 		if !ok {
-			req = &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 1000}
+			req = &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 10000}
 			requests[broker] = req
 		}
 
@@ -396,7 +396,7 @@ func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 	for broker, req := range requests {
 		resp, err := broker.Produce(req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to send request to broker. err=%s\n", broker, err)
+			fmt.Fprintf(os.Stderr, "Failed to send request to broker %#v. err=%s\n", broker, err)
 			return err
 		}
 
