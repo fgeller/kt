@@ -229,7 +229,7 @@ tryingBrokers:
 					}
 
 					err := b.Open(conf)
-					if err != nil {
+					if err != nil && err != sarama.ErrAlreadyConnected {
 						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
 						os.Exit(1)
 					}
