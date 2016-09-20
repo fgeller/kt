@@ -233,7 +233,7 @@ tryingBrokers:
 						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
 						os.Exit(1)
 					}
-					if connected, err := broker.Connected(); !connected || err != nil {
+					if connected, err := broker.Connected(); !connected && err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
 						os.Exit(1)
 					}
