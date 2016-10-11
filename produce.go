@@ -270,11 +270,22 @@ func produceCommand() command {
 			leaders := mustFindLeaders()
 			defer func() {
 				for _, b := range leaders {
-					isConnected, _ := b.Connected()
-					if isConnected {
-						if err := b.Close(); err != nil {
-							fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
-						}
+					var (
+						connected bool
+						err       error
+					)
+
+					if connected, err = b.Connected(); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
+						continue
+					}
+
+					if !connected {
+						continue
+					}
+
+					if err := b.Close(); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
 					}
 				}
 			}()
