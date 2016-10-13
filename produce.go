@@ -18,6 +18,7 @@ import (
 
 type produceConfig struct {
 	topic       string
+	partition   int32
 	brokers     []string
 	batch       int
 	timeout     time.Duration
@@ -27,6 +28,7 @@ type produceConfig struct {
 	partitioner string
 	args        struct {
 		topic       string
+		partition   int
 		brokers     string
 		batch       int
 		timeout     time.Duration
@@ -50,6 +52,12 @@ func produceFlags() *flag.FlagSet {
 		"topic",
 		"",
 		"Topic to produce to (required).",
+	)
+	flags.IntVar(
+		&config.produce.args.partition,
+		"partition",
+		0,
+		"Partition to produce to (defaults to 0).",
 	)
 	flags.StringVar(
 		&config.produce.args.brokers,
@@ -171,6 +179,7 @@ func produceParseArgs() {
 	config.produce.timeout = config.produce.args.timeout
 	config.produce.verbose = config.produce.args.verbose
 	config.produce.literal = config.produce.args.literal
+	config.produce.partition = int32(config.produce.args.partition)
 	config.produce.version = kafkaVersion(config.produce.args.version)
 }
 
@@ -301,6 +310,8 @@ func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message, part
 			switch {
 			case config.produce.literal:
 				msg.Value = &l
+				msg.Partition = &config.produce.partition
+				fmt.Printf("Message: %#v", config.produce.partition)
 			default:
 				if err := json.Unmarshal([]byte(l), &msg); err != nil {
 					if config.produce.verbose {
