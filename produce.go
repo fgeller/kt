@@ -325,11 +325,10 @@ func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message, part
 			case config.produce.literal:
 				msg.Value = &l
 				msg.Partition = &config.produce.partition
-				fmt.Printf("Message: %#v", config.produce.partition)
 			default:
 				if err := json.Unmarshal([]byte(l), &msg); err != nil {
 					if config.produce.verbose {
-						fmt.Printf("Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
+						fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
 					}
 					var v *string = &l
 					if len(l) == 0 {
