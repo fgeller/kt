@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
@@ -250,12 +249,11 @@ func TestDeserializeLines(t *testing.T) {
 	}
 
 	for _, d := range data {
-		var wg sync.WaitGroup
 		in := make(chan string, 1)
 		out := make(chan message)
 		config.produce.literal = d.literal
 		config.produce.partition = d.partition
-		go deserializeLines(&wg, in, out, d.partitionCount)
+		go deserializeLines(in, out, d.partitionCount)
 		in <- d.in
 
 		select {

@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/user"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf16"
 
@@ -196,7 +195,7 @@ func mustFindLeaders() map[int32]*sarama.Broker {
 	if config.produce.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
 	}
-	metaReq := sarama.MetadataRequest{[]string{topic}}
+	metaReq := sarama.MetadataRequest{Topics: []string{topic}}
 
 tryingBrokers:
 	for _, brokerString := range config.produce.brokers {
@@ -259,59 +258,61 @@ tryingBrokers:
 	return nil
 }
 
-func produceCommand() command {
-	return command{
-		flags:     produceFlags(),
-		parseArgs: produceParseArgs,
-		run: func(closer chan struct{}) {
-			if config.produce.verbose {
-				sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
-			}
-			leaders := mustFindLeaders()
-			defer func() {
-				for _, b := range leaders {
-					var (
-						connected bool
-						err       error
-					)
+type produceCmd struct {
+	leaders map[int32]*sarama.Broker
+}
 
-					if connected, err = b.Connected(); err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
-						continue
-					}
+func (c *produceCmd) run(q chan struct{}) {
+	defer c.close()
+	if config.produce.verbose {
+		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
+	}
+	c.leaders = mustFindLeaders()
+	stdin := make(chan string)
+	lines := make(chan string)
+	messages := make(chan message)
+	batchedMessages := make(chan []message)
+	go readStdinLines(stdin)
 
-					if !connected {
-						continue
-					}
+	go readInput(q, stdin, lines)
+	go deserializeLines(lines, messages, int32(len(c.leaders)))
+	go batchRecords(messages, batchedMessages)
+	produce(c.leaders, batchedMessages)
+}
 
-					if err := b.Close(); err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
-					}
-				}
-			}()
+func (c *produceCmd) close() {
+	for _, b := range c.leaders {
+		var (
+			connected bool
+			err       error
+		)
 
-			stdin := make(chan string)
-			lines := make(chan string)
-			messages := make(chan message)
-			batchedMessages := make(chan []message)
-			go readStdinLines(stdin)
-			var wg sync.WaitGroup
-			wg.Add(4)
-			go readInput(&wg, closer, stdin, lines)
-			go deserializeLines(&wg, lines, messages, int32(len(leaders)))
-			go batchRecords(&wg, messages, batchedMessages)
-			go produce(&wg, leaders, batchedMessages)
+		if connected, err = b.Connected(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to check if broker is connected. err=%s\n", err)
+			continue
+		}
 
-			wg.Wait()
-		},
+		if !connected {
+			continue
+		}
+
+		if err = b.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
+		}
 	}
 }
 
-func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message, partitionCount int32) {
-	defer func() {
-		close(out)
-		wg.Done()
-	}()
+func produceCommand() command {
+	var c produceCmd
+	return command{
+		flags:     produceFlags(),
+		parseArgs: produceParseArgs,
+		run:       c.run,
+	}
+}
+
+func deserializeLines(in chan string, out chan message, partitionCount int32) {
+	defer func() { close(out) }()
 
 	for {
 		select {
@@ -351,11 +352,8 @@ func deserializeLines(wg *sync.WaitGroup, in chan string, out chan message, part
 	}
 }
 
-func batchRecords(wg *sync.WaitGroup, in chan message, out chan []message) {
-	defer func() {
-		close(out)
-		wg.Done()
-	}()
+func batchRecords(in chan message, out chan []message) {
+	defer func() { close(out) }()
 
 	messages := []message{}
 	send := func() {
@@ -464,9 +462,7 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func produce(wg *sync.WaitGroup, leaders map[int32]*sarama.Broker, in chan []message) {
-	defer wg.Done()
-
+func produce(leaders map[int32]*sarama.Broker, in chan []message) {
 	for {
 		select {
 		case b, ok := <-in:
@@ -488,12 +484,8 @@ func readStdinLines(out chan string) {
 	}
 }
 
-func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out chan string) {
-	defer func() {
-		close(out)
-		wg.Done()
-	}()
-
+func readInput(q chan struct{}, stdin chan string, out chan string) {
+	defer func() { close(out) }()
 	for {
 		select {
 		case l, ok := <-stdin:
@@ -501,7 +493,7 @@ func readInput(wg *sync.WaitGroup, signals chan struct{}, stdin chan string, out
 				return
 			}
 			out <- l
-		case <-signals:
+		case <-q:
 			return
 		}
 	}
