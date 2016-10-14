@@ -212,6 +212,7 @@ func TestDeserializeLines(t *testing.T) {
 	data := []struct {
 		in             string
 		literal        bool
+		partition      int32
 		partitionCount int32
 		expected       message
 	}{
@@ -236,8 +237,9 @@ func TestDeserializeLines(t *testing.T) {
 		{
 			in:             `{"other":"json","values":"avail"}`,
 			literal:        true,
+			partition:      2,
 			partitionCount: 4,
-			expected:       newMessage("", `{"other":"json","values":"avail"}`, 0),
+			expected:       newMessage("", `{"other":"json","values":"avail"}`, 2),
 		},
 		{
 			in:             `so lange schon`,
@@ -252,6 +254,7 @@ func TestDeserializeLines(t *testing.T) {
 		in := make(chan string, 1)
 		out := make(chan message)
 		config.produce.literal = d.literal
+		config.produce.partition = d.partition
 		go deserializeLines(&wg, in, out, d.partitionCount)
 		in <- d.in
 
