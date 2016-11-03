@@ -195,15 +195,16 @@ func offsetRun(closer chan struct{}) {
 		done <- true
 	}(out, done)
 
-	// print to console
+printLoop:
 	for {
 		select {
 		case m := <-out:
 			fmt.Println(m)
+		case <-done:
+			break printLoop
 		}
-	}
 
-	<-done
+	}
 }
 
 // offsetsForTopic processes the offsets for a given topic
