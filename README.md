@@ -4,6 +4,7 @@ Some reasons why you might be interested:
 
 * Consume messages on specific partitions between specific offsets.
 * Display topic information (e.g., offsets per partitions)
+* Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition)
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate use of tools like [jsonify](https://github.com/fgeller/jsonify).
 * Configure brokers and topic via environment variables for a shell session
@@ -26,6 +27,7 @@ Some reasons why you might be interested:
             consume        consume messages.
             produce        produce messages.
             topic          topic information.
+            offset         offset information and modification.
 
     Use "kt [command] -help" for for information about the command.
 
@@ -76,3 +78,28 @@ to find the messages that have a negative `success` flag.
     {"partition":0,"offset":1,"key":"client-1","value":{"success":false,"ts":"2016-04-01T07:09:14,729303000+13:00"}}
     {"partition":0,"offset":3,"key":"client-1","value":{"success":false,"ts":"2016-04-01T07:09:14,762924000+13:00"}}
     2016/04/01 07:12:27 Consuming from partition [0] timed out.
+
+View all partition offsets for a topic `topic-1`, optionally filter by partition
+
+    $ kt offset -topic topic-1
+     {"topic":"topic-1","partition":0,"partition-offset":210}
+     {"topic":"topic-1","partition":1,"partition-offset":24}
+     {"topic":"topic-1","partition":2,"partition-offset":0}
+    $ kt offset -topic topic-1 -partition 0
+     {"topic":"topic-1","partition":0,"partition-offset":210}
+
+View all consumer group offsets, optionally filter by topic and/or partition
+
+    $ kt offset -group consumer-group-1 -topic topic-1
+     {"consumer-group":"consumer-group-1","topic":"topic-1","partition":0,"partition-offset":210,"consumer-offset":210}
+     {"consumer-group":"consumer-group-1","topic":"topic-1","partition":1,"partition-offset":24,"consumer-offset":24}
+    $ kt offset -group consumer-group-1 -topic topic-1 -partition 1
+     {"consumer-group":"consumer-group-1","topic":"topic-1","partition":1,"partition-offset":24,"consumer-offset":24}
+
+Modify offsets for a consumer group, optionally filtering by topic and/or partition
+valid option are "newest" (sets offset to last message on topic), "oldest" (sets offset to the first message on the topic, effectively resetting the consumer group), or any numeric value
+
+    $ kt offset -group consumer-group-1 -topic topic-1 -partition 1
+     {"consumer-group":"consumer-group-1","topic":"topic-1","partition":1,"partition-offset":24,"consumer-offset":24}
+    $ kt offset -group consumer-group-1 -topic topic-1 -partition 1 -setConsumerOffsets oldest
+     {"consumer-group":"consumer-group-1","topic":"topic-1","partition":1,"partition-offset":24,"consumer-offset":0}

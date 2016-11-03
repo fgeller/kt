@@ -14,6 +14,7 @@ var config struct {
 	consume consumeConfig
 	produce produceConfig
 	topic   topicConfig
+	offset  offsetConfig
 }
 
 func listenForInterrupt() chan struct{} {
@@ -50,9 +51,10 @@ Usage:
 
 The commands are:
 
-	consume        consume messages.
-	produce        produce messages.
-	topic          topic information.
+	consume    consume messages.
+	produce    produce messages.
+	topic      topic information.
+	offset     offset information and modification
 
 Use "kt [command] -help" for for information about the command.
 
@@ -72,6 +74,7 @@ func parseArgs() command {
 		"consume": consumeCommand(),
 		"produce": produceCommand(),
 		"topic":   topicCommand(),
+		"offset":  offsetCommand(),
 	}
 
 	cmd, ok := commands[os.Args[1]]
