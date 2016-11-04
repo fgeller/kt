@@ -17,24 +17,22 @@ import (
 )
 
 type offsetConfig struct {
-	flags     *flag.FlagSet
-	brokers   []string
-	group     string
-	topic     *regexp.Regexp
-	partition int32
-	setOldest bool
-	setNewest bool
-	set       int64
-	verbose   bool
-	version   sarama.KafkaVersion
-	args      struct {
-		brokers   string
-		group     string
-		topic     string
-		partition int
-		set       string
-		verbose   bool
-		version   string
+	flags      *flag.FlagSet
+	brokers    []string
+	group      string
+	topic      *regexp.Regexp
+	partition  int32
+	newOffsets int64
+	verbose    bool
+	version    sarama.KafkaVersion
+	args       struct {
+		brokers    string
+		group      string
+		topic      string
+		partition  int
+		setOffsets string
+		verbose    bool
+		version    string
 	}
 }
 
@@ -60,7 +58,7 @@ func offsetFlags() *flag.FlagSet {
 	offset.StringVar(&config.offset.args.group, "group", "", "The name of the consumer group.")
 	offset.StringVar(&config.offset.args.topic, "topic", "", "The full or partial name of topic(s)")
 	offset.IntVar(&config.offset.args.partition, "partition", -1, "The identifier of the partition")
-	offset.StringVar(&config.offset.args.set, "setConsumerOffsets", "", "Set offsets for the consumer groups to \"oldest\", \"newest\", or a specific numerical value. "+
+	offset.StringVar(&config.offset.args.setOffsets, "setConsumerOffsets", "", "Set offsets for the consumer groups to \"oldest\", \"newest\", or a specific numerical value. "+
 		"For more accurate modification also specify topic and/or partition")
 	offset.BoolVar(&config.offset.args.verbose, "verbose", false, "More verbose logging to stderr.")
 	offset.StringVar(&config.offset.args.version, "version", "", "Kafka protocol version")
@@ -119,17 +117,19 @@ func offsetParseArgs() {
 
 	config.offset.group = config.offset.args.group
 
-	if config.offset.args.set == "" {
-		config.offset.set = -1
-	} else if config.offset.args.set == "newest" {
-		config.offset.setNewest = true
-	} else if config.offset.args.set == "oldest" {
-		config.offset.setOldest = true
-	} else if newOffset, err := strconv.Atoi(config.offset.args.set); err == nil {
-		config.offset.set = int64(newOffset)
-	} else {
-		fmt.Fprintf(os.Stderr, "Invalid value for setting the offset. possible values are \"oldest\", \"newest\", or any numerical value. err=%s\n", err)
-		os.Exit(2)
+	switch config.offset.args.setOffsets {
+	case "":
+	case "oldest":
+		config.offset.newOffsets = sarama.OffsetOldest
+	case "newest":
+		config.offset.newOffsets = sarama.OffsetNewest
+	default:
+		o, err := strconv.Atoi(config.offset.args.setOffsets)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid value for setting the offset. possible values are \"oldest\", \"newest\", or any numerical value. err=%s\n", err)
+			os.Exit(2)
+		}
+		config.offset.newOffsets = int64(o)
 	}
 
 	config.offset.verbose = config.offset.args.verbose
@@ -202,8 +202,9 @@ printLoop:
 			fmt.Println(m)
 		case <-done:
 			break printLoop
+		case <-closer:
+			break printLoop
 		}
-
 	}
 }
 
@@ -270,7 +271,7 @@ func offsetsForConsumer(
 	out chan string,
 ) {
 
-	if config.offset.args.set != "" {
+	if config.offset.args.setOffsets != "" {
 		setConsumerOffsets(getBroker, getOffset, topic, partition, group)
 	}
 
@@ -310,20 +311,14 @@ func setConsumerOffsets(
 	memberID, generationID := joinGroup(broker, group, topic)
 
 	var po int64
-	if config.offset.setOldest {
-		po, err = getOffset(topic, partition, sarama.OffsetOldest)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
-			os.Exit(1)
-		}
-	} else if config.offset.setNewest {
-		po, err = getOffset(topic, partition, sarama.OffsetNewest)
+	if config.offset.newOffsets == sarama.OffsetNewest || config.offset.newOffsets == sarama.OffsetOldest {
+		po, err = getOffset(topic, partition, config.offset.newOffsets)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
 			os.Exit(1)
 		}
 	} else {
-		po = config.offset.set
+		po = config.offset.newOffsets
 	}
 
 	commitOffset(broker, topic, partition, group, po, generationID, memberID)
@@ -373,9 +368,12 @@ func joinGroup(broker *sarama.Broker, group string, topic string) (string, int32
 // commitOffset sends an offset message to kafka for the given consumer group
 func commitOffset(broker *sarama.Broker, topic string, partition int32, group string, offset int64, generationID int32, memberID string) {
 
-	v := int16(2)
-	if config.offset.version == sarama.V0_8_2_0 || config.offset.version == sarama.V0_8_2_1 {
+	v := int16(0)
+	if config.offset.version.IsAtLeast(sarama.V0_8_2_0) {
 		v = 1
+	}
+	if config.offset.version.IsAtLeast(sarama.V0_9_0_0) {
+		v = 2
 	}
 
 	req := &sarama.OffsetCommitRequest{

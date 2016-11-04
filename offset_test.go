@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/Shopify/sarama"
 )
 
 func TestOffsetsPartition(t *testing.T) {
@@ -141,55 +143,37 @@ func TestOffsetParseArgs(t *testing.T) {
 
 	// set offsets to oldest
 	resetConfig()
-	config.offset.args.set = "oldest"
+	config.offset.args.setOffsets = "oldest"
 	offsetParseArgs()
-	if !config.offset.setOldest ||
-		config.offset.setNewest ||
-		config.offset.set != 0 {
+	if config.offset.newOffsets != sarama.OffsetOldest {
 		t.Errorf(
-			"Expected setOldest %v (got %v), setNewest %v (got %v), and set %v (got %v).",
-			true,
-			config.offset.setOldest,
-			false,
-			config.offset.setNewest,
-			0,
-			config.offset.set,
+			"Expected setConsumerOffset %v, got %v.",
+			sarama.OffsetOldest,
+			config.offset.newOffsets,
 		)
 	}
 
 	// set offsets to newest
 	resetConfig()
-	config.offset.args.set = "newest"
+	config.offset.args.setOffsets = "newest"
 	offsetParseArgs()
-	if !config.offset.setNewest ||
-		config.offset.setOldest ||
-		config.offset.set != 0 {
+	if config.offset.newOffsets != sarama.OffsetNewest {
 		t.Errorf(
-			"Expected setOldest %v (got %v), setNewest %v (got %v), and set %v (got %v).",
-			false,
-			config.offset.setOldest,
-			true,
-			config.offset.setNewest,
-			0,
-			config.offset.set,
+			"Expected setConsumerOffset %v, got %v.",
+			sarama.OffsetNewest,
+			config.offset.newOffsets,
 		)
 	}
 
 	// set offsets to absolute value
 	resetConfig()
-	config.offset.args.set = "42"
+	config.offset.args.setOffsets = "42"
 	offsetParseArgs()
-	if config.offset.setNewest ||
-		config.offset.setOldest ||
-		config.offset.set != 42 {
+	if config.offset.newOffsets != 42 {
 		t.Errorf(
-			"Expected setOldest %v (got %v), setNewest %v (got %v), and set %v (got %v).",
-			false,
-			config.offset.setOldest,
-			false,
-			config.offset.setNewest,
+			"Expected setConsumerOffset %v, got %v.",
 			42,
-			config.offset.set,
+			config.offset.newOffsets,
 		)
 	}
 
