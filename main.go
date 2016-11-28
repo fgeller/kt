@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -12,9 +11,9 @@ var buildVersion, buildTime string
 
 var config struct {
 	consume consumeConfig
-	produce produceConfig
-	topic   topicConfig
-	offset  offsetConfig
+	// produce produceConfig
+	// topic   topicConfig
+	// offset  offsetConfig
 }
 
 func listenForInterrupt() chan struct{} {
@@ -30,10 +29,9 @@ func listenForInterrupt() chan struct{} {
 	return closer
 }
 
-type command struct {
-	flags     *flag.FlagSet
-	parseArgs func()
-	run       func(chan struct{})
+type command interface {
+	parseArgs(args []string)
+	run(closer chan struct{})
 }
 
 func init() {
@@ -71,19 +69,17 @@ func parseArgs() command {
 	}
 
 	commands := map[string]command{
-		"consume": consumeCommand(),
-		"produce": produceCommand(),
-		"topic":   topicCommand(),
-		"offset":  offsetCommand(),
+		"consume": &consume{},
+		// "produce": produceCommand(),
+		// "topic":   topicCommand(),
+		// "offset":  offsetCommand(),
 	}
 
 	cmd, ok := commands[os.Args[1]]
 	if !ok {
 		usage()
 	}
-
-	cmd.flags.Parse(os.Args[2:])
-	cmd.parseArgs()
+	cmd.parseArgs(os.Args[2:])
 
 	return cmd
 }

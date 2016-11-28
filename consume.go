@@ -16,33 +16,45 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type offsetType int
+type consume struct {
+	topic   string
+	brokers []string
+	offsets map[int32]interval
+	timeout time.Duration
+	verbose bool
+	version sarama.KafkaVersion
 
-const (
-	absOffset offsetType = iota
-	relOffset
-)
+	consumer sarama.Consumer
+
+	closer chan struct{}
+}
 
 type offset struct {
-	typ   offsetType
-	start int64
-	diff  int64
+	relative bool
+	start    int64
+	diff     int64
 }
 
 func (o offset) value(clientMaker func() sarama.Client, partition int32) (int64, error) {
-	if o.typ == absOffset {
+	if !o.relative {
 		return o.start, nil
 	}
 
+	var (
+		res int64
+		err error
+	)
+
 	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
-		v, err := clientMaker().GetOffset(config.consume.topic, partition, o.start)
-		if err != nil {
+		if res, err = clientMaker().GetOffset(config.consume.topic, partition, o.start); err != nil {
 			return 0, err
 		}
+
 		if o.start == sarama.OffsetNewest {
-			v = v - 1
+			res = res - 1
 		}
-		return v + o.diff, nil
+
+		return res + o.diff, nil
 	}
 
 	return o.start + o.diff, nil
@@ -60,14 +72,15 @@ type consumeConfig struct {
 	timeout time.Duration
 	verbose bool
 	version sarama.KafkaVersion
-	args    struct {
-		topic   string
-		brokers string
-		timeout time.Duration
-		offsets string
-		verbose bool
-		version string
-	}
+}
+
+type consumeArgs struct {
+	topic   string
+	brokers string
+	timeout time.Duration
+	offsets string
+	verbose bool
+	version string
 }
 
 func parseOffset(str string) (offset, error) {
@@ -83,18 +96,14 @@ func parseOffset(str string) (offset, error) {
 	qualifierStr := matches[0][2]
 	intStr := matches[0][3]
 
-	value, err := strconv.ParseInt(intStr, 10, 64)
-	if err != nil && len(intStr) > 0 {
-		return result, fmt.Errorf("Invalid partition [%v]", str)
+	var err error
+	if result.start, err = strconv.ParseInt(intStr, 10, 64); err != nil && len(intStr) > 0 {
+		return result, fmt.Errorf("Invalid offset [%v]", str)
 	}
-	result.start = value
 
-	result.diff = int64(0)
-
-	result.typ = absOffset
 	if len(qualifierStr) > 0 {
-		result.typ = relOffset
-		result.diff = value
+		result.relative = true
+		result.diff = result.start
 		result.start = sarama.OffsetOldest
 		if qualifierStr == "-" {
 			result.start = sarama.OffsetNewest
@@ -104,10 +113,10 @@ func parseOffset(str string) (offset, error) {
 
 	switch startStr {
 	case "newest":
-		result.typ = relOffset
+		result.relative = true
 		result.start = sarama.OffsetNewest
 	case "oldest":
-		result.typ = relOffset
+		result.relative = true
 		result.start = sarama.OffsetOldest
 	}
 
@@ -116,8 +125,8 @@ func parseOffset(str string) (offset, error) {
 
 func parseOffsets(str string) (map[int32]interval, error) {
 	defaultInterval := interval{
-		start: offset{typ: relOffset, start: sarama.OffsetOldest},
-		end:   offset{typ: absOffset, start: 1<<63 - 1},
+		start: offset{relative: true, start: sarama.OffsetOldest},
+		end:   offset{start: 1<<63 - 1},
 	}
 
 	if len(str) == 0 {
@@ -179,49 +188,53 @@ func failStartup(msg string) {
 	os.Exit(1)
 }
 
-func consumeParseArgs() {
-	var err error
+func (c *consume) parseArgs(as []string) {
+	var (
+		err  error
+		args = c.read(as)
+	)
+
 	envTopic := os.Getenv("KT_TOPIC")
-	if config.consume.args.topic == "" {
+	if args.topic == "" {
 		if envTopic == "" {
 			failStartup("Topic name is required.")
-		} else {
-			config.consume.args.topic = envTopic
 		}
+		args.topic = envTopic
 	}
-	config.consume.topic = config.consume.args.topic
-	config.consume.verbose = config.consume.args.verbose
-	config.consume.version = kafkaVersion(config.consume.args.version)
+	c.topic = args.topic
+	c.verbose = args.verbose
+	c.version = kafkaVersion(args.version)
 
 	envBrokers := os.Getenv("KT_BROKERS")
-	if config.consume.args.brokers == "" {
+	if args.brokers == "" {
 		if envBrokers != "" {
-			config.consume.args.brokers = envBrokers
+			args.brokers = envBrokers
 		} else {
-			config.consume.args.brokers = "localhost:9092"
+			args.brokers = "localhost:9092"
 		}
 	}
-	config.consume.brokers = strings.Split(config.consume.args.brokers, ",")
+	c.brokers = strings.Split(args.brokers, ",")
 	for i, b := range config.consume.brokers {
 		if !strings.Contains(b, ":") {
 			config.consume.brokers[i] = b + ":9092"
 		}
 	}
 
-	config.consume.offsets, err = parseOffsets(config.consume.args.offsets)
+	c.offsets, err = parseOffsets(args.offsets)
 	if err != nil {
 		failStartup(fmt.Sprintf("%s", err))
 	}
 }
 
-func consumeFlags() *flag.FlagSet {
+func (c *consume) read(as []string) consumeArgs {
+	var args consumeArgs
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
-	flags.StringVar(&config.consume.args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&config.consume.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&config.consume.args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
-	flags.DurationVar(&config.consume.args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
-	flags.BoolVar(&config.consume.args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.StringVar(&config.consume.args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
+	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
+	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -318,46 +331,39 @@ Will achieve the same as the two examples above.
 		os.Exit(2)
 	}
 
-	return flags
+	flags.Parse(as)
+	return args
 }
 
-func consumeCommand() command {
-
-	return command{
-		flags:     consumeFlags(),
-		parseArgs: consumeParseArgs,
-		run: func(closer chan struct{}) {
-			if config.consume.verbose {
-				sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
-			}
-
-			conf := sarama.NewConfig()
-			conf.Version = config.consume.version
-			u, err := user.Current()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
-			}
-			conf.ClientID = "kt-consume-" + u.Username
-			if config.consume.verbose {
-				fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
-			}
-
-			consumer, err := sarama.NewConsumer(config.consume.brokers, conf)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
-				os.Exit(1)
-			}
-			defer consumer.Close()
-
-			partitions := findPartitions(consumer, config.consume)
-			if len(partitions) == 0 {
-				fmt.Fprintf(os.Stderr, "Found no partitions to consume.\n")
-				os.Exit(1)
-			}
-
-			consume(config.consume, closer, consumer, partitions)
-		},
+func (c *consume) run(closer chan struct{}) {
+	if config.consume.verbose {
+		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
+	conf := sarama.NewConfig()
+	conf.Version = config.consume.version
+	u, err := user.Current()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	conf.ClientID = "kt-consume-" + u.Username
+	if config.consume.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+	}
+
+	if c.consumer, err = sarama.NewConsumer(config.consume.brokers, conf); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
+		os.Exit(1)
+	}
+	defer c.consumer.Close()
+
+	partitions := c.findPartitions()
+	if len(partitions) == 0 {
+		fmt.Fprintf(os.Stderr, "Found no partitions to consume.\n")
+		os.Exit(1)
+	}
+
+	c.consume(partitions)
 }
 
 func clientMaker() sarama.Client {
@@ -380,20 +386,15 @@ func clientMaker() sarama.Client {
 	return client
 }
 
-func consume(
-	config consumeConfig,
-	closer chan struct{},
-	consumer sarama.Consumer,
-	partitions []int32,
-) {
-	var wg sync.WaitGroup
-	out := make(chan string)
+func (c *consume) consume(partitions []int32) {
+	var (
+		wg  sync.WaitGroup
+		out = make(chan string)
+	)
+
 	go func() {
 		for {
-			select {
-			case m := <-out:
-				fmt.Println(m)
-			}
+			fmt.Println(<-out)
 		}
 	}()
 
@@ -401,23 +402,20 @@ func consume(
 		wg.Add(1)
 		go func(p int32) {
 			defer wg.Done()
-			consumePartition(config, closer, out, consumer, p)
+			c.consumePartition(out, p)
 		}(partition)
 	}
 	wg.Wait()
 }
 
-func consumePartition(
-	config consumeConfig,
-	closer chan struct{},
-	out chan string,
-	consumer sarama.Consumer,
-	partition int32,
-) {
+func (c *consume) consumePartition(out chan string, partition int32) {
+	var (
+		offsets interval
+		ok      bool
+	)
 
-	offsets, ok := config.offsets[partition]
-	if !ok {
-		offsets, ok = config.offsets[-1]
+	if offsets, ok = c.offsets[partition]; !ok {
+		offsets, ok = c.offsets[-1]
 	}
 
 	start, err := offsets.start.value(clientMaker, partition)
@@ -432,17 +430,13 @@ func consumePartition(
 		return
 	}
 
-	partitionConsumer, err := consumer.ConsumePartition(
-		config.topic,
-		partition,
-		start,
-	)
+	partitionConsumer, err := c.consumer.ConsumePartition(c.topic, partition, start)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
 		return
 	}
 
-	consumePartitionLoop(closer, out, partitionConsumer, partition, end)
+	c.partitionLoop(out, partitionConsumer, partition, end)
 }
 
 type consumedMessage struct {
@@ -452,13 +446,7 @@ type consumedMessage struct {
 	Value     *string `json:"value"`
 }
 
-func consumePartitionLoop(
-	closer chan struct{},
-	out chan string,
-	pc sarama.PartitionConsumer,
-	p int32,
-	end int64,
-) {
+func (c *consume) partitionLoop(out chan string, pc sarama.PartitionConsumer, p int32, end int64) {
 	for {
 		timeout := make(<-chan time.Time)
 		if config.consume.timeout > 0 {
@@ -470,7 +458,7 @@ func consumePartitionLoop(
 			log.Printf("Consuming from partition [%v] timed out.", p)
 			pc.Close()
 			return
-		case <-closer:
+		case <-c.closer:
 			pc.Close()
 			return
 		case msg, ok := <-pc.Messages():
@@ -491,7 +479,7 @@ func consumePartitionLoop(
 				byts, err := json.Marshal(m)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
-					close(closer)
+					close(c.closer)
 					return
 				}
 				out <- string(byts)
@@ -504,25 +492,26 @@ func consumePartitionLoop(
 	}
 }
 
-func findPartitions(consumer sarama.Consumer, config consumeConfig) []int32 {
-	allPartitions, err := consumer.Partitions(config.topic)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", config.topic, err)
+func (c *consume) findPartitions() []int32 {
+	var (
+		all []int32
+		res []int32
+		err error
+	)
+	if all, err = c.consumer.Partitions(c.topic); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", c.topic, err)
 		os.Exit(1)
 	}
 
-	_, hasDefaultOffset := config.offsets[-1]
-	partitions := []int32{}
-	if !hasDefaultOffset {
-		for _, p := range allPartitions {
-			_, ok := config.offsets[p]
-			if ok {
-				partitions = append(partitions, p)
-			}
-		}
-	} else {
-		partitions = allPartitions
+	if _, hasDefault := c.offsets[-1]; hasDefault {
+		return all
 	}
 
-	return partitions
+	for _, p := range all {
+		if _, ok := c.offsets[p]; ok {
+			res = append(res, p)
+		}
+	}
+
+	return res
 }
