@@ -273,6 +273,7 @@ func (c *consume) setupClient() {
 
 func (c *consume) run(closer chan struct{}) {
 	var err error
+	c.closer = closer
 
 	if c.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -382,7 +383,7 @@ func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsum
 			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s.", p, c.timeout)
 			return
 		case <-c.closer:
-			fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
+			fmt.Fprintf(os.Stderr, "shuttin down partition consumer for partition %v\n", p)
 			return
 		case msg, ok := <-pc.Messages():
 			var (
