@@ -293,16 +293,18 @@ func (c *consume) run(closer chan struct{}) {
 	c.consume(partitions)
 }
 
-func print(out <-chan string) {
+func print(out <-chan printContext) {
 	for {
-		fmt.Println(<-out)
+		ctx := <-out
+		fmt.Println(ctx.line)
+		close(ctx.done)
 	}
 }
 
 func (c *consume) consume(partitions []int32) {
 	var (
 		wg  sync.WaitGroup
-		out = make(chan string)
+		out = make(chan printContext)
 	)
 
 	go print(out)
@@ -317,7 +319,7 @@ func (c *consume) consume(partitions []int32) {
 	wg.Wait()
 }
 
-func (c *consume) consumePartition(out chan string, partition int32) {
+func (c *consume) consumePartition(out chan printContext, partition int32) {
 	var (
 		offsets interval
 		err     error
@@ -362,8 +364,13 @@ func logClose(name string, c io.Closer) {
 	}
 }
 
-func (c *consume) partitionLoop(out chan string, pc sarama.PartitionConsumer, p int32, end int64) {
-	defer logClose(fmt.Sprintf("partition-consumer %v", p), pc)
+type printContext struct {
+	line string
+	done chan struct{}
+}
+
+func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
+	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 
 	for {
 		timeout := make(<-chan time.Time)
@@ -376,16 +383,15 @@ func (c *consume) partitionLoop(out chan string, pc sarama.PartitionConsumer, p 
 			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s.", p, c.timeout)
 			return
 		case <-c.closer:
+			fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
 			return
 		case msg, ok := <-pc.Messages():
 			if !ok {
+				fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
 				return
 			}
 
-			m := consumedMessage{
-				Partition: msg.Partition,
-				Offset:    msg.Offset,
-			}
+			m := consumedMessage{Partition: msg.Partition, Offset: msg.Offset}
 			k := string(msg.Key)
 			if msg.Key != nil {
 				m.Key = &k
@@ -401,7 +407,10 @@ func (c *consume) partitionLoop(out chan string, pc sarama.PartitionConsumer, p 
 				close(c.closer)
 				return
 			}
-			out <- string(byts)
+
+			ctx := printContext{line: string(byts), done: make(chan struct{})}
+			out <- ctx
+			<-ctx.done
 
 			if end > 0 && msg.Offset >= end {
 				return
