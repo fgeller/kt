@@ -37,7 +37,7 @@ type offset struct {
 	diff     int64
 }
 
-func (o offset) value(client sarama.Client, topic string, partition int32) (int64, error) {
+func (c *consume) resolveOffset(o offset, partition int32) (int64, error) {
 	if !o.relative {
 		return o.start, nil
 	}
@@ -48,7 +48,7 @@ func (o offset) value(client sarama.Client, topic string, partition int32) (int6
 	)
 
 	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
-		if res, err = client.GetOffset(topic, partition, o.start); err != nil {
+		if res, err = c.client.GetOffset(c.topic, partition, o.start); err != nil {
 			return 0, err
 		}
 
@@ -333,12 +333,12 @@ func (c *consume) consumePartition(out chan printContext, partition int32) {
 		offsets, ok = c.offsets[-1]
 	}
 
-	if start, err = offsets.start.value(c.client, c.topic, partition); err != nil {
+	if start, err = c.resolveOffset(offsets.start, partition); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read start offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
-	if end, err = offsets.end.value(c.client, c.topic, partition); err != nil {
+	if end, err = c.resolveOffset(offsets.end, partition); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read end offset for partition %v err=%v\n", partition, err)
 		return
 	}
@@ -386,6 +386,10 @@ func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsum
 			fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
 			return
 		case msg, ok := <-pc.Messages():
+			var (
+				buf []byte
+				err error
+			)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
 				return
@@ -401,14 +405,13 @@ func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsum
 				m.Value = &v
 			}
 
-			byts, err := json.Marshal(m)
-			if err != nil {
+			if buf, err = json.Marshal(m); err != nil {
 				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
 				close(c.closer)
 				return
 			}
 
-			ctx := printContext{line: string(byts), done: make(chan struct{})}
+			ctx := printContext{line: string(buf), done: make(chan struct{})}
 			out <- ctx
 			<-ctx.done
 
