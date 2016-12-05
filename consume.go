@@ -175,7 +175,7 @@ func parseOffsets(str string) (map[int32]interval, error) {
 	return result, nil
 }
 
-func failStartup(msg string) {
+func (c *consume) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	fmt.Fprintln(os.Stderr, "Use \"kt consume -help\" for more information.")
 	os.Exit(1)
@@ -190,7 +190,7 @@ func (c *consume) parseArgs(as []string) {
 	envTopic := os.Getenv("KT_TOPIC")
 	if args.topic == "" {
 		if envTopic == "" {
-			failStartup("Topic name is required.")
+			c.failStartup("Topic name is required.")
 		}
 		args.topic = envTopic
 	}
@@ -215,7 +215,7 @@ func (c *consume) parseArgs(as []string) {
 
 	c.offsets, err = parseOffsets(args.offsets)
 	if err != nil {
-		failStartup(fmt.Sprintf("%s", err))
+		c.failStartup(fmt.Sprintf("%s", err))
 	}
 }
 
