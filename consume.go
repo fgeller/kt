@@ -250,6 +250,27 @@ func (c *consume) read(as []string) consumeArgs {
 	return args
 }
 
+func (c *consume) setupClient() {
+	var (
+		err error
+		usr *user.User
+		cfg = sarama.NewConfig()
+	)
+	cfg.Version = c.version
+	if usr, err = user.Current(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	cfg.ClientID = "kt-consume-" + usr.Username
+	if c.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
+	}
+
+	if c.client, err = sarama.NewClient(c.brokers, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
+		os.Exit(1)
+	}
+}
+
 func (c *consume) run(closer chan struct{}) {
 	var err error
 
@@ -257,32 +278,13 @@ func (c *consume) run(closer chan struct{}) {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	conf := sarama.NewConfig()
-	conf.Version = c.version
-	u, err := user.Current()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
-	}
-	conf.ClientID = "kt-consume-" + u.Username
-	if c.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
-	}
-
-	if c.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
-	}
-
-	c.client, err = sarama.NewClient(c.brokers, conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-		os.Exit(1)
-	}
+	c.setupClient()
 
 	if c.consumer, err = sarama.NewConsumerFromClient(c.client); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
 		os.Exit(1)
 	}
-	defer c.consumer.Close()
+	defer logClose("consumer", c.consumer)
 
 	partitions := c.findPartitions()
 	if len(partitions) == 0 {
@@ -309,12 +311,9 @@ func (c *consume) consume(partitions []int32) {
 
 	go print(out)
 
-	for _, partition := range partitions {
-		wg.Add(1)
-		go func(p int32) {
-			defer wg.Done()
-			c.consumePartition(out, p)
-		}(partition)
+	wg.Add(len(partitions))
+	for _, p := range partitions {
+		go func(p int32) { defer wg.Done(); c.consumePartition(out, p) }(p)
 	}
 	wg.Wait()
 }
@@ -389,22 +388,16 @@ func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsum
 			var (
 				buf []byte
 				err error
+
+				k = string(msg.Key)
+				v = string(msg.Value)
 			)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
 				return
 			}
 
-			m := consumedMessage{Partition: msg.Partition, Offset: msg.Offset}
-			k := string(msg.Key)
-			if msg.Key != nil {
-				m.Key = &k
-			}
-			v := string(msg.Value)
-			if msg.Value != nil {
-				m.Value = &v
-			}
-
+			m := consumedMessage{msg.Partition, msg.Offset, &k, &v}
 			if buf, err = json.Marshal(m); err != nil {
 				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
 				close(c.closer)
