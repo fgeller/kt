@@ -23,8 +23,7 @@ func listenForInterrupt() chan struct{} {
 }
 
 type command interface {
-	parseArgs(args []string)
-	run(closer chan struct{})
+	run(args []string, closer chan struct{})
 }
 
 func init() {
@@ -72,7 +71,6 @@ func parseArgs() command {
 	if !ok {
 		usage()
 	}
-	cmd.parseArgs(os.Args[2:])
 
 	return cmd
 }
@@ -80,5 +78,5 @@ func parseArgs() command {
 func main() {
 	cmd := parseArgs()
 	closer := listenForInterrupt()
-	cmd.run(closer)
+	cmd.run(os.Args[2:], closer)
 }

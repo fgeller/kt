@@ -67,15 +67,6 @@ type interval struct {
 	end   offset
 }
 
-type consumeConfig struct {
-	topic   string
-	brokers []string
-	offsets map[int32]interval
-	timeout time.Duration
-	verbose bool
-	version sarama.KafkaVersion
-}
-
 type consumeArgs struct {
 	topic   string
 	brokers string
@@ -242,7 +233,6 @@ func (c *consume) read(as []string) consumeArgs {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, consumeDocString)
-
 		os.Exit(2)
 	}
 
@@ -271,8 +261,10 @@ func (c *consume) setupClient() {
 	}
 }
 
-func (c *consume) run(closer chan struct{}) {
+func (c *consume) run(args []string, closer chan struct{}) {
 	var err error
+
+	c.parseArgs(args)
 	c.closer = closer
 
 	if c.verbose {
