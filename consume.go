@@ -241,94 +241,7 @@ func (c *consume) read(as []string) consumeArgs {
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
-
-Offsets can be specified as a comma-separated list of intervals:
-
-  [[partition=start:end],...]
-
-The default is to consume from the oldest offset on every partition for the given topic.
-
- - partition is the numeric identifier for a partition. You can use "all" to
-   specify a default interval for all partitions.
-
- - start is the included offset where consumption should start.
-
- - end is the included offset where consumption should end.
-
-The following syntax is supported for each offset:
-
-  (oldest|newest)?(+|-)?(\d+)?
-
- - "oldest" and "newest" refer to the oldest and newest offsets known for a
-   given partition.
-
- - You can use "+" with a numeric value to skip the given number of messages
-   since the oldest offset. For example, "1=+20" will skip 20 offset value since
-   the oldest offset for partition 1.
-
- - You can use "-" with a numeric value to refer to only the given number of
-   messages before the newest offset. For example, "1=-10" will refer to the
-   last 10 offset values before the newest offset for partition 1.
-
- - Relative offsets are based on numeric values and will not take skipped
-   offsets (e.g. due to compaction) into account.
-
- - Given only a numeric value, it is interpreted as an absolute offset value.
-
-More examples:
-
-To consume messages from partition 0 between offsets 10 and 20 (inclusive).
-
-  0=10:20
-
-To define an interval for all partitions use -1 as the partition identifier:
-
-  all=2:10
-
-You can also override the offsets for a single partition, in this case 2:
-
-  all=1-10,2=5-10
-
-To consume from multiple partitions:
-
-  0=4:,2=1:10,6
-
-This would consume messages from three partitions:
-
-  - Anything from partition 0 starting at offset 4.
-  - Messages between offsets 1 and 10 from partition 2.
-  - Anything from partition 6.
-
-To start at the latest offset for each partition:
-
-  all=newest:
-
-Or shorter:
-
-  newest:
-
-To consume the last 10 messages:
-
-  newest-10:
-
-To skip the first 15 messages starting with the oldest offset:
-
-  oldest+10:
-
-In both cases you can omit "newest" and "oldest":
-
-  -10:
-
-and
-
-  +10:
-
-Will achieve the same as the two examples above.
-
-`)
+		fmt.Fprintln(os.Stderr, consumeDocString)
 
 		os.Exit(2)
 	}
@@ -520,3 +433,92 @@ func (c *consume) findPartitions() []int32 {
 
 	return res
 }
+
+var consumeDocString = `
+The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.
+
+Offsets can be specified as a comma-separated list of intervals:
+
+  [[partition=start:end],...]
+
+The default is to consume from the oldest offset on every partition for the given topic.
+
+ - partition is the numeric identifier for a partition. You can use "all" to
+   specify a default interval for all partitions.
+
+ - start is the included offset where consumption should start.
+
+ - end is the included offset where consumption should end.
+
+The following syntax is supported for each offset:
+
+  (oldest|newest)?(+|-)?(\d+)?
+
+ - "oldest" and "newest" refer to the oldest and newest offsets known for a
+   given partition.
+
+ - You can use "+" with a numeric value to skip the given number of messages
+   since the oldest offset. For example, "1=+20" will skip 20 offset value since
+   the oldest offset for partition 1.
+
+ - You can use "-" with a numeric value to refer to only the given number of
+   messages before the newest offset. For example, "1=-10" will refer to the
+   last 10 offset values before the newest offset for partition 1.
+
+ - Relative offsets are based on numeric values and will not take skipped
+   offsets (e.g. due to compaction) into account.
+
+ - Given only a numeric value, it is interpreted as an absolute offset value.
+
+More examples:
+
+To consume messages from partition 0 between offsets 10 and 20 (inclusive).
+
+  0=10:20
+
+To define an interval for all partitions use -1 as the partition identifier:
+
+  all=2:10
+
+You can also override the offsets for a single partition, in this case 2:
+
+  all=1-10,2=5-10
+
+To consume from multiple partitions:
+
+  0=4:,2=1:10,6
+
+This would consume messages from three partitions:
+
+  - Anything from partition 0 starting at offset 4.
+  - Messages between offsets 1 and 10 from partition 2.
+  - Anything from partition 6.
+
+To start at the latest offset for each partition:
+
+  all=newest:
+
+Or shorter:
+
+  newest:
+
+To consume the last 10 messages:
+
+  newest-10:
+
+To skip the first 15 messages starting with the oldest offset:
+
+  oldest+10:
+
+In both cases you can omit "newest" and "oldest":
+
+  -10:
+
+and
+
+  +10:
+
+Will achieve the same as the two examples above.
+
+`
