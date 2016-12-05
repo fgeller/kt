@@ -514,65 +514,42 @@ func (c tConsumer) Close() error {
 }
 
 func TestConsumeParseArgs(t *testing.T) {
-	configBefore := config
-	defer func() {
-		config = configBefore
-	}()
-
-	expectedTopic := "test-topic"
+	topic := "test-topic"
 	givenBroker := "hans:9092"
-	expectedBrokers := []string{givenBroker}
+	brokers := []string{givenBroker}
 
-	os.Setenv("KT_TOPIC", expectedTopic)
+	os.Setenv("KT_TOPIC", topic)
 	os.Setenv("KT_BROKERS", givenBroker)
 	target := &consume{}
 
 	target.parseArgs([]string{})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %#v and brokers %#v from env vars, got topic %#v and brokers %#v.",
-			expectedTopic,
-			expectedBrokers,
-			config.consume.topic,
-			config.consume.brokers,
-		)
+	if target.topic != topic ||
+		!reflect.DeepEqual(target.brokers, brokers) {
+		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
 		return
 	}
 
 	// default brokers to localhost:9092
 	os.Setenv("KT_TOPIC", "")
 	os.Setenv("KT_BROKERS", "")
-	expectedBrokers = []string{"localhost:9092"}
+	brokers = []string{"localhost:9092"}
 
-	target.parseArgs([]string{"-topic", expectedTopic})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %#v and brokers %#v from env vars, got topic %#v and brokers %#v.",
-			expectedTopic,
-			expectedBrokers,
-			target.topic,
-			target.brokers,
-		)
+	target.parseArgs([]string{"-topic", topic})
+	if target.topic != topic ||
+		!reflect.DeepEqual(target.brokers, brokers) {
+		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
 		return
 	}
 
 	// command line arg wins
 	os.Setenv("KT_TOPIC", "BLUBB")
 	os.Setenv("KT_BROKERS", "BLABB")
-	expectedBrokers = []string{givenBroker}
+	brokers = []string{givenBroker}
 
-	target.parseArgs([]string{"-topic", expectedTopic, "-brokers", givenBroker})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %#v and brokers %#v from env vars, got topic %#v and brokers %#v.",
-			expectedTopic,
-			expectedBrokers,
-			target.topic,
-			target.brokers,
-		)
+	target.parseArgs([]string{"-topic", topic, "-brokers", givenBroker})
+	if target.topic != topic ||
+		!reflect.DeepEqual(target.brokers, brokers) {
+		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
 		return
 	}
 }

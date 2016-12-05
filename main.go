@@ -9,13 +9,6 @@ import (
 
 var buildVersion, buildTime string
 
-var config struct {
-	consume consumeConfig
-	// produce produceConfig
-	// topic   topicConfig
-	// offset  offsetConfig
-}
-
 func listenForInterrupt() chan struct{} {
 	closer := make(chan struct{})
 	go func() {

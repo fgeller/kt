@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -24,6 +25,7 @@ type consume struct {
 	verbose bool
 	version sarama.KafkaVersion
 
+	client   sarama.Client
 	consumer sarama.Consumer
 
 	closer chan struct{}
@@ -35,7 +37,7 @@ type offset struct {
 	diff     int64
 }
 
-func (o offset) value(clientMaker func() sarama.Client, partition int32) (int64, error) {
+func (o offset) value(client sarama.Client, topic string, partition int32) (int64, error) {
 	if !o.relative {
 		return o.start, nil
 	}
@@ -46,7 +48,7 @@ func (o offset) value(clientMaker func() sarama.Client, partition int32) (int64,
 	)
 
 	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
-		if res, err = clientMaker().GetOffset(config.consume.topic, partition, o.start); err != nil {
+		if res, err = client.GetOffset(topic, partition, o.start); err != nil {
 			return 0, err
 		}
 
@@ -214,9 +216,9 @@ func (c *consume) parseArgs(as []string) {
 		}
 	}
 	c.brokers = strings.Split(args.brokers, ",")
-	for i, b := range config.consume.brokers {
+	for i, b := range c.brokers {
 		if !strings.Contains(b, ":") {
-			config.consume.brokers[i] = b + ":9092"
+			c.brokers[i] = b + ":9092"
 		}
 	}
 
@@ -336,22 +338,34 @@ Will achieve the same as the two examples above.
 }
 
 func (c *consume) run(closer chan struct{}) {
-	if config.consume.verbose {
+	var err error
+
+	if c.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
 	conf := sarama.NewConfig()
-	conf.Version = config.consume.version
+	conf.Version = c.version
 	u, err := user.Current()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
 	conf.ClientID = "kt-consume-" + u.Username
-	if config.consume.verbose {
+	if c.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
 	}
 
-	if c.consumer, err = sarama.NewConsumer(config.consume.brokers, conf); err != nil {
+	if c.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+	}
+
+	c.client, err = sarama.NewClient(c.brokers, conf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
+		os.Exit(1)
+	}
+
+	if c.consumer, err = sarama.NewConsumerFromClient(c.client); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
 		os.Exit(1)
 	}
@@ -366,24 +380,10 @@ func (c *consume) run(closer chan struct{}) {
 	c.consume(partitions)
 }
 
-func clientMaker() sarama.Client {
-	conf := sarama.NewConfig()
-	conf.Version = config.consume.version
-	u, err := user.Current()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+func print(out <-chan string) {
+	for {
+		fmt.Println(<-out)
 	}
-	conf.ClientID = "kt-consume-" + u.Username
-	if config.consume.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
-	}
-	client, err := sarama.NewClient(config.consume.brokers, conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-		os.Exit(1)
-	}
-
-	return client
 }
 
 func (c *consume) consume(partitions []int32) {
@@ -392,11 +392,7 @@ func (c *consume) consume(partitions []int32) {
 		out = make(chan string)
 	)
 
-	go func() {
-		for {
-			fmt.Println(<-out)
-		}
-	}()
+	go print(out)
 
 	for _, partition := range partitions {
 		wg.Add(1)
@@ -411,6 +407,10 @@ func (c *consume) consume(partitions []int32) {
 func (c *consume) consumePartition(out chan string, partition int32) {
 	var (
 		offsets interval
+		err     error
+		pcon    sarama.PartitionConsumer
+		start   int64
+		end     int64
 		ok      bool
 	)
 
@@ -418,25 +418,22 @@ func (c *consume) consumePartition(out chan string, partition int32) {
 		offsets, ok = c.offsets[-1]
 	}
 
-	start, err := offsets.start.value(clientMaker, partition)
-	if err != nil {
+	if start, err = offsets.start.value(c.client, c.topic, partition); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read start offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
-	end, err := offsets.end.value(clientMaker, partition)
-	if err != nil {
+	if end, err = offsets.end.value(c.client, c.topic, partition); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read end offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
-	partitionConsumer, err := c.consumer.ConsumePartition(c.topic, partition, start)
-	if err != nil {
+	if pcon, err = c.consumer.ConsumePartition(c.topic, partition, start); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
 		return
 	}
 
-	c.partitionLoop(out, partitionConsumer, partition, end)
+	c.partitionLoop(out, pcon, partition, end)
 }
 
 type consumedMessage struct {
@@ -446,46 +443,54 @@ type consumedMessage struct {
 	Value     *string `json:"value"`
 }
 
+func logClose(name string, c io.Closer) {
+	if err := c.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
+	}
+}
+
 func (c *consume) partitionLoop(out chan string, pc sarama.PartitionConsumer, p int32, end int64) {
+	defer logClose(fmt.Sprintf("partition-consumer %v", p), pc)
+
 	for {
 		timeout := make(<-chan time.Time)
-		if config.consume.timeout > 0 {
-			timeout = time.After(config.consume.timeout)
+		if c.timeout > 0 {
+			timeout = time.After(c.timeout)
 		}
 
 		select {
 		case <-timeout:
-			log.Printf("Consuming from partition [%v] timed out.", p)
-			pc.Close()
+			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s.", p, c.timeout)
 			return
 		case <-c.closer:
-			pc.Close()
 			return
 		case msg, ok := <-pc.Messages():
-			if ok {
-				m := consumedMessage{
-					Partition: msg.Partition,
-					Offset:    msg.Offset,
-				}
-				k := string(msg.Key)
-				if msg.Key != nil {
-					m.Key = &k
-				}
-				v := string(msg.Value)
-				if msg.Value != nil {
-					m.Value = &v
-				}
-
-				byts, err := json.Marshal(m)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
-					close(c.closer)
-					return
-				}
-				out <- string(byts)
+			if !ok {
+				return
 			}
+
+			m := consumedMessage{
+				Partition: msg.Partition,
+				Offset:    msg.Offset,
+			}
+			k := string(msg.Key)
+			if msg.Key != nil {
+				m.Key = &k
+			}
+			v := string(msg.Value)
+			if msg.Value != nil {
+				m.Value = &v
+			}
+
+			byts, err := json.Marshal(m)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
+				close(c.closer)
+				return
+			}
+			out <- string(byts)
+
 			if end > 0 && msg.Offset >= end {
-				pc.Close()
 				return
 			}
 		}
