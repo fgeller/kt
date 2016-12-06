@@ -7,6 +7,7 @@ import (
 	"os/signal"
 )
 
+// TODO have these all the time
 var buildVersion, buildTime string
 
 func listenForInterrupt() chan struct{} {
@@ -15,7 +16,7 @@ func listenForInterrupt() chan struct{} {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
 		<-signals
-		log.Printf("Received interrupt - shutting down...")
+		log.Printf("received interrupt - shutting down...")
 		close(closer)
 	}()
 
@@ -50,29 +51,24 @@ Use "kt [command] -help" for for information about the command.
 
 More at https://github.com/fgeller/kt`
 
-func usage() {
-	fmt.Fprintln(os.Stderr, usageMessage)
-	os.Exit(2)
-}
-
 func parseArgs() command {
 	if len(os.Args) < 2 {
-		usage()
+		failf(usageMessage)
 	}
 
-	commands := map[string]command{
-		"consume": &consumeCmd{},
-		"produce": &produceCmd{},
-		"topic":   &topicCmd{},
-		"offset":  &offsetCmd{},
+	switch os.Args[1] {
+	case "consume":
+		return &consumeCmd{}
+	case "produce":
+		return &produceCmd{}
+	case "topic":
+		return &topicCmd{}
+	case "offset":
+		return &offsetCmd{}
+	default:
+		failf(usageMessage)
+		return nil
 	}
-
-	cmd, ok := commands[os.Args[1]]
-	if !ok {
-		usage()
-	}
-
-	return cmd
 }
 
 func main() {
