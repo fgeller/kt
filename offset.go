@@ -1,414 +1,390 @@
 package main
 
-// import (
-// 	"encoding/json"
-// 	"flag"
-// 	"fmt"
-// 	"log"
-// 	"os"
-// 	"os/user"
-// 	"regexp"
-// 	"strconv"
-// 	"strings"
-// 	"sync"
-// 	"time"
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/user"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
-// 	"github.com/Shopify/sarama"
-// )
+	"github.com/Shopify/sarama"
+)
 
-// type offsetConfig struct {
-// 	flags      *flag.FlagSet
-// 	brokers    []string
-// 	group      string
-// 	topic      *regexp.Regexp
-// 	partition  int32
-// 	newOffsets int64
-// 	verbose    bool
-// 	version    sarama.KafkaVersion
-// 	args       struct {
-// 		brokers    string
-// 		group      string
-// 		topic      string
-// 		partition  int
-// 		setOffsets string
-// 		verbose    bool
-// 		version    string
-// 	}
-// }
+type offsetCmd struct {
+	flags      *flag.FlagSet
+	brokers    []string
+	group      string
+	setOffsets string
+	topic      *regexp.Regexp
+	partition  int32
+	newOffsets int64
+	verbose    bool
+	version    sarama.KafkaVersion
 
-// type offsets struct {
-// 	ConsumerGroup   string `json:"consumer-group,omitempty"`
-// 	Topic           string `json:"topic"`
-// 	Partition       int32  `json:"partition"`
-// 	PartitionOffset int64  `json:"partition-offset"`
-// 	ConsumerOffset  *int64 `json:"consumer-offset,omitempty"`
-// }
+	client        sarama.Client
+	offsetManager sarama.OffsetManager
+}
 
-// func offsetCommand() command {
-// 	return command{
-// 		flags:     offsetFlags(),
-// 		parseArgs: offsetParseArgs,
-// 		run:       offsetRun,
-// 	}
-// }
+type offsetArgs struct {
+	brokers    string
+	group      string
+	topic      string
+	partition  int
+	setOffsets string
+	verbose    bool
+	version    string
+}
 
-// func offsetFlags() *flag.FlagSet {
-// 	offset := flag.NewFlagSet("offset", flag.ExitOnError)
-// 	offset.StringVar(&config.offset.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-// 	offset.StringVar(&config.offset.args.group, "group", "", "The name of the consumer group.")
-// 	offset.StringVar(&config.offset.args.topic, "topic", "", "The full or partial name of topic(s)")
-// 	offset.IntVar(&config.offset.args.partition, "partition", -1, "The identifier of the partition")
-// 	offset.StringVar(&config.offset.args.setOffsets, "setConsumerOffsets", "", "Set offsets for the consumer groups to \"oldest\", \"newest\", or a specific numerical value. "+
-// 		"For more accurate modification also specify topic and/or partition")
-// 	offset.BoolVar(&config.offset.args.verbose, "verbose", false, "More verbose logging to stderr.")
-// 	offset.StringVar(&config.offset.args.version, "version", "", "Kafka protocol version")
+type offsets struct {
+	ConsumerGroup   string `json:"consumer-group,omitempty"`
+	Topic           string `json:"topic"`
+	Partition       int32  `json:"partition"`
+	PartitionOffset int64  `json:"partition-offset"`
+	ConsumerOffset  *int64 `json:"consumer-offset,omitempty"`
+}
 
-// 	offset.Usage = func() {
-// 		fmt.Fprintln(os.Stderr, "Usage of offset:")
-// 		offset.PrintDefaults()
-// 		fmt.Fprintln(os.Stderr, `
-// The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
-// The values supplied on the command line win over environment variable values.
+func (cmd *offsetCmd) parseFlags(as []string) offsetArgs {
+	args := offsetArgs{}
+	flags := flag.NewFlagSet("offset", flag.ExitOnError)
+	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.StringVar(&args.group, "group", "", "The name of the consumer group.")
+	flags.StringVar(&args.topic, "topic", "", "The full or partial name of topic(s)")
+	flags.IntVar(&args.partition, "partition", -1, "The identifier of the partition")
+	flags.StringVar(&args.setOffsets, "setConsumerOffsets", "", `Set offsets for the consumer groups to "oldest", "newest", or a specific numerical value. For more accurate modification also specify topic and/or partition`)
+	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage of offset:")
+		flags.PrintDefaults()
+		fmt.Fprintln(os.Stderr, offsetDocString)
+		os.Exit(2)
+	}
 
-// Offsets are listed for partitions/consumer groups. This can be filtered by the flags [brokers], [topic], and [partition].
+	flags.Parse(as)
+	return args
+}
 
-// This tool also offers the option to update these by adding the [setConsumerOffsets] flag.
+func (cmd *offsetCmd) parseArgs(as []string) {
+	var (
+		err  error
+		args = cmd.parseFlags(as)
+	)
 
-// The following syntax is supported for setConsumerOffsets:
+	envBrokers := os.Getenv("KT_BROKERS")
+	if args.brokers == "" {
+		if envBrokers != "" {
+			args.brokers = envBrokers
+		} else {
+			args.brokers = "localhost:9092"
+		}
+	}
+	cmd.brokers = strings.Split(args.brokers, ",")
 
-//   (oldest|newest|\d+)?
+	for i, b := range cmd.brokers {
+		if !strings.Contains(b, ":") {
+			cmd.brokers[i] = b + ":9092"
+		}
+	}
 
-//  - "oldest" and "newest" refer to the oldest and newest offsets known for a
-//    given partition.
+	if cmd.topic, err = regexp.Compile(args.topic); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid regex for filter. err=%s\n", err)
+		os.Exit(2)
+	}
 
-//  - Given only a numeric value, it is interpreted as an absolute offset value.
-// `)
-// 		os.Exit(2)
-// 	}
+	cmd.partition = int32(args.partition)
+	cmd.group = args.group
+	cmd.verbose = args.verbose
+	cmd.version = kafkaVersion(args.version)
+	cmd.setOffsets = args.setOffsets
 
-// 	return offset
-// }
+	switch args.setOffsets {
+	case "":
+	case "oldest":
+		cmd.newOffsets = sarama.OffsetOldest
+	case "newest":
+		cmd.newOffsets = sarama.OffsetNewest
+	default:
+		var off int
+		if off, err = strconv.Atoi(args.setOffsets); err != nil {
+			fmt.Fprintf(os.Stderr, `Invalid value for setting the offset. possible values are "oldest", "newest", or any numerical value. err=%s\n`, err)
+			os.Exit(2)
+		}
+		cmd.newOffsets = int64(off)
+	}
+}
 
-// func offsetParseArgs() {
-// 	envBrokers := os.Getenv("KT_BROKERS")
-// 	if config.offset.args.brokers == "" {
-// 		if envBrokers != "" {
-// 			config.offset.args.brokers = envBrokers
-// 		} else {
-// 			config.offset.args.brokers = "localhost:9092"
-// 		}
-// 	}
-// 	config.offset.brokers = strings.Split(config.offset.args.brokers, ",")
-// 	for i, b := range config.offset.brokers {
-// 		if !strings.Contains(b, ":") {
-// 			config.offset.brokers[i] = b + ":9092"
-// 		}
-// 	}
+func (cmd *offsetCmd) mkClient() {
+	var (
+		err error
+		usr *user.User
+		cfg = sarama.NewConfig()
+	)
 
-// 	re, err := regexp.Compile(config.offset.args.topic)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Invalid regex for filter. err=%s\n", err)
-// 		os.Exit(2)
-// 	}
-// 	config.offset.topic = re
+	cfg.Version = cmd.version
+	if usr, err = user.Current(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	cfg.ClientID = "kt-offset-" + usr.Username
 
-// 	config.offset.partition = int32(config.offset.args.partition)
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
+	}
 
-// 	config.offset.group = config.offset.args.group
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
+		os.Exit(1)
+	}
 
-// 	switch config.offset.args.setOffsets {
-// 	case "":
-// 	case "oldest":
-// 		config.offset.newOffsets = sarama.OffsetOldest
-// 	case "newest":
-// 		config.offset.newOffsets = sarama.OffsetNewest
-// 	default:
-// 		o, err := strconv.Atoi(config.offset.args.setOffsets)
-// 		if err != nil {
-// 			fmt.Fprintf(os.Stderr, "Invalid value for setting the offset. possible values are \"oldest\", \"newest\", or any numerical value. err=%s\n", err)
-// 			os.Exit(2)
-// 		}
-// 		config.offset.newOffsets = int64(o)
-// 	}
+	if cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create offset manager for group=%s err=%v\n", cmd.group, err)
+		os.Exit(1)
+	}
+}
 
-// 	config.offset.verbose = config.offset.args.verbose
-// 	config.offset.version = kafkaVersion(config.offset.args.version)
-// }
+func (cmd *offsetCmd) run(as []string, closer chan struct{}) {
+	var (
+		tps []string
+		err error
+	)
 
-// func offsetRun(closer chan struct{}) {
-// 	var err error
-// 	if config.offset.verbose {
-// 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
-// 	}
+	if cmd.verbose {
+		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
+	}
 
-// 	conf := sarama.NewConfig()
-// 	conf.Version = config.offset.version
-// 	u, err := user.Current()
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
-// 	}
-// 	conf.ClientID = "kt-offset-" + u.Username
-// 	if config.offset.verbose {
-// 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
-// 	}
+	cmd.mkClient()
+	defer cmd.client.Close()
 
-// 	client, err := sarama.NewClient(config.offset.brokers, conf)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-// 		os.Exit(1)
-// 	}
-// 	defer client.Close()
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-// 	om, err := sarama.NewOffsetManagerFromClient(config.offset.group, client)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to create offset manager for group=%s err=%v\n", config.offset.group, err)
-// 		os.Exit(1)
-// 	}
+	out := make(chan printContext)
+	done := make(chan bool)
 
-// 	var wg sync.WaitGroup
-// 	wg.Add(1)
+	go func(out chan printContext, done chan bool) {
+		if tps, err = cmd.client.Topics(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
+			os.Exit(1)
+		}
 
-// 	out := make(chan string)
-// 	done := make(chan bool)
-// 	go func(out chan string, done chan bool) {
-// 		topics, err := client.Topics()
-// 		if err != nil {
-// 			fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
-// 			os.Exit(1)
-// 		}
+		for _, t := range tps {
+			if !cmd.topic.MatchString(t) {
+				continue
+			}
 
-// 		for _, t := range topics {
-// 			if config.offset.args.topic == "" || config.offset.topic.MatchString(t) {
-// 				offsetsForTopic(
-// 					client.Coordinator,
-// 					client.Partitions,
-// 					client.GetOffset,
-// 					om.ManagePartition,
-// 					config.offset.group,
-// 					t,
-// 					out,
-// 				)
-// 			}
-// 		}
+			cmd.offsetsForTopic(t, out)
+		}
 
-// 		done <- true
-// 	}(out, done)
+		done <- true
+	}(out, done)
 
-// printLoop:
-// 	for {
-// 		select {
-// 		case m := <-out:
-// 			fmt.Println(m)
-// 		case <-done:
-// 			break printLoop
-// 		case <-closer:
-// 			break printLoop
-// 		}
-// 	}
-// }
+printLoop:
+	for {
+		select {
+		case m := <-out:
+			fmt.Println(m)
+		case <-done:
+			break printLoop
+		case <-closer:
+			break printLoop
+		}
+	}
+}
 
-// // offsetsForTopic processes the offsets for a given topic
-// func offsetsForTopic(
-// 	getBroker func(string) (*sarama.Broker, error),
-// 	getPartitions func(string) ([]int32, error),
-// 	getOffset func(string, int32, int64) (int64, error),
-// 	getPartitionOffsetManager func(string, int32) (sarama.PartitionOffsetManager, error),
-// 	group string,
-// 	topic string,
-// 	out chan string,
-// ) {
-// 	partitions, err := getPartitions(topic)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic=%s err=%v\n", topic, err)
-// 		os.Exit(1)
-// 	}
+func (cmd *offsetCmd) offsetsForTopic(topic string, out chan printContext) {
+	var (
+		ps  []int32
+		err error
+	)
 
-// 	for _, p := range partitions {
-// 		if config.offset.partition == -1 || config.offset.partition == p {
-// 			offsetsForPartition(getBroker, getOffset, getPartitionOffsetManager, group, topic, p, out)
-// 		}
-// 	}
-// }
+	if ps, err = cmd.client.Partitions(topic); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic=%s err=%v\n", topic, err)
+		os.Exit(1)
+	}
 
-// // offsetsForPartition processes the offsets for a given partition of a given topic
-// // if a group ID is passed, it will process the offsets for a consumer group
-// func offsetsForPartition(
-// 	getBroker func(string) (*sarama.Broker, error),
-// 	getOffset func(string, int32, int64) (int64, error),
-// 	getPartitionOffsetManager func(string, int32) (sarama.PartitionOffsetManager, error),
-// 	group string,
-// 	topic string,
-// 	partition int32,
-// 	out chan string,
-// ) {
-// 	po, err := getOffset(topic, partition, sarama.OffsetNewest)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
-// 		os.Exit(1)
-// 	}
+	for _, p := range ps {
+		if cmd.partition == -1 || cmd.partition == p {
+			cmd.offsetsForPartition(topic, p, out)
+		}
+	}
+}
 
-// 	if group == "" {
-// 		printOffset(offsets{
-// 			Topic:           topic,
-// 			Partition:       partition,
-// 			PartitionOffset: po,
-// 		}, out)
-// 	} else {
-// 		offsetsForConsumer(getBroker, getOffset, getPartitionOffsetManager, group, topic, partition, po, out)
-// 	}
-// }
+// offsetsForPartition processes the offsets for a given partition of a given topic
+// if a group ID is passed, it will process the offsets for a consumer group
+func (cmd *offsetCmd) offsetsForPartition(topic string, partition int32, out chan printContext) {
+	po, err := cmd.client.GetOffset(topic, partition, sarama.OffsetNewest)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
+		os.Exit(1)
+	}
 
-// // offsetsForConsumer processes the consumer group offsets for a given partition of a given topic
-// func offsetsForConsumer(
-// 	getBroker func(string) (*sarama.Broker, error),
-// 	getOffset func(string, int32, int64) (int64, error),
-// 	getPartitionOffsetManager func(string, int32) (sarama.PartitionOffsetManager, error),
-// 	group string,
-// 	topic string,
-// 	partition int32,
-// 	partitionOffset int64,
-// 	out chan string,
-// ) {
+	if cmd.group != "" {
+		cmd.offsetsForConsumer(topic, partition, po, out)
+		return
+	}
 
-// 	if config.offset.args.setOffsets != "" {
-// 		setConsumerOffsets(getBroker, getOffset, topic, partition, group)
-// 	}
+	printOffset(offsets{Topic: topic, Partition: partition, PartitionOffset: po}, out)
+}
 
-// 	pom, err := getPartitionOffsetManager(topic, partition)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to read consumer offsets for group=%s topic=%s partition=%d err=%v\n",
-// 			config.offset.group, topic, partition, err)
-// 		os.Exit(1)
-// 	}
-// 	co, _ := pom.NextOffset()
-// 	pom.Close()
+// offsetsForConsumer processes the consumer group offsets for a given partition of a given topic
+func (cmd *offsetCmd) offsetsForConsumer(topic string, partition int32, partitionOffset int64, out chan printContext) {
 
-// 	printOffset(offsets{
-// 		ConsumerGroup:   group,
-// 		Topic:           topic,
-// 		Partition:       partition,
-// 		PartitionOffset: partitionOffset,
-// 		ConsumerOffset:  &co,
-// 	}, out)
-// }
+	if cmd.setOffsets != "" {
+		cmd.setConsumerOffsets(topic, partition)
+		return
+	}
 
-// // setConsumerOffsets processes the setConsumerOffset flag
-// func setConsumerOffsets(
-// 	getBroker func(string) (*sarama.Broker, error),
-// 	getOffset func(string, int32, int64) (int64, error),
-// 	topic string,
-// 	partition int32,
-// 	group string,
-// ) {
+	pom, err := cmd.offsetManager.ManagePartition(topic, partition)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read consumer offsets for group=%s topic=%s partition=%d err=%v\n", cmd.group, topic, partition, err)
+		os.Exit(1)
+	}
+	co, _ := pom.NextOffset()
+	pom.Close()
 
-// 	broker, err := getBroker(group)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to create broker err=%v\n", err)
-// 		os.Exit(1)
-// 	}
+	printOffset(offsets{ConsumerGroup: cmd.group, Topic: topic, Partition: partition, PartitionOffset: partitionOffset, ConsumerOffset: &co}, out)
+}
 
-// 	memberID, generationID := joinGroup(broker, group, topic)
+// cmd.client.Partitions,
+// cmd.client.GetOffset,
+// osm.ManagePartition,
 
-// 	var po int64
-// 	if config.offset.newOffsets == sarama.OffsetNewest || config.offset.newOffsets == sarama.OffsetOldest {
-// 		po, err = getOffset(topic, partition, config.offset.newOffsets)
-// 		if err != nil {
-// 			fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
-// 			os.Exit(1)
-// 		}
-// 	} else {
-// 		po = config.offset.newOffsets
-// 	}
+// setConsumerOffsets processes the setConsumerOffset flag
+func (cmd *offsetCmd) setConsumerOffsets(topic string, partition int32) {
+	var (
+		err error
+		brk *sarama.Broker
+		po  = cmd.newOffsets
+	)
+	if brk, err = cmd.client.Coordinator(cmd.group); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create broker err=%v\n", err)
+		os.Exit(1)
+	}
+	defer logClose("broker", brk)
 
-// 	commitOffset(broker, topic, partition, group, po, generationID, memberID)
+	memberID, generationID := joinGroup(brk, cmd.group, topic)
 
-// 	broker.Close()
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to close broker err=%v\n", err)
-// 		os.Exit(1)
-// 	}
-// }
+	if cmd.newOffsets == sarama.OffsetNewest || cmd.newOffsets == sarama.OffsetOldest {
+		if po, err = cmd.client.GetOffset(topic, partition, cmd.newOffsets); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
+			os.Exit(1)
+		}
+	}
 
-// // joinGroup joins a consumer group and returns the group memberID and generationID
-// func joinGroup(broker *sarama.Broker, group string, topic string) (string, int32) {
-// 	joinGroupReq := &sarama.JoinGroupRequest{
-// 		GroupId:        group,
-// 		SessionTimeout: int32((30 * time.Second) / time.Millisecond),
-// 		ProtocolType:   "consumer",
-// 	}
+	cmd.commitOffset(brk, topic, partition, cmd.group, po, generationID, memberID)
+}
 
-// 	meta := &sarama.ConsumerGroupMemberMetadata{
-// 		Version: 1,
-// 		Topics:  []string{topic},
-// 	}
-// 	err := joinGroupReq.AddGroupProtocolMetadata("range", meta)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to add meta data err=%v\n", err)
-// 		os.Exit(1)
-// 	}
-// 	err = joinGroupReq.AddGroupProtocolMetadata("roundrobin", meta)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to add meta data err=%v\n", err)
-// 		os.Exit(1)
-// 	}
+// joinGroup joins a consumer group and returns the group memberID and generationID
+func joinGroup(broker *sarama.Broker, group string, topic string) (string, int32) {
+	var (
+		err error
+		res *sarama.JoinGroupResponse
+	)
 
-// 	resp, err := broker.JoinGroup(joinGroupReq)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to join consumer group err=%v\n", err)
-// 		os.Exit(1)
-// 	} else if resp.Err != sarama.ErrNoError {
-// 		fmt.Fprintf(os.Stderr, "Failed to join consumer group err=%v\n", resp.Err)
-// 		os.Exit(1)
-// 	}
+	joinGroupReq := &sarama.JoinGroupRequest{
+		GroupId:        group,
+		SessionTimeout: int32((30 * time.Second) / time.Millisecond),
+		ProtocolType:   "consumer",
+	}
 
-// 	return resp.MemberId, resp.GenerationId
-// }
+	meta := &sarama.ConsumerGroupMemberMetadata{
+		Version: 1,
+		Topics:  []string{topic},
+	}
 
-// // commitOffset sends an offset message to kafka for the given consumer group
-// func commitOffset(broker *sarama.Broker, topic string, partition int32, group string, offset int64, generationID int32, memberID string) {
+	if err := joinGroupReq.AddGroupProtocolMetadata("range", meta); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to add meta data err=%v\n", err)
+		os.Exit(1)
+	}
 
-// 	v := int16(0)
-// 	if config.offset.version.IsAtLeast(sarama.V0_8_2_0) {
-// 		v = 1
-// 	}
-// 	if config.offset.version.IsAtLeast(sarama.V0_9_0_0) {
-// 		v = 2
-// 	}
+	if err = joinGroupReq.AddGroupProtocolMetadata("roundrobin", meta); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to add meta data err=%v\n", err)
+		os.Exit(1)
+	}
 
-// 	req := &sarama.OffsetCommitRequest{
-// 		Version:                 v,
-// 		ConsumerGroup:           group,
-// 		ConsumerGroupGeneration: generationID,
-// 		ConsumerID:              memberID,
-// 		RetentionTime:           -1,
-// 	}
-// 	req.AddBlock(topic, partition, offset, 0, "")
+	if res, err := broker.JoinGroup(joinGroupReq); err != nil || res.Err != sarama.ErrNoError {
+		fmt.Fprintf(os.Stderr, "Failed to join consumer group err=%v responseErr=%v\n", err, res.Err)
+		os.Exit(1)
+	}
 
-// 	offsetResp, err := broker.CommitOffset(req)
-// 	if err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to commit offsets. err=%v\n", err)
-// 		os.Exit(1)
-// 	} else if len(offsetResp.Errors) > 0 {
-// 		for topic, perrs := range offsetResp.Errors {
-// 			for partition, kerr := range perrs {
-// 				if kerr != sarama.ErrNoError {
-// 					fmt.Fprintf(os.Stderr, "Failed to commit offsets topic=%s, partition=%s. err=%v\n", topic, partition, err)
-// 					os.Exit(1)
-// 				}
-// 			}
-// 		}
-// 	}
-// }
+	return res.MemberId, res.GenerationId
+}
 
-// // printOffset sends the JSON offsets to the out channel
-// func printOffset(o offsets, out chan string) {
-// 	var byts []byte
-// 	var err error
+// commitOffset sends an offset message to kafka for the given consumer group
+func (cmd *offsetCmd) commitOffset(broker *sarama.Broker, topic string, partition int32, group string, offset int64, generationID int32, memberID string) {
 
-// 	if byts, err = json.Marshal(o); err != nil {
-// 		fmt.Fprintf(os.Stderr, "Failed to marshal JSON for consumer group %+v. err=%v\n", o, err)
-// 		return
-// 	}
+	var (
+		ocr *sarama.OffsetCommitResponse
+		err error
+	)
 
-// 	out <- string(byts)
-// }
+	v := int16(0)
+	if cmd.version.IsAtLeast(sarama.V0_8_2_0) {
+		v = 1
+	}
+	if cmd.version.IsAtLeast(sarama.V0_9_0_0) {
+		v = 2
+	}
+
+	req := &sarama.OffsetCommitRequest{
+		Version:                 v,
+		ConsumerGroup:           group,
+		ConsumerGroupGeneration: generationID,
+		ConsumerID:              memberID,
+		RetentionTime:           -1,
+	}
+	req.AddBlock(topic, partition, offset, 0, "")
+
+	if ocr, err = broker.CommitOffset(req); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to commit offsets. err=%v\n", err)
+		os.Exit(1)
+	}
+
+	for topic, perrs := range ocr.Errors {
+		for partition, kerr := range perrs {
+			if kerr != sarama.ErrNoError {
+				fmt.Fprintf(os.Stderr, "Failed to commit offsets topic=%s, partition=%s. err=%v\n", topic, partition, err)
+				os.Exit(1)
+			}
+		}
+	}
+}
+
+func printOffset(o offsets, out chan printContext) {
+	var (
+		err error
+		buf []byte
+	)
+
+	if buf, err = json.Marshal(o); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to marshal JSON for consumer group %+v. err=%v\n", o, err)
+		return
+	}
+
+	ctx := printContext{string(buf), make(chan struct{})}
+	out <- ctx
+	<-ctx.done
+}
+
+var offsetDocString = `
+The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.
+
+Offsets are listed for partitions/consumer groups. This can be filtered by the flags [brokers], [topic], and [partition].
+
+This tool also offers the option to update these by adding the [setConsumerOffsets] flag.
+
+The following syntax is supported for setConsumerOffsets:
+
+  (oldest|newest|\d+)?
+
+ - "oldest" and "newest" refer to the oldest and newest offsets known for a
+   given partition.
+
+ - Given only a numeric value, it is interpreted as an absolute offset value.
+`
