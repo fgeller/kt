@@ -177,8 +177,7 @@ func parseOffsets(str string) (map[int32]interval, error) {
 
 func (c *consumeCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
-	fmt.Fprintln(os.Stderr, "Use \"kt consume -help\" for more information.")
-	os.Exit(1)
+	failf("use \"kt consume -help\" for more information")
 }
 
 func (c *consumeCmd) parseArgs(as []string) {
@@ -256,8 +255,7 @@ func (c *consumeCmd) setupClient() {
 	}
 
 	if c.client, err = sarama.NewClient(c.brokers, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-		os.Exit(1)
+		failf("failed to create client err=%v", err)
 	}
 }
 
@@ -274,15 +272,13 @@ func (c *consumeCmd) run(args []string, closer chan struct{}) {
 	c.setupClient()
 
 	if c.consumer, err = sarama.NewConsumerFromClient(c.client); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create consumer err=%v\n", err)
-		os.Exit(1)
+		failf("failed to create consumer err=%v", err)
 	}
 	defer logClose("consumer", c.consumer)
 
 	partitions := c.findPartitions()
 	if len(partitions) == 0 {
-		fmt.Fprintf(os.Stderr, "Found no partitions to consume.\n")
-		os.Exit(1)
+		failf("Found no partitions to consume")
 	}
 
 	c.consume(partitions)
@@ -415,8 +411,7 @@ func (c *consumeCmd) findPartitions() []int32 {
 		err error
 	)
 	if all, err = c.consumer.Partitions(c.topic); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic %v err=%v\n", c.topic, err)
-		os.Exit(1)
+		failf("failed to read partitions for topic %v err=%v", c.topic, err)
 	}
 
 	if _, hasDefault := c.offsets[-1]; hasDefault {

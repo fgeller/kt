@@ -1,6 +1,11 @@
 package main
 
-import "github.com/Shopify/sarama"
+import (
+	"fmt"
+	"os"
+
+	"github.com/Shopify/sarama"
+)
 
 var (
 	v820  = sarama.V0_8_2_0
@@ -26,4 +31,9 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 	default:
 		return sarama.V0_10_0_0
 	}
+}
+
+func failf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+	os.Exit(1)
 }

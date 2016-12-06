@@ -93,8 +93,7 @@ func (cmd *offsetCmd) parseArgs(as []string) {
 	}
 
 	if cmd.topic, err = regexp.Compile(args.topic); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid regex for filter. err=%s\n", err)
-		os.Exit(2)
+		failf("invalid regex for filter err=%s", err)
 	}
 
 	cmd.partition = int32(args.partition)
@@ -112,8 +111,7 @@ func (cmd *offsetCmd) parseArgs(as []string) {
 	default:
 		var off int
 		if off, err = strconv.Atoi(args.setOffsets); err != nil {
-			fmt.Fprintf(os.Stderr, `Invalid value for setting the offset. possible values are "oldest", "newest", or any numerical value. err=%s\n`, err)
-			os.Exit(2)
+			failf(`invalid value for setting the offset, possible values are "oldest", "newest", or any numerical value err=%s`, err)
 		}
 		cmd.newOffsets = int64(off)
 	}
@@ -137,13 +135,11 @@ func (cmd *offsetCmd) mkClient() {
 	}
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-		os.Exit(1)
+		failf("failed to create client err=%v", err)
 	}
 
 	if cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create offset manager for group=%s err=%v\n", cmd.group, err)
-		os.Exit(1)
+		failf("failed to create offset manager for group=%s err=%v", cmd.group, err)
 	}
 }
 
@@ -168,8 +164,7 @@ func (cmd *offsetCmd) run(as []string, closer chan struct{}) {
 
 	go func(out chan printContext, done chan bool) {
 		if tps, err = cmd.client.Topics(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
-			os.Exit(1)
+			failf("failed to read topics err=%v", err)
 		}
 
 		for _, t := range tps {
@@ -203,8 +198,7 @@ func (cmd *offsetCmd) offsetsForTopic(topic string, out chan printContext) {
 	)
 
 	if ps, err = cmd.client.Partitions(topic); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read partitions for topic=%s err=%v\n", topic, err)
-		os.Exit(1)
+		failf("failed to read partitions for topic=%s err=%v", topic, err)
 	}
 
 	for _, p := range ps {
@@ -219,8 +213,7 @@ func (cmd *offsetCmd) offsetsForTopic(topic string, out chan printContext) {
 func (cmd *offsetCmd) offsetsForPartition(topic string, partition int32, out chan printContext) {
 	po, err := cmd.client.GetOffset(topic, partition, sarama.OffsetNewest)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
-		os.Exit(1)
+		failf("failed to read offsets for topic=%s partition=%d err=%v", topic, partition, err)
 	}
 
 	if cmd.group != "" {
@@ -241,18 +234,13 @@ func (cmd *offsetCmd) offsetsForConsumer(topic string, partition int32, partitio
 
 	pom, err := cmd.offsetManager.ManagePartition(topic, partition)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read consumer offsets for group=%s topic=%s partition=%d err=%v\n", cmd.group, topic, partition, err)
-		os.Exit(1)
+		failf("failed to read consumer offsets for group=%s topic=%s partition=%d err=%v", cmd.group, topic, partition, err)
 	}
 	co, _ := pom.NextOffset()
 	pom.Close()
 
 	printOffset(offsets{ConsumerGroup: cmd.group, Topic: topic, Partition: partition, PartitionOffset: partitionOffset, ConsumerOffset: &co}, out)
 }
-
-// cmd.client.Partitions,
-// cmd.client.GetOffset,
-// osm.ManagePartition,
 
 // setConsumerOffsets processes the setConsumerOffset flag
 func (cmd *offsetCmd) setConsumerOffsets(topic string, partition int32) {
@@ -262,8 +250,7 @@ func (cmd *offsetCmd) setConsumerOffsets(topic string, partition int32) {
 		po  = cmd.newOffsets
 	)
 	if brk, err = cmd.client.Coordinator(cmd.group); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create broker err=%v\n", err)
-		os.Exit(1)
+		failf("failed to create broker err=%v", err)
 	}
 	defer logClose("broker", brk)
 
@@ -271,8 +258,7 @@ func (cmd *offsetCmd) setConsumerOffsets(topic string, partition int32) {
 
 	if cmd.newOffsets == sarama.OffsetNewest || cmd.newOffsets == sarama.OffsetOldest {
 		if po, err = cmd.client.GetOffset(topic, partition, cmd.newOffsets); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read offsets for topic=%s partition=%d err=%v\n", topic, partition, err)
-			os.Exit(1)
+			failf("failed to read offsets for topic=%s partition=%d err=%v", topic, partition, err)
 		}
 	}
 
@@ -298,18 +284,15 @@ func joinGroup(broker *sarama.Broker, group string, topic string) (string, int32
 	}
 
 	if err := joinGroupReq.AddGroupProtocolMetadata("range", meta); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to add meta data err=%v\n", err)
-		os.Exit(1)
+		failf("failed to add meta data err=%v", err)
 	}
 
 	if err = joinGroupReq.AddGroupProtocolMetadata("roundrobin", meta); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to add meta data err=%v\n", err)
-		os.Exit(1)
+		failf("failed to add meta data err=%v", err)
 	}
 
 	if res, err := broker.JoinGroup(joinGroupReq); err != nil || res.Err != sarama.ErrNoError {
-		fmt.Fprintf(os.Stderr, "Failed to join consumer group err=%v responseErr=%v\n", err, res.Err)
-		os.Exit(1)
+		failf("failed to join consumer group err=%v responseErr=%v", err, res.Err)
 	}
 
 	return res.MemberId, res.GenerationId
@@ -341,15 +324,13 @@ func (cmd *offsetCmd) commitOffset(broker *sarama.Broker, topic string, partitio
 	req.AddBlock(topic, partition, offset, 0, "")
 
 	if ocr, err = broker.CommitOffset(req); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to commit offsets. err=%v\n", err)
-		os.Exit(1)
+		failf("failed to commit offsets err=%v", err)
 	}
 
 	for topic, perrs := range ocr.Errors {
 		for partition, kerr := range perrs {
 			if kerr != sarama.ErrNoError {
-				fmt.Fprintf(os.Stderr, "Failed to commit offsets topic=%s, partition=%s. err=%v\n", topic, partition, err)
-				os.Exit(1)
+				failf("failed to commit offsets topic=%s, partition=%s. err=%v", topic, partition, err)
 			}
 		}
 	}
@@ -362,8 +343,7 @@ func printOffset(o offsets, out chan printContext) {
 	)
 
 	if buf, err = json.Marshal(o); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal JSON for consumer group %+v. err=%v\n", o, err)
-		return
+		failf("failed to marshal JSON for consumer group %#v err=%v", o, err)
 	}
 
 	ctx := printContext{string(buf), make(chan struct{})}

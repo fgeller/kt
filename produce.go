@@ -59,8 +59,7 @@ func (p *produceCmd) read(as []string) produceArgs {
 
 func (p *produceCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
-	fmt.Fprintln(os.Stderr, "Use \"kt produce -help\" for more information.")
-	os.Exit(1)
+	failf("use \"kt produce -help\" for more information")
 }
 
 func (p *produceCmd) parseArgs(as []string) {
@@ -170,17 +169,14 @@ loop:
 				for _, pm := range tm.Partitions {
 					b, ok := brokers[pm.Leader]
 					if !ok {
-						fmt.Fprintf(os.Stderr, "Failed to find leader in broker response, giving up.\n")
-						os.Exit(1)
+						failf("failed to find leader in broker response, giving up")
 					}
 
 					if err = b.Open(cfg); err != nil && err != sarama.ErrAlreadyConnected {
-						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
-						os.Exit(1)
+						failf("failed to open broker connection err=%s", err)
 					}
 					if connected, err := broker.Connected(); !connected && err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to wait for broker connection to open. err=%s\n", err)
-						os.Exit(1)
+						failf("failed to wait for broker connection to open err=%s", err)
 					}
 
 					p.leaders[pm.ID] = b
@@ -190,8 +186,7 @@ loop:
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Failed to find leader for given topic.\n")
-	os.Exit(1)
+	failf("failed to find leader for given topic")
 }
 
 type produceCmd struct {

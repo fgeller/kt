@@ -99,8 +99,7 @@ func (t *topicCmd) parseArgs(as []string) {
 	}
 
 	if re, err = regexp.Compile(args.filter); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid regex for filter. err=%s\n", err)
-		os.Exit(2)
+		failf("invalid regex for filter err=%s", err)
 	}
 
 	t.filter = re
@@ -129,8 +128,7 @@ func (t *topicCmd) mkClient() {
 	}
 
 	if t.client, err = sarama.NewClient(t.brokers, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-		os.Exit(1)
+		failf("failed to create client err=%v", err)
 	}
 }
 
@@ -149,8 +147,7 @@ func (t *topicCmd) run(as []string, closer chan struct{}) {
 	defer t.client.Close()
 
 	if all, err = t.client.Topics(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
-		os.Exit(1)
+		failf("failed to read topics err=%v", err)
 	}
 
 	topics := []string{}
