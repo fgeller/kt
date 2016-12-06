@@ -61,10 +61,10 @@ func parseArgs() command {
 	}
 
 	commands := map[string]command{
-		"consume": &consume{},
-		"produce": &produce{},
+		"consume": &consumeCmd{},
+		"produce": &produceCmd{},
 		"topic":   &topicCmd{},
-		// "offset":  offsetCommand(),
+		"offset":  &offsetCmd{},
 	}
 
 	cmd, ok := commands[os.Args[1]]

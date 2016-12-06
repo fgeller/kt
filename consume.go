@@ -17,7 +17,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type consume struct {
+type consumeCmd struct {
 	topic   string
 	brokers []string
 	offsets map[int32]interval
@@ -37,7 +37,7 @@ type offset struct {
 	diff     int64
 }
 
-func (c *consume) resolveOffset(o offset, partition int32) (int64, error) {
+func (c *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	if !o.relative {
 		return o.start, nil
 	}
@@ -175,13 +175,13 @@ func parseOffsets(str string) (map[int32]interval, error) {
 	return result, nil
 }
 
-func (c *consume) failStartup(msg string) {
+func (c *consumeCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	fmt.Fprintln(os.Stderr, "Use \"kt consume -help\" for more information.")
 	os.Exit(1)
 }
 
-func (c *consume) parseArgs(as []string) {
+func (c *consumeCmd) parseArgs(as []string) {
 	var (
 		err  error
 		args = c.read(as)
@@ -219,7 +219,7 @@ func (c *consume) parseArgs(as []string) {
 	}
 }
 
-func (c *consume) read(as []string) consumeArgs {
+func (c *consumeCmd) read(as []string) consumeArgs {
 	var args consumeArgs
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
@@ -240,7 +240,7 @@ func (c *consume) read(as []string) consumeArgs {
 	return args
 }
 
-func (c *consume) setupClient() {
+func (c *consumeCmd) setupClient() {
 	var (
 		err error
 		usr *user.User
@@ -261,7 +261,7 @@ func (c *consume) setupClient() {
 	}
 }
 
-func (c *consume) run(args []string, closer chan struct{}) {
+func (c *consumeCmd) run(args []string, closer chan struct{}) {
 	var err error
 
 	c.parseArgs(args)
@@ -296,7 +296,7 @@ func print(out <-chan printContext) {
 	}
 }
 
-func (c *consume) consume(partitions []int32) {
+func (c *consumeCmd) consume(partitions []int32) {
 	var (
 		wg  sync.WaitGroup
 		out = make(chan printContext)
@@ -311,7 +311,7 @@ func (c *consume) consume(partitions []int32) {
 	wg.Wait()
 }
 
-func (c *consume) consumePartition(out chan printContext, partition int32) {
+func (c *consumeCmd) consumePartition(out chan printContext, partition int32) {
 	var (
 		offsets interval
 		err     error
@@ -361,7 +361,7 @@ type printContext struct {
 	done chan struct{}
 }
 
-func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
+func (c *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 
 	for {
@@ -408,7 +408,7 @@ func (c *consume) partitionLoop(out chan printContext, pc sarama.PartitionConsum
 	}
 }
 
-func (c *consume) findPartitions() []int32 {
+func (c *consumeCmd) findPartitions() []int32 {
 	var (
 		all []int32
 		res []int32

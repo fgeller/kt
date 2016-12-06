@@ -33,7 +33,7 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (p *produce) read(as []string) produceArgs {
+func (p *produceCmd) read(as []string) produceArgs {
 	var args produceArgs
 	flags := flag.NewFlagSet("produce", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
@@ -57,13 +57,13 @@ func (p *produce) read(as []string) produceArgs {
 	return args
 }
 
-func (p *produce) failStartup(msg string) {
+func (p *produceCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	fmt.Fprintln(os.Stderr, "Use \"kt produce -help\" for more information.")
 	os.Exit(1)
 }
 
-func (p *produce) parseArgs(as []string) {
+func (p *produceCmd) parseArgs(as []string) {
 	args := p.read(as)
 	envTopic := os.Getenv("KT_TOPIC")
 	if args.topic == "" {
@@ -99,7 +99,7 @@ func (p *produce) parseArgs(as []string) {
 	p.version = kafkaVersion(args.version)
 }
 
-func (p *produce) mkSaramaConfig() {
+func (p *produceCmd) mkSaramaConfig() {
 	var (
 		usr *user.User
 		err error
@@ -118,7 +118,7 @@ func (p *produce) mkSaramaConfig() {
 
 }
 
-func (p *produce) findLeaders() {
+func (p *produceCmd) findLeaders() {
 	var (
 		usr *user.User
 		err error
@@ -194,7 +194,7 @@ loop:
 	os.Exit(1)
 }
 
-type produce struct {
+type produceCmd struct {
 	topic       string
 	brokers     []string
 	batch       int
@@ -209,7 +209,7 @@ type produce struct {
 	leaders      map[int32]*sarama.Broker
 }
 
-func (p *produce) run(as []string, q chan struct{}) {
+func (p *produceCmd) run(as []string, q chan struct{}) {
 	p.parseArgs(as)
 	if p.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -230,7 +230,7 @@ func (p *produce) run(as []string, q chan struct{}) {
 	p.produce(batchedMessages)
 }
 
-func (c *produce) close() {
+func (c *produceCmd) close() {
 	for _, b := range c.leaders {
 		var (
 			connected bool
@@ -252,7 +252,7 @@ func (c *produce) close() {
 	}
 }
 
-func (p *produce) deserializeLines(in chan string, out chan message, partitionCount int32) {
+func (p *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
 	defer func() { close(out) }()
 	for {
 		select {
@@ -292,7 +292,7 @@ func (p *produce) deserializeLines(in chan string, out chan message, partitionCo
 	}
 }
 
-func (p *produce) batchRecords(in chan message, out chan []message) {
+func (p *produceCmd) batchRecords(in chan message, out chan []message) {
 	defer func() { close(out) }()
 
 	messages := []message{}
@@ -337,7 +337,7 @@ func (m message) asSaramaMessage() *sarama.Message {
 	return &msg
 }
 
-func (p *produce) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
+func (p *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
@@ -399,7 +399,7 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func (p *produce) produce(in chan []message) {
+func (p *produceCmd) produce(in chan []message) {
 	for {
 		select {
 		case b, ok := <-in:
@@ -422,7 +422,7 @@ func readStdinLines(out chan string) {
 	}
 }
 
-func (p *produce) readInput(q chan struct{}, stdin chan string, out chan string) {
+func (p *produceCmd) readInput(q chan struct{}, stdin chan string, out chan string) {
 	defer func() { close(out) }()
 	for {
 		select {

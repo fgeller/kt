@@ -351,7 +351,7 @@ func TestFindPartitionsToConsume(t *testing.T) {
 	}
 
 	for _, d := range data {
-		target := &consume{
+		target := &consumeCmd{
 			consumer: d.consumer,
 			topic:    d.topic,
 			offsets:  d.offsets,
@@ -387,7 +387,7 @@ func TestConsume(t *testing.T) {
 		calls: calls,
 	}
 	partitions := []int32{1, 2}
-	target := consume{consumer: consumer}
+	target := consumeCmd{consumer: consumer}
 	target.topic = "hans"
 	target.brokers = []string{"localhost:9092"}
 	target.offsets = map[int32]interval{
@@ -520,7 +520,7 @@ func TestConsumeParseArgs(t *testing.T) {
 
 	os.Setenv("KT_TOPIC", topic)
 	os.Setenv("KT_BROKERS", givenBroker)
-	target := &consume{}
+	target := &consumeCmd{}
 
 	target.parseArgs([]string{})
 	if target.topic != topic ||
