@@ -62,7 +62,7 @@ func parseArgs() command {
 
 	commands := map[string]command{
 		"consume": &consume{},
-		// "produce": produceCommand(),
+		"produce": &produce{},
 		// "topic":   topicCommand(),
 		// "offset":  offsetCommand(),
 	}

@@ -65,7 +65,6 @@ func (p *produce) failStartup(msg string) {
 
 func (p *produce) parseArgs(as []string) {
 	args := p.read(as)
-
 	envTopic := os.Getenv("KT_TOPIC")
 	if args.topic == "" {
 		if envTopic == "" {
@@ -210,16 +209,19 @@ type produce struct {
 	leaders      map[int32]*sarama.Broker
 }
 
-func (p *produce) run(q chan struct{}) {
-	defer p.close()
+func (p *produce) run(as []string, q chan struct{}) {
+	p.parseArgs(as)
 	if p.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
+	defer p.close()
 	p.findLeaders()
 	stdin := make(chan string)
 	lines := make(chan string)
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
+
 	go readStdinLines(stdin)
 
 	go p.readInput(q, stdin, lines)
@@ -252,7 +254,6 @@ func (c *produce) close() {
 
 func (p *produce) deserializeLines(in chan string, out chan message, partitionCount int32) {
 	defer func() { close(out) }()
-
 	for {
 		select {
 		case l, ok := <-in:
@@ -341,9 +342,7 @@ func (p *produce) produceBatch(leaders map[int32]*sarama.Broker, batch []message
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
 		if !ok {
-			err := fmt.Errorf("Non-configured partition %v", *msg.Partition)
-			fmt.Fprintf(os.Stderr, "%v.\n", err)
-			return err
+			return fmt.Errorf("non-configured partition %v", *msg.Partition)
 		}
 		req, ok := requests[broker]
 		if !ok {
@@ -357,14 +356,13 @@ func (p *produce) produceBatch(leaders map[int32]*sarama.Broker, batch []message
 	for broker, req := range requests {
 		resp, err := broker.Produce(req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to send request to broker %#v. err=%s\n", broker, err)
-			return err
+			return fmt.Errorf("failed to send request to broker %#v. err=%s", broker, err)
 		}
 
 		offsets, err := readPartitionOffsetResults(resp)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read producer response. err=%s\n", err)
-			return err
+
+			return fmt.Errorf("failed to read producer response err=%s", err)
 		}
 
 		for p, o := range offsets {
@@ -409,6 +407,7 @@ func (p *produce) produce(in chan []message) {
 				return
 			}
 			if err := p.produceBatch(p.leaders, b); err != nil {
+				fmt.Fprintln(os.Stderr, err.Error())
 				return
 			}
 		}
