@@ -120,29 +120,23 @@ func TestHashCodePartition(t *testing.T) {
 }
 
 func TestProduceParseArgs(t *testing.T) {
-	configBefore := config
-	defer func() {
-		config = configBefore
-	}()
-
 	expectedTopic := "test-topic"
 	givenBroker := "hans:9092"
 	expectedBrokers := []string{givenBroker}
+	target := &produceCmd{}
 
-	config.produce.args.topic = ""
-	config.produce.args.brokers = ""
 	os.Setenv("KT_TOPIC", expectedTopic)
 	os.Setenv("KT_BROKERS", givenBroker)
 
-	produceParseArgs()
-	if config.produce.topic != expectedTopic ||
-		!reflect.DeepEqual(config.produce.brokers, expectedBrokers) {
+	target.parseArgs([]string{})
+	if target.topic != expectedTopic ||
+		!reflect.DeepEqual(target.brokers, expectedBrokers) {
 		t.Errorf(
 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
 			expectedTopic,
 			expectedBrokers,
-			config.produce.topic,
-			config.produce.brokers,
+			target.topic,
+			target.brokers,
 		)
 		return
 	}
@@ -150,19 +144,17 @@ func TestProduceParseArgs(t *testing.T) {
 	// default brokers to localhost:9092
 	os.Setenv("KT_TOPIC", "")
 	os.Setenv("KT_BROKERS", "")
-	config.produce.args.topic = expectedTopic
-	config.produce.args.brokers = ""
 	expectedBrokers = []string{"localhost:9092"}
 
-	produceParseArgs()
-	if config.produce.topic != expectedTopic ||
-		!reflect.DeepEqual(config.produce.brokers, expectedBrokers) {
+	target.parseArgs([]string{"-topic", expectedTopic})
+	if target.topic != expectedTopic ||
+		!reflect.DeepEqual(target.brokers, expectedBrokers) {
 		t.Errorf(
 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
 			expectedTopic,
 			expectedBrokers,
-			config.produce.topic,
-			config.produce.brokers,
+			target.topic,
+			target.brokers,
 		)
 		return
 	}
@@ -170,19 +162,17 @@ func TestProduceParseArgs(t *testing.T) {
 	// command line arg wins
 	os.Setenv("KT_TOPIC", "BLUBB")
 	os.Setenv("KT_BROKERS", "BLABB")
-	config.produce.args.topic = expectedTopic
-	config.produce.args.brokers = givenBroker
 	expectedBrokers = []string{givenBroker}
 
-	produceParseArgs()
-	if config.produce.topic != expectedTopic ||
-		!reflect.DeepEqual(config.produce.brokers, expectedBrokers) {
+	target.parseArgs([]string{"-topic", expectedTopic, "-brokers", givenBroker})
+	if target.topic != expectedTopic ||
+		!reflect.DeepEqual(target.brokers, expectedBrokers) {
 		t.Errorf(
 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
 			expectedTopic,
 			expectedBrokers,
-			config.produce.topic,
-			config.produce.brokers,
+			target.topic,
+			target.brokers,
 		)
 		return
 	}
@@ -207,7 +197,8 @@ func newMessage(key, value string, partition int32) message {
 }
 
 func TestDeserializeLines(t *testing.T) {
-	config.produce.partitioner = "hashCode"
+	target := &produceCmd{}
+	target.partitioner = "hashCode"
 	data := []struct {
 		in             string
 		literal        bool
@@ -251,9 +242,9 @@ func TestDeserializeLines(t *testing.T) {
 	for _, d := range data {
 		in := make(chan string, 1)
 		out := make(chan message)
-		config.produce.literal = d.literal
-		config.produce.partition = d.partition
-		go deserializeLines(in, out, d.partitionCount)
+		target.literal = d.literal
+		target.partition = d.partition
+		go target.deserializeLines(in, out, d.partitionCount)
 		in <- d.in
 
 		select {

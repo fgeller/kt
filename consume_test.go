@@ -21,8 +21,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -31,8 +31,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "all",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -41,8 +41,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "	all ",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -51,8 +51,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "all=+0:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 0},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -61,16 +61,16 @@ func TestParseOffsets(t *testing.T) {
 			input: "1,2,4",
 			expected: map[int32]interval{
 				1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 				2: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 				4: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -79,8 +79,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -89,8 +89,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: absOffset, start: 1},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: false, start: 1},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -99,8 +99,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=1:",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: absOffset, start: 1},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: false, start: 1},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -109,16 +109,16 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=4:,2=1:10,6",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: absOffset, start: 4},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: false, start: 4},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 				2: interval{
-					start: offset{typ: absOffset, start: 1},
-					end:   offset{typ: absOffset, start: 10},
+					start: offset{relative: false, start: 1},
+					end:   offset{relative: false, start: 10},
 				},
 				6: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -127,8 +127,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=-1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: -1},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -137,8 +137,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=-1:",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: -1},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -147,8 +147,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=+1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -157,8 +157,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=+1:",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{typ: absOffset, start: 1<<63 - 1},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{relative: false, start: 1<<63 - 1},
 				},
 			},
 			expectedErr: nil,
@@ -167,8 +167,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=+1:-1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -1},
 				},
 			},
 			expectedErr: nil,
@@ -177,12 +177,12 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=+1:-1,all=1:10",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: -1},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
+					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -1},
 				},
 				-1: interval{
-					start: offset{typ: absOffset, start: 1, diff: 0},
-					end:   offset{typ: absOffset, start: 10, diff: 0},
+					start: offset{relative: false, start: 1, diff: 0},
+					end:   offset{relative: false, start: 10, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -191,8 +191,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=oldest:newest",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 0},
-					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
+					end:   offset{relative: true, start: sarama.OffsetNewest, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -201,8 +201,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "0=oldest+10:newest-10",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 10},
-					end:   offset{typ: relOffset, start: sarama.OffsetNewest, diff: -10},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
+					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -10},
 				},
 			},
 			expectedErr: nil,
@@ -211,8 +211,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "newest",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -221,8 +221,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "10",
 			expected: map[int32]interval{
 				10: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 0},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -231,8 +231,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "newest",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -241,8 +241,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "all=newest:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: 0},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -251,8 +251,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "newest-10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -10},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: -10},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -261,8 +261,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "oldest+10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 10},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -271,8 +271,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "-10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetNewest, diff: -10},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetNewest, diff: -10},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -281,8 +281,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "+10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{typ: relOffset, start: sarama.OffsetOldest, diff: 10},
-					end:   offset{typ: absOffset, start: 1<<63 - 1, diff: 0},
+					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
+					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
 			},
 			expectedErr: nil,
@@ -311,16 +311,15 @@ Input:    %v
 
 func TestFindPartitionsToConsume(t *testing.T) {
 	data := []struct {
-		config   consumeConfig
+		topic    string
+		offsets  map[int32]interval
 		consumer tConsumer
 		expected []int32
 	}{
 		{
-			config: consumeConfig{
-				topic: "a",
-				offsets: map[int32]interval{
-					10: {offset{absOffset, 2, 0}, offset{absOffset, 4, 0}},
-				},
+			topic: "a",
+			offsets: map[int32]interval{
+				10: {offset{false, 2, 0}, offset{false, 4, 0}},
 			},
 			consumer: tConsumer{
 				topics:              []string{"a"},
@@ -334,11 +333,9 @@ func TestFindPartitionsToConsume(t *testing.T) {
 			expected: []int32{10},
 		},
 		{
-			config: consumeConfig{
-				topic: "a",
-				offsets: map[int32]interval{
-					-1: {offset{absOffset, 3, 0}, offset{absOffset, 41, 0}},
-				},
+			topic: "a",
+			offsets: map[int32]interval{
+				-1: {offset{false, 3, 0}, offset{false, 41, 0}},
 			},
 			consumer: tConsumer{
 				topics:              []string{"a"},
@@ -354,18 +351,24 @@ func TestFindPartitionsToConsume(t *testing.T) {
 	}
 
 	for _, d := range data {
-		actual := findPartitions(d.consumer, d.config)
+		target := &consumeCmd{
+			consumer: d.consumer,
+			topic:    d.topic,
+			offsets:  d.offsets,
+		}
+		actual := target.findPartitions()
 
 		if !reflect.DeepEqual(actual, d.expected) {
 			t.Errorf(
 				`
-Expected: %+v
-Actual:   %+v
-Input:    config=%+v
+Expected: %#v
+Actual:   %#v
+Input:    topic=%#v offsets=%#v
 	`,
 				d.expected,
 				actual,
-				d.config,
+				d.topic,
+				d.offsets,
 			)
 			return
 		}
@@ -374,13 +377,6 @@ Input:    config=%+v
 
 func TestConsume(t *testing.T) {
 	closer := make(chan struct{})
-	config := consumeConfig{
-		topic:   "hans",
-		brokers: []string{"localhost:9092"},
-		offsets: map[int32]interval{
-			-1: interval{start: offset{absOffset, 1, 0}, end: offset{absOffset, 5, 0}},
-		},
-	}
 	messageChan := make(<-chan *sarama.ConsumerMessage)
 	calls := make(chan tConsumePartition)
 	consumer := tConsumer{
@@ -391,8 +387,14 @@ func TestConsume(t *testing.T) {
 		calls: calls,
 	}
 	partitions := []int32{1, 2}
+	target := consumeCmd{consumer: consumer}
+	target.topic = "hans"
+	target.brokers = []string{"localhost:9092"}
+	target.offsets = map[int32]interval{
+		-1: interval{start: offset{false, 1, 0}, end: offset{false, 5, 0}},
+	}
 
-	go consume(config, closer, consumer, partitions)
+	go target.consume(partitions)
 	defer close(closer)
 
 	end := make(chan struct{})
@@ -512,70 +514,42 @@ func (c tConsumer) Close() error {
 }
 
 func TestConsumeParseArgs(t *testing.T) {
-	configBefore := config
-	defer func() {
-		config = configBefore
-	}()
-
-	expectedTopic := "test-topic"
+	topic := "test-topic"
 	givenBroker := "hans:9092"
-	expectedBrokers := []string{givenBroker}
+	brokers := []string{givenBroker}
 
-	config.consume.args.topic = ""
-	config.consume.args.brokers = ""
-	os.Setenv("KT_TOPIC", expectedTopic)
+	os.Setenv("KT_TOPIC", topic)
 	os.Setenv("KT_BROKERS", givenBroker)
+	target := &consumeCmd{}
 
-	consumeParseArgs()
-	if config.consume.topic != expectedTopic ||
-		!reflect.DeepEqual(config.consume.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-			expectedTopic,
-			expectedBrokers,
-			config.consume.topic,
-			config.consume.brokers,
-		)
+	target.parseArgs([]string{})
+	if target.topic != topic ||
+		!reflect.DeepEqual(target.brokers, brokers) {
+		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
 		return
 	}
 
 	// default brokers to localhost:9092
 	os.Setenv("KT_TOPIC", "")
 	os.Setenv("KT_BROKERS", "")
-	config.consume.args.topic = expectedTopic
-	config.consume.args.brokers = ""
-	expectedBrokers = []string{"localhost:9092"}
+	brokers = []string{"localhost:9092"}
 
-	consumeParseArgs()
-	if config.consume.topic != expectedTopic ||
-		!reflect.DeepEqual(config.consume.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-			expectedTopic,
-			expectedBrokers,
-			config.consume.topic,
-			config.consume.brokers,
-		)
+	target.parseArgs([]string{"-topic", topic})
+	if target.topic != topic ||
+		!reflect.DeepEqual(target.brokers, brokers) {
+		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
 		return
 	}
 
 	// command line arg wins
 	os.Setenv("KT_TOPIC", "BLUBB")
 	os.Setenv("KT_BROKERS", "BLABB")
-	config.consume.args.topic = expectedTopic
-	config.consume.args.brokers = givenBroker
-	expectedBrokers = []string{givenBroker}
+	brokers = []string{givenBroker}
 
-	consumeParseArgs()
-	if config.consume.topic != expectedTopic ||
-		!reflect.DeepEqual(config.consume.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-			expectedTopic,
-			expectedBrokers,
-			config.consume.topic,
-			config.consume.brokers,
-		)
+	target.parseArgs([]string{"-topic", topic, "-brokers", givenBroker})
+	if target.topic != topic ||
+		!reflect.DeepEqual(target.brokers, brokers) {
+		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
 		return
 	}
 }

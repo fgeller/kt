@@ -1,21 +1,14 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 )
 
+// TODO have these all the time
 var buildVersion, buildTime string
-
-var config struct {
-	consume consumeConfig
-	produce produceConfig
-	topic   topicConfig
-	offset  offsetConfig
-}
 
 func listenForInterrupt() chan struct{} {
 	closer := make(chan struct{})
@@ -23,17 +16,15 @@ func listenForInterrupt() chan struct{} {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
 		<-signals
-		log.Printf("Received interrupt - shutting down...")
+		log.Printf("received interrupt - shutting down...")
 		close(closer)
 	}()
 
 	return closer
 }
 
-type command struct {
-	flags     *flag.FlagSet
-	parseArgs func()
-	run       func(chan struct{})
+type command interface {
+	run(args []string, closer chan struct{})
 }
 
 func init() {
@@ -60,36 +51,28 @@ Use "kt [command] -help" for for information about the command.
 
 More at https://github.com/fgeller/kt`
 
-func usage() {
-	fmt.Fprintln(os.Stderr, usageMessage)
-	os.Exit(2)
-}
-
 func parseArgs() command {
 	if len(os.Args) < 2 {
-		usage()
+		failf(usageMessage)
 	}
 
-	commands := map[string]command{
-		"consume": consumeCommand(),
-		"produce": produceCommand(),
-		"topic":   topicCommand(),
-		"offset":  offsetCommand(),
+	switch os.Args[1] {
+	case "consume":
+		return &consumeCmd{}
+	case "produce":
+		return &produceCmd{}
+	case "topic":
+		return &topicCmd{}
+	case "offset":
+		return &offsetCmd{}
+	default:
+		failf(usageMessage)
+		return nil
 	}
-
-	cmd, ok := commands[os.Args[1]]
-	if !ok {
-		usage()
-	}
-
-	cmd.flags.Parse(os.Args[2:])
-	cmd.parseArgs()
-
-	return cmd
 }
 
 func main() {
 	cmd := parseArgs()
 	closer := listenForInterrupt()
-	cmd.run(closer)
+	cmd.run(os.Args[2:], closer)
 }

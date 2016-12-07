@@ -1,6 +1,13 @@
 package main
 
-import "github.com/Shopify/sarama"
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"unicode/utf16"
+
+	"github.com/Shopify/sarama"
+)
 
 var (
 	v820  = sarama.V0_8_2_0
@@ -26,4 +33,53 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 	default:
 		return sarama.V0_10_0_0
 	}
+}
+
+func failf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+	os.Exit(1)
+}
+
+func readStdinLines(out chan string) {
+	defer close(out)
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		out <- scanner.Text()
+	}
+}
+
+// hashCode imitates the behavior of the JDK's String#hashCode method.
+// https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
+//
+// As strings are encoded in utf16 on the JVM, this implementation checks wether
+// s contains non-bmp runes and uses utf16 surrogate pairs for those.
+func hashCode(s string) (hc int32) {
+	for _, r := range s {
+		r1, r2 := utf16.EncodeRune(r)
+		if r1 == 0xfffd && r1 == r2 {
+			hc = hc*31 + r
+		} else {
+			hc = (hc*31+r1)*31 + r2
+		}
+	}
+	return
+}
+
+func kafkaAbs(i int32) int32 {
+	switch {
+	case i == -2147483648: // Integer.MIN_VALUE
+		return 0
+	case i < 0:
+		return i * -1
+	default:
+		return i
+	}
+}
+
+func hashCodePartition(key string, partitions int32) int32 {
+	if partitions <= 0 {
+		return -1
+	}
+
+	return kafkaAbs(hashCode(key)) % partitions
 }

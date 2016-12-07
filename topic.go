@@ -14,8 +14,17 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type topicConfig struct {
-	flags      *flag.FlagSet
+type topicArgs struct {
+	brokers    string
+	filter     string
+	partitions bool
+	leaders    bool
+	replicas   bool
+	verbose    bool
+	version    string
+}
+
+type topicCmd struct {
 	brokers    []string
 	filter     *regexp.Regexp
 	partitions bool
@@ -23,15 +32,8 @@ type topicConfig struct {
 	replicas   bool
 	verbose    bool
 	version    sarama.KafkaVersion
-	args       struct {
-		brokers    string
-		filter     string
-		partitions bool
-		leaders    bool
-		replicas   bool
-		verbose    bool
-		version    string
-	}
+
+	client sarama.Client
 }
 
 type topic struct {
@@ -47,27 +49,22 @@ type partition struct {
 	Replicas     []int32 `json:"replicas,omitempty"`
 }
 
-func topicCommand() command {
-	return command{
-		flags:     topicFlags(),
-		parseArgs: topicParseArgs,
-		run:       topicRun,
-	}
-}
+func (cmd *topicCmd) parseFlags(as []string) topicArgs {
+	var (
+		args  topicArgs
+		flags = flag.NewFlagSet("topic", flag.ExitOnError)
+	)
 
-func topicFlags() *flag.FlagSet {
-	topic := flag.NewFlagSet("topic", flag.ExitOnError)
-	topic.StringVar(&config.topic.args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	topic.BoolVar(&config.topic.args.partitions, "partitions", false, "Include information per partition.")
-	topic.BoolVar(&config.topic.args.leaders, "leaders", false, "Include leader information per partition.")
-	topic.BoolVar(&config.topic.args.replicas, "replicas", false, "Include replica ids per partition.")
-	topic.StringVar(&config.topic.args.filter, "filter", "", "Regex to filter topics by name.")
-	topic.BoolVar(&config.topic.args.verbose, "verbose", false, "More verbose logging to stderr.")
-	topic.StringVar(&config.topic.args.version, "version", "", "Kafka protocol version")
-
-	topic.Usage = func() {
+	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
+	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
+	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
+	flags.StringVar(&args.filter, "filter", "", "Regex to filter topics by name.")
+	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
-		topic.PrintDefaults()
+		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, `
 The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
 The values supplied on the command line win over environment variable values.
@@ -75,158 +72,168 @@ The values supplied on the command line win over environment variable values.
 		os.Exit(2)
 	}
 
-	return topic
+	flags.Parse(as)
+	return args
 }
 
-func topicParseArgs() {
-	envBrokers := os.Getenv("KT_BROKERS")
-	if config.topic.args.brokers == "" {
+func (cmd *topicCmd) parseArgs(as []string) {
+	var (
+		err error
+		re  *regexp.Regexp
+
+		args       = cmd.parseFlags(as)
+		envBrokers = os.Getenv("KT_BROKERS")
+	)
+	if args.brokers == "" {
 		if envBrokers != "" {
-			config.topic.args.brokers = envBrokers
+			args.brokers = envBrokers
 		} else {
-			config.topic.args.brokers = "localhost:9092"
+			args.brokers = "localhost:9092"
 		}
 	}
-	config.topic.brokers = strings.Split(config.topic.args.brokers, ",")
-	for i, b := range config.topic.brokers {
+	cmd.brokers = strings.Split(args.brokers, ",")
+	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
-			config.topic.brokers[i] = b + ":9092"
+			cmd.brokers[i] = b + ":9092"
 		}
 	}
 
-	re, err := regexp.Compile(config.topic.args.filter)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid regex for filter. err=%s\n", err)
-		os.Exit(2)
+	if re, err = regexp.Compile(args.filter); err != nil {
+		failf("invalid regex for filter err=%s", err)
 	}
 
-	config.topic.filter = re
-	config.topic.partitions = config.topic.args.partitions
-	config.topic.leaders = config.topic.args.leaders
-	config.topic.replicas = config.topic.args.replicas
-	config.topic.verbose = config.topic.args.verbose
-	config.topic.version = kafkaVersion(config.topic.args.version)
+	cmd.filter = re
+	cmd.partitions = args.partitions
+	cmd.leaders = args.leaders
+	cmd.replicas = args.replicas
+	cmd.verbose = args.verbose
+	cmd.version = kafkaVersion(args.version)
 }
 
-func topicRun(closer chan struct{}) {
-	var err error
-	if config.topic.verbose {
+func (cmd *topicCmd) mkClient() {
+	var (
+		err error
+		usr *user.User
+		cfg = sarama.NewConfig()
+	)
+
+	cfg.Version = cmd.version
+
+	if usr, err = user.Current(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	cfg.ClientID = "kt-topic-" + usr.Username
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
+	}
+
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
+		failf("failed to create client err=%v", err)
+	}
+}
+
+func (cmd *topicCmd) run(as []string, closer chan struct{}) {
+	var (
+		err error
+		all []string
+		out = make(chan printContext)
+	)
+
+	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	conf := sarama.NewConfig()
-	conf.Version = config.topic.version
-	u, err := user.Current()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
-	}
-	conf.ClientID = "kt-topic-" + u.Username
-	if config.topic.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
-	}
+	cmd.mkClient()
+	defer cmd.client.Close()
 
-	client, err := sarama.NewClient(config.topic.brokers, conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create client err=%v\n", err)
-		os.Exit(1)
-	}
-	defer client.Close()
-
-	allTopics, err := client.Topics()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read topics err=%v\n", err)
-		os.Exit(1)
+	if all, err = cmd.client.Topics(); err != nil {
+		failf("failed to read topics err=%v", err)
 	}
 
 	topics := []string{}
-	for _, t := range allTopics {
-		if config.topic.filter.MatchString(t) {
-			topics = append(topics, t)
+	for _, a := range all {
+		if cmd.filter.MatchString(a) {
+			topics = append(topics, a)
 		}
 	}
 
-	out := make(chan string)
-	go func() {
-		for {
-			select {
-			case m := <-out:
-				fmt.Println(m)
-			}
-		}
-	}()
+	go print(out)
 
 	var wg sync.WaitGroup
 	for _, tn := range topics {
 		wg.Add(1)
-		go func(t string) {
-			printTopic(client, t, out)
+		go func(top string) {
+			cmd.print(top, out)
 			wg.Done()
 		}(tn)
 	}
 	wg.Wait()
 }
 
-func printTopic(client sarama.Client, name string, out chan string) {
-	var t topic
-	var byts []byte
-	var err error
+func (cmd *topicCmd) print(name string, out chan printContext) {
+	var (
+		top topic
+		buf []byte
+		err error
+	)
 
-	if t, err = readTopic(client, name); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read info for topic %s. err=%v\n", name, err)
+	if top, err = cmd.readTopic(name); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read info for topic %s. err=%v\n", name, err)
 		return
 	}
 
-	if byts, err = json.Marshal(t); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal JSON for topic %s. err=%v\n", name, err)
+	if buf, err = json.Marshal(top); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to marshal JSON for topic %s. err=%v\n", name, err)
 		return
 	}
 
-	out <- string(byts)
+	ctx := printContext{string(buf), make(chan struct{})}
+	out <- ctx
+	<-ctx.done
 }
 
-func readTopic(client sarama.Client, name string) (topic, error) {
-	t := topic{Name: name}
+func (cmd *topicCmd) readTopic(name string) (topic, error) {
+	var (
+		err error
+		ps  []int32
+		led *sarama.Broker
+		top = topic{Name: name}
+	)
 
-	if config.topic.partitions {
-		ps, err := client.Partitions(name)
-		if err != nil {
-			return t, err
-		}
-
-		for _, p := range ps {
-			np := partition{Id: p}
-
-			oldest, err := client.GetOffset(name, p, sarama.OffsetOldest)
-			if err != nil {
-				return t, err
-			}
-			np.OldestOffset = oldest
-
-			newest, err := client.GetOffset(name, p, sarama.OffsetNewest)
-			if err != nil {
-				return t, err
-			}
-			np.NewestOffset = newest
-
-			if config.topic.leaders {
-				b, err := client.Leader(name, p)
-				if err != nil {
-					return t, err
-				}
-				np.Leader = b.Addr()
-			}
-
-			if config.topic.replicas {
-				rs, err := client.Replicas(name, p)
-				if err != nil {
-					return t, err
-				}
-				np.Replicas = rs
-			}
-
-			t.Partitions = append(t.Partitions, np)
-		}
+	if !cmd.partitions {
+		return top, nil
 	}
 
-	return t, nil
+	if ps, err = cmd.client.Partitions(name); err != nil {
+		return top, err
+	}
+
+	for _, p := range ps {
+		np := partition{Id: p}
+
+		if np.OldestOffset, err = cmd.client.GetOffset(name, p, sarama.OffsetOldest); err != nil {
+			return top, err
+		}
+
+		if np.NewestOffset, err = cmd.client.GetOffset(name, p, sarama.OffsetNewest); err != nil {
+			return top, err
+		}
+
+		if cmd.leaders {
+			if led, err = cmd.client.Leader(name, p); err != nil {
+				return top, err
+			}
+			np.Leader = led.Addr()
+		}
+
+		if cmd.replicas {
+			if np.Replicas, err = cmd.client.Replicas(name, p); err != nil {
+				return top, err
+			}
+		}
+
+		top.Partitions = append(top.Partitions, np)
+	}
+
+	return top, nil
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,32 +9,20 @@ import (
 	"os/user"
 	"strings"
 	"time"
-	"unicode/utf16"
 
 	"github.com/Shopify/sarama"
 )
 
-type produceConfig struct {
+type produceArgs struct {
 	topic       string
-	partition   int32
-	brokers     []string
+	partition   int
+	brokers     string
 	batch       int
 	timeout     time.Duration
 	verbose     bool
-	version     sarama.KafkaVersion
+	version     string
 	literal     bool
 	partitioner string
-	args        struct {
-		topic       string
-		partition   int
-		brokers     string
-		batch       int
-		timeout     time.Duration
-		verbose     bool
-		version     string
-		literal     bool
-		partitioner string
-	}
 }
 
 type message struct {
@@ -44,244 +31,200 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func produceFlags() *flag.FlagSet {
+func (cmd *produceCmd) read(as []string) produceArgs {
+	var args produceArgs
 	flags := flag.NewFlagSet("produce", flag.ExitOnError)
-	flags.StringVar(
-		&config.produce.args.topic,
-		"topic",
-		"",
-		"Topic to produce to (required).",
-	)
-	flags.IntVar(
-		&config.produce.args.partition,
-		"partition",
-		0,
-		"Partition to produce to (defaults to 0).",
-	)
-	flags.StringVar(
-		&config.produce.args.brokers,
-		"brokers",
-		"",
-		"Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).",
-	)
-	flags.IntVar(
-		&config.produce.args.batch,
-		"batch",
-		1,
-		"Max size of a batch before sending it off",
-	)
-	flags.DurationVar(
-		&config.produce.args.timeout,
-		"timeout",
-		50*time.Millisecond,
-		"Duration to wait for batch to be filled before sending it off",
-	)
-	flags.BoolVar(
-		&config.produce.args.verbose,
-		"verbose",
-		false,
-		"Verbose output",
-	)
-	flags.BoolVar(
-		&config.produce.args.literal,
-		"literal",
-		false,
-		"Interpret stdin line literally and pass it as value, key as null.",
-	)
-	flags.StringVar(&config.produce.args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(
-		&config.produce.args.partitioner,
-		"partitioner",
-		"",
-		"Optional partitioner to use. Available: hashCode",
-	)
+	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
+	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
+	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
+	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
+	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
+	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
+	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of produce:")
 		flags.PrintDefaults()
-
-		fmt.Fprintln(os.Stderr, `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
-
-Input is read from stdin and separated by newlines.
-
-To specify the key, value and partition individually pass it as a JSON object
-like the following:
-
-    {"key": "id-23", "value": "message content", "partition": 0}
-
-In case the input line cannot be interpeted as a JSON object the key and value
-both default to the input line and partition to 0.
-
-Examples:
-
-Send a single message with a specific key:
-
-  $ echo '{"key": "id-23", "value": "ola", "partition": 0}' | kt produce -topic greetings
-  Sent message to partition 0 at offset 3.
-
-  $ kt consume -topic greetings -timeout 1s -offsets 0:3-
-  {"partition":0,"offset":3,"key":"id-23","message":"ola"}
-
-Keep reading input from stdin until interrupted (via ^C).
-
-  $ kt produce -topic greetings
-  hello.
-  Sent message to partition 0 at offset 4.
-  bonjour.
-  Sent message to partition 0 at offset 5.
-
-  $ kt consume -topic greetings -timeout 1s -offsets 0:4-
-  {"partition":0,"offset":4,"key":"hello.","message":"hello."}
-  {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
-`)
+		fmt.Fprintln(os.Stderr, produceDocString)
 		os.Exit(2)
 	}
 
-	return flags
+	flags.Parse(as)
+	return args
 }
 
-func produceParseArgs() {
-	failStartup := func(msg string) {
-		fmt.Fprintln(os.Stderr, msg)
-		fmt.Fprintln(os.Stderr, "Use \"kt produce -help\" for more information.")
-		os.Exit(1)
-	}
+func (cmd *produceCmd) failStartup(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	failf("use \"kt produce -help\" for more information")
+}
 
+func (cmd *produceCmd) parseArgs(as []string) {
+	args := cmd.read(as)
 	envTopic := os.Getenv("KT_TOPIC")
-	if config.produce.args.topic == "" {
+	if args.topic == "" {
 		if envTopic == "" {
-			failStartup("Topic name is required.")
+			cmd.failStartup("Topic name is required.")
 		} else {
-			config.produce.args.topic = envTopic
+			args.topic = envTopic
 		}
 	}
-	config.produce.topic = config.produce.args.topic
+	cmd.topic = args.topic
 
 	envBrokers := os.Getenv("KT_BROKERS")
-	if config.produce.args.brokers == "" {
+	if args.brokers == "" {
 		if envBrokers != "" {
-			config.produce.args.brokers = envBrokers
+			args.brokers = envBrokers
 		} else {
-			config.produce.args.brokers = "localhost:9092"
-		}
-	}
-	config.produce.brokers = strings.Split(config.produce.args.brokers, ",")
-	for i, b := range config.produce.brokers {
-		if !strings.Contains(b, ":") {
-			config.produce.brokers[i] = b + ":9092"
+			args.brokers = "localhost:9092"
 		}
 	}
 
-	config.produce.batch = config.produce.args.batch
-	config.produce.timeout = config.produce.args.timeout
-	config.produce.verbose = config.produce.args.verbose
-	config.produce.literal = config.produce.args.literal
-	config.produce.partition = int32(config.produce.args.partition)
-	config.produce.version = kafkaVersion(config.produce.args.version)
+	cmd.brokers = strings.Split(args.brokers, ",")
+	for i, b := range cmd.brokers {
+		if !strings.Contains(b, ":") {
+			cmd.brokers[i] = b + ":9092"
+		}
+	}
+
+	cmd.batch = args.batch
+	cmd.timeout = args.timeout
+	cmd.verbose = args.verbose
+	cmd.literal = args.literal
+	cmd.partition = int32(args.partition)
+	cmd.version = kafkaVersion(args.version)
 }
 
-func mustFindLeaders() map[int32]*sarama.Broker {
-	topic := config.produce.topic
-	conf := sarama.NewConfig()
-	conf.Producer.RequiredAcks = sarama.WaitForAll
-	conf.Version = config.produce.version
-	u, err := user.Current()
-	if err != nil {
+func (cmd *produceCmd) mkSaramaConfig() {
+	var (
+		usr *user.User
+		err error
+	)
+
+	cmd.saramaConfig = sarama.NewConfig()
+	cmd.saramaConfig.Producer.RequiredAcks = sarama.WaitForAll
+	cmd.saramaConfig.Version = cmd.version
+	if usr, err = user.Current(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
-	conf.ClientID = "kt-produce-" + u.Username
-	if config.produce.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", conf)
+	cmd.saramaConfig.ClientID = "kt-produce-" + usr.Username
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cmd.saramaConfig)
 	}
-	metaReq := sarama.MetadataRequest{Topics: []string{topic}}
 
-tryingBrokers:
-	for _, brokerString := range config.produce.brokers {
-		broker := sarama.NewBroker(brokerString)
-		err := broker.Open(conf)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", brokerString, err)
-			continue tryingBrokers
+}
+
+func (cmd *produceCmd) findLeaders() {
+	var (
+		usr *user.User
+		err error
+		res *sarama.MetadataResponse
+		req = sarama.MetadataRequest{Topics: []string{cmd.topic}}
+		cfg = sarama.NewConfig()
+	)
+
+	cfg.Producer.RequiredAcks = sarama.WaitForAll
+	cfg.Version = cmd.version
+	if usr, err = user.Current(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+	}
+	cfg.ClientID = "kt-produce-" + usr.Username
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
+	}
+
+loop:
+	for _, addr := range cmd.brokers {
+		broker := sarama.NewBroker(addr)
+		if err = broker.Open(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", addr, err)
+			continue loop
 		}
 		if connected, err := broker.Connected(); !connected || err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", brokerString, err)
-			continue tryingBrokers
+			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", addr, err)
+			continue loop
 		}
 
-		metaResp, err := broker.GetMetadata(&metaReq)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get metadata from [%v]. err=%v\n", brokerString, err)
-			continue tryingBrokers
+		if res, err = broker.GetMetadata(&req); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get metadata from %#v. err=%v\n", addr, err)
+			continue loop
 		}
 
 		brokers := map[int32]*sarama.Broker{}
-		for _, b := range metaResp.Brokers {
+		for _, b := range res.Brokers {
 			brokers[b.ID()] = b
 		}
 
-		for _, tm := range metaResp.Topics {
-			if tm.Name == topic {
+		for _, tm := range res.Topics {
+			if tm.Name == cmd.topic {
 				if tm.Err != sarama.ErrNoError {
-					fmt.Fprintf(os.Stderr, "Failed to get metadata from %v. err=%v\n", brokerString, tm.Err)
-					continue tryingBrokers
+					fmt.Fprintf(os.Stderr, "Failed to get metadata from %#v. err=%v\n", addr, tm.Err)
+					continue loop
 				}
 
-				bs := map[int32]*sarama.Broker{}
+				cmd.leaders = map[int32]*sarama.Broker{}
 				for _, pm := range tm.Partitions {
 					b, ok := brokers[pm.Leader]
 					if !ok {
-						fmt.Fprintf(os.Stderr, "Failed to find leader in broker response, giving up.\n")
-						os.Exit(1)
+						failf("failed to find leader in broker response, giving up")
 					}
 
-					err := b.Open(conf)
-					if err != nil && err != sarama.ErrAlreadyConnected {
-						fmt.Fprintf(os.Stderr, "Failed to open broker connection. err=%s\n", err)
-						os.Exit(1)
+					if err = b.Open(cfg); err != nil && err != sarama.ErrAlreadyConnected {
+						failf("failed to open broker connection err=%s", err)
 					}
 					if connected, err := broker.Connected(); !connected && err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to wait for broker connection to open. err=%s\n", err)
-						os.Exit(1)
+						failf("failed to wait for broker connection to open err=%s", err)
 					}
 
-					bs[pm.ID] = b
+					cmd.leaders[pm.ID] = b
 				}
-				return bs
+				return
 			}
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Failed to find leader for given topic.\n")
-	os.Exit(1)
-	return nil
+	failf("failed to find leader for given topic")
 }
 
 type produceCmd struct {
-	leaders map[int32]*sarama.Broker
+	topic       string
+	brokers     []string
+	batch       int
+	timeout     time.Duration
+	verbose     bool
+	literal     bool
+	partition   int32
+	version     sarama.KafkaVersion
+	partitioner string
+
+	saramaConfig *sarama.Config
+	leaders      map[int32]*sarama.Broker
 }
 
-func (c *produceCmd) run(q chan struct{}) {
-	defer c.close()
-	if config.produce.verbose {
+func (cmd *produceCmd) run(as []string, q chan struct{}) {
+	cmd.parseArgs(as)
+	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	c.leaders = mustFindLeaders()
+
+	defer cmd.close()
+	cmd.findLeaders()
 	stdin := make(chan string)
 	lines := make(chan string)
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
+
 	go readStdinLines(stdin)
 
-	go readInput(q, stdin, lines)
-	go deserializeLines(lines, messages, int32(len(c.leaders)))
-	go batchRecords(messages, batchedMessages)
-	produce(c.leaders, batchedMessages)
+	go cmd.readInput(q, stdin, lines)
+	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
+	go cmd.batchRecords(messages, batchedMessages)
+	cmd.produce(batchedMessages)
 }
 
-func (c *produceCmd) close() {
-	for _, b := range c.leaders {
+func (cmd *produceCmd) close() {
+	for _, b := range cmd.leaders {
 		var (
 			connected bool
 			err       error
@@ -297,23 +240,13 @@ func (c *produceCmd) close() {
 		}
 
 		if err = b.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to close broker connection. err=%s\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to close broker %v connection. err=%s\n", b, err)
 		}
 	}
 }
 
-func produceCommand() command {
-	var c produceCmd
-	return command{
-		flags:     produceFlags(),
-		parseArgs: produceParseArgs,
-		run:       c.run,
-	}
-}
-
-func deserializeLines(in chan string, out chan message, partitionCount int32) {
+func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
 	defer func() { close(out) }()
-
 	for {
 		select {
 		case l, ok := <-in:
@@ -323,12 +256,12 @@ func deserializeLines(in chan string, out chan message, partitionCount int32) {
 			var msg message
 
 			switch {
-			case config.produce.literal:
+			case cmd.literal:
 				msg.Value = &l
-				msg.Partition = &config.produce.partition
+				msg.Partition = &cmd.partition
 			default:
 				if err := json.Unmarshal([]byte(l), &msg); err != nil {
-					if config.produce.verbose {
+					if cmd.verbose {
 						fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
 					}
 					var v *string = &l
@@ -339,12 +272,12 @@ func deserializeLines(in chan string, out chan message, partitionCount int32) {
 				}
 			}
 
-			var p int32 = 0
-			if msg.Key != nil && config.produce.partitioner == "hashCode" {
-				p = hashCodePartition(*msg.Key, partitionCount)
+			var part int32 = 0
+			if msg.Key != nil && cmd.partitioner == "hashCode" {
+				part = hashCodePartition(*msg.Key, partitionCount)
 			}
 			if msg.Partition == nil {
-				msg.Partition = &p
+				msg.Partition = &part
 			}
 
 			out <- msg
@@ -352,7 +285,7 @@ func deserializeLines(in chan string, out chan message, partitionCount int32) {
 	}
 }
 
-func batchRecords(in chan message, out chan []message) {
+func (cmd *produceCmd) batchRecords(in chan message, out chan []message) {
 	defer func() { close(out) }()
 
 	messages := []message{}
@@ -370,10 +303,10 @@ func batchRecords(in chan message, out chan []message) {
 			}
 
 			messages = append(messages, m)
-			if len(messages) > 0 && len(messages) >= config.produce.batch {
+			if len(messages) > 0 && len(messages) >= cmd.batch {
 				send()
 			}
-		case <-time.After(config.produce.timeout):
+		case <-time.After(cmd.timeout):
 			if len(messages) > 0 {
 				send()
 			}
@@ -397,14 +330,12 @@ func (m message) asSaramaMessage() *sarama.Message {
 	return &msg
 }
 
-func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
+func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
 		if !ok {
-			err := fmt.Errorf("Non-configured partition %v", *msg.Partition)
-			fmt.Fprintf(os.Stderr, "%v.\n", err)
-			return err
+			return fmt.Errorf("non-configured partition %v", *msg.Partition)
 		}
 		req, ok := requests[broker]
 		if !ok {
@@ -412,20 +343,19 @@ func produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 			requests[broker] = req
 		}
 
-		req.AddMessage(config.produce.topic, *msg.Partition, msg.asSaramaMessage())
+		req.AddMessage(cmd.topic, *msg.Partition, msg.asSaramaMessage())
 	}
 
 	for broker, req := range requests {
 		resp, err := broker.Produce(req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to send request to broker %#v. err=%s\n", broker, err)
-			return err
+			return fmt.Errorf("failed to send request to broker %#v. err=%s", broker, err)
 		}
 
 		offsets, err := readPartitionOffsetResults(resp)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read producer response. err=%s\n", err)
-			return err
+
+			return fmt.Errorf("failed to read producer response err=%s", err)
 		}
 
 		for p, o := range offsets {
@@ -462,29 +392,22 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func produce(leaders map[int32]*sarama.Broker, in chan []message) {
+func (cmd *produceCmd) produce(in chan []message) {
 	for {
 		select {
 		case b, ok := <-in:
 			if !ok {
 				return
 			}
-			if err := produceBatch(leaders, b); err != nil {
+			if err := cmd.produceBatch(cmd.leaders, b); err != nil {
+				fmt.Fprintln(os.Stderr, err.Error())
 				return
 			}
 		}
 	}
 }
 
-func readStdinLines(out chan string) {
-	defer close(out)
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		out <- scanner.Text()
-	}
-}
-
-func readInput(q chan struct{}, stdin chan string, out chan string) {
+func (cmd *produceCmd) readInput(q chan struct{}, stdin chan string, out chan string) {
 	defer func() { close(out) }()
 	for {
 		select {
@@ -499,38 +422,39 @@ func readInput(q chan struct{}, stdin chan string, out chan string) {
 	}
 }
 
-// hashCode imitates the behavior of the JDK's String#hashCode method.
-// https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
-//
-// As strings are encoded in utf16 on the JVM, this implementation checks wether
-// s contains non-bmp runes and uses utf16 surrogate pairs for those.
-func hashCode(s string) (hc int32) {
-	for _, r := range s {
-		r1, r2 := utf16.EncodeRune(r)
-		if r1 == 0xfffd && r1 == r2 {
-			hc = hc*31 + r
-		} else {
-			hc = (hc*31+r1)*31 + r2
-		}
-	}
-	return
-}
+var produceDocString = `
+The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.
 
-func kafkaAbs(i int32) int32 {
-	switch {
-	case i == -2147483648: // Integer.MIN_VALUE
-		return 0
-	case i < 0:
-		return i * -1
-	default:
-		return i
-	}
-}
+Input is read from stdin and separated by newlines.
 
-func hashCodePartition(key string, partitions int32) int32 {
-	if partitions <= 0 {
-		return -1
-	}
+To specify the key, value and partition individually pass it as a JSON object
+like the following:
 
-	return kafkaAbs(hashCode(key)) % partitions
-}
+    {"key": "id-23", "value": "message content", "partition": 0}
+
+In case the input line cannot be interpeted as a JSON object the key and value
+both default to the input line and partition to 0.
+
+Examples:
+
+Send a single message with a specific key:
+
+  $ echo '{"key": "id-23", "value": "ola", "partition": 0}' | kt produce -topic greetings
+  Sent message to partition 0 at offset 3.
+
+  $ kt consume -topic greetings -timeout 1s -offsets 0:3-
+  {"partition":0,"offset":3,"key":"id-23","message":"ola"}
+
+Keep reading input from stdin until interrupted (via ^C).
+
+  $ kt produce -topic greetings
+  hello.
+  Sent message to partition 0 at offset 4.
+  bonjour.
+  Sent message to partition 0 at offset 5.
+
+  $ kt consume -topic greetings -timeout 1s -offsets 0:4-
+  {"partition":0,"offset":4,"key":"hello.","message":"hello."}
+  {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
+`
