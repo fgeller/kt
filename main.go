@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 )
@@ -16,7 +15,7 @@ func listenForInterrupt() chan struct{} {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
 		<-signals
-		log.Printf("received interrupt - shutting down...")
+		fmt.Fprintf(os.Stderr, "received interrupt - shutting down\n")
 		close(closer)
 	}()
 

@@ -110,7 +110,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.version = kafkaVersion(args.version)
 }
 
-func (cmd *topicCmd) mkClient() {
+func (cmd *topicCmd) connect() {
 	var (
 		err error
 		usr *user.User
@@ -132,18 +132,21 @@ func (cmd *topicCmd) mkClient() {
 	}
 }
 
-func (cmd *topicCmd) run(as []string, closer chan struct{}) {
+func (cmd *topicCmd) run(as []string, q chan struct{}) {
 	var (
 		err error
 		all []string
 		out = make(chan printContext)
 	)
 
+	go func() { <-q; failf("received quit signal.") }()
+
+	cmd.parseArgs(as)
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	cmd.mkClient()
+	cmd.connect()
 	defer cmd.client.Close()
 
 	if all, err = cmd.client.Topics(); err != nil {
