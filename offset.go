@@ -16,7 +16,6 @@ import (
 )
 
 type offsetCmd struct {
-	flags      *flag.FlagSet
 	brokers    []string
 	group      string
 	setOffsets string

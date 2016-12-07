@@ -1,180 +1,96 @@
 package main
 
-// import (
-// 	"os"
-// 	"reflect"
-// 	"sync"
-// 	"testing"
+import (
+	"os"
+	"reflect"
+	"testing"
 
-// 	"github.com/Shopify/sarama"
-// )
+	"github.com/Shopify/sarama"
+)
 
-// func TestOffsetsPartition(t *testing.T) {
-// 	configBefore := config
-// 	defer func() {
-// 		config = configBefore
-// 	}()
+type testClient struct{}
 
-// 	tGetPartitions := func(t string) ([]int32, error) {
-// 		return []int32{0, 1, 2, 3}, nil
-// 	}
-// 	tGetOffset := func(topic string, partitionID int32, time int64) (int64, error) {
-// 		if partitionID == 0 {
-// 			return 1245, nil
-// 		}
-// 		if partitionID == 1 {
-// 			return 523, nil
-// 		}
-// 		if partitionID == 2 {
-// 			return 34, nil
-// 		}
-// 		if partitionID == 3 {
-// 			return 879, nil
-// 		}
-// 		return 0, nil
-// 	}
+func (c *testClient) Close() error                                         { return nil }
+func (c *testClient) Closed() bool                                         { return false }
+func (c *testClient) Config() *sarama.Config                               { return nil }
+func (c *testClient) Coordinator(t string) (*sarama.Broker, error)         { return nil, nil }
+func (c *testClient) GetOffset(t string, p int32, po int64) (int64, error) { return 0, nil }
+func (c *testClient) Leader(s string, i int32) (*sarama.Broker, error)     { return nil, nil }
+func (c *testClient) Partitions(s string) ([]int32, error)                 { return []int32{}, nil }
+func (c *testClient) RefreshCoordinator(s string) error                    { return nil }
+func (c *testClient) RefreshMetadata(s ...string) error                    { return nil }
+func (c *testClient) Replicas(s string, i int32) ([]int32, error)          { return []int32{}, nil }
+func (c *testClient) Topics() ([]string, error)                            { return []string{}, nil }
+func (c *testClient) WritablePartitions(s string) ([]int32, error)         { return []int32{}, nil }
 
-// 	var wg sync.WaitGroup
-// 	wg.Add(1)
+func TestOffsetParseArgs(t *testing.T) {
+	expectedTopic := "test-topic"
+	givenBroker := "hans:9092"
+	expectedBrokers := []string{givenBroker}
 
-// 	out := make(chan string)
-// 	go func(out chan string) {
-// 		config.offset.args.topic = "test-topic"
-// 		config.offset.partition = -1
-// 		offsetsForTopic(nil, tGetPartitions, tGetOffset, nil, "", "test-topic", out)
-// 		wg.Done()
-// 	}(out)
+	os.Setenv("KT_TOPIC", expectedTopic)
+	os.Setenv("KT_BROKERS", givenBroker)
 
-// 	// verify channel
-// 	go func() {
-// 		expected := []string{
-// 			"{\"topic\":\"test-topic\",\"partition\":0,\"partition-offset\":1245}",
-// 			"{\"topic\":\"test-topic\",\"partition\":1,\"partition-offset\":523}",
-// 			"{\"topic\":\"test-topic\",\"partition\":2,\"partition-offset\":34}",
-// 			"{\"topic\":\"test-topic\",\"partition\":3,\"partition-offset\":879}",
-// 		}
-// 		i := 0
-// 		for {
-// 			select {
-// 			case m := <-out:
-// 				if m != expected[i] {
-// 					t.Errorf(
-// 						"Expected offset message [%v], got [%v].",
-// 						expected[i],
-// 						m,
-// 					)
-// 				}
-// 				i = i + 1
-// 			}
-// 		}
-// 	}()
-// 	wg.Wait()
-// }
+	target := &offsetCmd{}
+	target.parseArgs([]string{})
+	if !target.topic.MatchString(expectedTopic) || !reflect.DeepEqual(target.brokers, expectedBrokers) {
+		t.Errorf(
+			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
+			expectedTopic,
+			expectedBrokers,
+			target.topic.String(),
+			target.brokers,
+		)
+		return
+	}
 
-// func TestOffsetParseArgs(t *testing.T) {
-// 	configBefore := config
+	// default brokers to localhost:9092
+	os.Setenv("KT_TOPIC", "")
+	os.Setenv("KT_BROKERS", "")
+	expectedBrokers = []string{"localhost:9092"}
 
-// 	resetConfig := func() {
-// 		config = configBefore
-// 	}
-// 	defer resetConfig()
+	target.parseArgs([]string{"-topic", expectedTopic})
+	if !target.topic.MatchString(expectedTopic) || !reflect.DeepEqual(target.brokers, expectedBrokers) {
+		t.Errorf(
+			"Expected topic %v and brokers %v from env vars, got topic %s and brokers %v.",
+			expectedTopic,
+			expectedBrokers,
+			target.topic,
+			target.brokers,
+		)
+		return
+	}
 
-// 	expectedTopic := "test-topic"
-// 	givenBroker := "hans:9092"
-// 	expectedBrokers := []string{givenBroker}
+	// command line arg wins
+	os.Setenv("KT_TOPIC", "BLUBB")
+	os.Setenv("KT_BROKERS", "BLABB")
+	expectedBrokers = []string{givenBroker}
 
-// 	config.offset.args.topic = ""
-// 	config.offset.args.brokers = ""
-// 	os.Setenv("KT_TOPIC", expectedTopic)
-// 	os.Setenv("KT_BROKERS", givenBroker)
+	target.parseArgs([]string{"-topic", expectedTopic, "-brokers", givenBroker})
+	if !target.topic.MatchString(expectedTopic) ||
+		!reflect.DeepEqual(target.brokers, expectedBrokers) {
+		t.Errorf(
+			"Expected topic %v and brokers %v from env vars, got topic %s and brokers %v.",
+			expectedTopic,
+			expectedBrokers,
+			target.topic,
+			target.brokers,
+		)
+		return
+	}
 
-// 	offsetParseArgs()
-// 	if !config.offset.topic.MatchString(expectedTopic) ||
-// 		!reflect.DeepEqual(config.offset.brokers, expectedBrokers) {
-// 		t.Errorf(
-// 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-// 			expectedTopic,
-// 			expectedBrokers,
-// 			config.offset.topic.String(),
-// 			config.offset.brokers,
-// 		)
-// 		return
-// 	}
+	target.parseArgs([]string{"-setConsumerOffsets", "oldest"})
+	if target.newOffsets != sarama.OffsetOldest {
+		t.Errorf("Expected setConsumerOffset %v, got %v.", sarama.OffsetOldest, target.newOffsets)
+	}
 
-// 	// default brokers to localhost:9092
-// 	os.Setenv("KT_TOPIC", "")
-// 	os.Setenv("KT_BROKERS", "")
-// 	config.offset.args.topic = expectedTopic
-// 	config.offset.args.brokers = ""
-// 	expectedBrokers = []string{"localhost:9092"}
+	target.parseArgs([]string{"-setConsumerOffsets", "newest"})
+	if target.newOffsets != sarama.OffsetNewest {
+		t.Errorf("Expected setConsumerOffset %v, got %v.", sarama.OffsetNewest, target.newOffsets)
+	}
 
-// 	offsetParseArgs()
-// 	if !config.offset.topic.MatchString(expectedTopic) ||
-// 		!reflect.DeepEqual(config.offset.brokers, expectedBrokers) {
-// 		t.Errorf(
-// 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-// 			expectedTopic,
-// 			expectedBrokers,
-// 			config.offset.topic.String(),
-// 			config.offset.brokers,
-// 		)
-// 		return
-// 	}
-
-// 	// command line arg wins
-// 	os.Setenv("KT_TOPIC", "BLUBB")
-// 	os.Setenv("KT_BROKERS", "BLABB")
-// 	config.offset.args.topic = expectedTopic
-// 	config.offset.args.brokers = givenBroker
-// 	expectedBrokers = []string{givenBroker}
-
-// 	offsetParseArgs()
-// 	if !config.offset.topic.MatchString(expectedTopic) ||
-// 		!reflect.DeepEqual(config.offset.brokers, expectedBrokers) {
-// 		t.Errorf(
-// 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-// 			expectedTopic,
-// 			expectedBrokers,
-// 			config.offset.topic.String(),
-// 			config.offset.brokers,
-// 		)
-// 		return
-// 	}
-
-// 	// set offsets to oldest
-// 	resetConfig()
-// 	config.offset.args.setOffsets = "oldest"
-// 	offsetParseArgs()
-// 	if config.offset.newOffsets != sarama.OffsetOldest {
-// 		t.Errorf(
-// 			"Expected setConsumerOffset %v, got %v.",
-// 			sarama.OffsetOldest,
-// 			config.offset.newOffsets,
-// 		)
-// 	}
-
-// 	// set offsets to newest
-// 	resetConfig()
-// 	config.offset.args.setOffsets = "newest"
-// 	offsetParseArgs()
-// 	if config.offset.newOffsets != sarama.OffsetNewest {
-// 		t.Errorf(
-// 			"Expected setConsumerOffset %v, got %v.",
-// 			sarama.OffsetNewest,
-// 			config.offset.newOffsets,
-// 		)
-// 	}
-
-// 	// set offsets to absolute value
-// 	resetConfig()
-// 	config.offset.args.setOffsets = "42"
-// 	offsetParseArgs()
-// 	if config.offset.newOffsets != 42 {
-// 		t.Errorf(
-// 			"Expected setConsumerOffset %v, got %v.",
-// 			42,
-// 			config.offset.newOffsets,
-// 		)
-// 	}
-
-// }
+	target.parseArgs([]string{"-setConsumerOffsets", "42"})
+	if target.newOffsets != 42 {
+		t.Errorf("Expected setConsumerOffset %v, got %v.", 42, target.newOffsets)
+	}
+}
