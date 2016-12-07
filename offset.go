@@ -159,9 +159,15 @@ func (cmd *offsetCmd) run(as []string, q chan struct{}) {
 	cmd.connect()
 	defer logClose("client", cmd.client)
 
-	cmd.out = make(chan printContext)
+	if cmd.out == nil {
+		cmd.out = make(chan printContext)
+	}
 	go print(cmd.out)
 
+	cmd.do(q)
+}
+
+func (cmd *offsetCmd) do(q chan struct{}) {
 	for _, top := range cmd.fetchTopics() {
 		if cmd.topic.MatchString(top) {
 			for _, prt := range cmd.fetchPartitions(top) {
