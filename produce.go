@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os/user"
 	"strings"
 	"time"
-	"unicode/utf16"
 
 	"github.com/Shopify/sarama"
 )
@@ -33,7 +31,7 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (p *produceCmd) read(as []string) produceArgs {
+func (cmd *produceCmd) read(as []string) produceArgs {
 	var args produceArgs
 	flags := flag.NewFlagSet("produce", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
@@ -57,22 +55,22 @@ func (p *produceCmd) read(as []string) produceArgs {
 	return args
 }
 
-func (p *produceCmd) failStartup(msg string) {
+func (cmd *produceCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	failf("use \"kt produce -help\" for more information")
 }
 
-func (p *produceCmd) parseArgs(as []string) {
-	args := p.read(as)
+func (cmd *produceCmd) parseArgs(as []string) {
+	args := cmd.read(as)
 	envTopic := os.Getenv("KT_TOPIC")
 	if args.topic == "" {
 		if envTopic == "" {
-			p.failStartup("Topic name is required.")
+			cmd.failStartup("Topic name is required.")
 		} else {
 			args.topic = envTopic
 		}
 	}
-	p.topic = args.topic
+	cmd.topic = args.topic
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {
@@ -83,61 +81,61 @@ func (p *produceCmd) parseArgs(as []string) {
 		}
 	}
 
-	p.brokers = strings.Split(args.brokers, ",")
-	for i, b := range p.brokers {
+	cmd.brokers = strings.Split(args.brokers, ",")
+	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
-			p.brokers[i] = b + ":9092"
+			cmd.brokers[i] = b + ":9092"
 		}
 	}
 
-	p.batch = args.batch
-	p.timeout = args.timeout
-	p.verbose = args.verbose
-	p.literal = args.literal
-	p.partition = int32(args.partition)
-	p.version = kafkaVersion(args.version)
+	cmd.batch = args.batch
+	cmd.timeout = args.timeout
+	cmd.verbose = args.verbose
+	cmd.literal = args.literal
+	cmd.partition = int32(args.partition)
+	cmd.version = kafkaVersion(args.version)
 }
 
-func (p *produceCmd) mkSaramaConfig() {
+func (cmd *produceCmd) mkSaramaConfig() {
 	var (
 		usr *user.User
 		err error
 	)
 
-	p.saramaConfig = sarama.NewConfig()
-	p.saramaConfig.Producer.RequiredAcks = sarama.WaitForAll
-	p.saramaConfig.Version = p.version
+	cmd.saramaConfig = sarama.NewConfig()
+	cmd.saramaConfig.Producer.RequiredAcks = sarama.WaitForAll
+	cmd.saramaConfig.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
-	p.saramaConfig.ClientID = "kt-produce-" + usr.Username
-	if p.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", p.saramaConfig)
+	cmd.saramaConfig.ClientID = "kt-produce-" + usr.Username
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cmd.saramaConfig)
 	}
 
 }
 
-func (p *produceCmd) findLeaders() {
+func (cmd *produceCmd) findLeaders() {
 	var (
 		usr *user.User
 		err error
 		res *sarama.MetadataResponse
-		req = sarama.MetadataRequest{Topics: []string{p.topic}}
+		req = sarama.MetadataRequest{Topics: []string{cmd.topic}}
 		cfg = sarama.NewConfig()
 	)
 
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
-	cfg.Version = p.version
+	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-produce-" + usr.Username
-	if p.verbose {
+	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
 
 loop:
-	for _, addr := range p.brokers {
+	for _, addr := range cmd.brokers {
 		broker := sarama.NewBroker(addr)
 		if err = broker.Open(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", addr, err)
@@ -159,13 +157,13 @@ loop:
 		}
 
 		for _, tm := range res.Topics {
-			if tm.Name == p.topic {
+			if tm.Name == cmd.topic {
 				if tm.Err != sarama.ErrNoError {
 					fmt.Fprintf(os.Stderr, "Failed to get metadata from %#v. err=%v\n", addr, tm.Err)
 					continue loop
 				}
 
-				p.leaders = map[int32]*sarama.Broker{}
+				cmd.leaders = map[int32]*sarama.Broker{}
 				for _, pm := range tm.Partitions {
 					b, ok := brokers[pm.Leader]
 					if !ok {
@@ -179,7 +177,7 @@ loop:
 						failf("failed to wait for broker connection to open err=%s", err)
 					}
 
-					p.leaders[pm.ID] = b
+					cmd.leaders[pm.ID] = b
 				}
 				return
 			}
@@ -204,14 +202,14 @@ type produceCmd struct {
 	leaders      map[int32]*sarama.Broker
 }
 
-func (p *produceCmd) run(as []string, q chan struct{}) {
-	p.parseArgs(as)
-	if p.verbose {
+func (cmd *produceCmd) run(as []string, q chan struct{}) {
+	cmd.parseArgs(as)
+	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	defer p.close()
-	p.findLeaders()
+	defer cmd.close()
+	cmd.findLeaders()
 	stdin := make(chan string)
 	lines := make(chan string)
 	messages := make(chan message)
@@ -219,14 +217,14 @@ func (p *produceCmd) run(as []string, q chan struct{}) {
 
 	go readStdinLines(stdin)
 
-	go p.readInput(q, stdin, lines)
-	go p.deserializeLines(lines, messages, int32(len(p.leaders)))
-	go p.batchRecords(messages, batchedMessages)
-	p.produce(batchedMessages)
+	go cmd.readInput(q, stdin, lines)
+	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
+	go cmd.batchRecords(messages, batchedMessages)
+	cmd.produce(batchedMessages)
 }
 
-func (c *produceCmd) close() {
-	for _, b := range c.leaders {
+func (cmd *produceCmd) close() {
+	for _, b := range cmd.leaders {
 		var (
 			connected bool
 			err       error
@@ -247,7 +245,7 @@ func (c *produceCmd) close() {
 	}
 }
 
-func (p *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
+func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
 	defer func() { close(out) }()
 	for {
 		select {
@@ -258,12 +256,12 @@ func (p *produceCmd) deserializeLines(in chan string, out chan message, partitio
 			var msg message
 
 			switch {
-			case p.literal:
+			case cmd.literal:
 				msg.Value = &l
-				msg.Partition = &p.partition
+				msg.Partition = &cmd.partition
 			default:
 				if err := json.Unmarshal([]byte(l), &msg); err != nil {
-					if p.verbose {
+					if cmd.verbose {
 						fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
 					}
 					var v *string = &l
@@ -275,7 +273,7 @@ func (p *produceCmd) deserializeLines(in chan string, out chan message, partitio
 			}
 
 			var part int32 = 0
-			if msg.Key != nil && p.partitioner == "hashCode" {
+			if msg.Key != nil && cmd.partitioner == "hashCode" {
 				part = hashCodePartition(*msg.Key, partitionCount)
 			}
 			if msg.Partition == nil {
@@ -287,7 +285,7 @@ func (p *produceCmd) deserializeLines(in chan string, out chan message, partitio
 	}
 }
 
-func (p *produceCmd) batchRecords(in chan message, out chan []message) {
+func (cmd *produceCmd) batchRecords(in chan message, out chan []message) {
 	defer func() { close(out) }()
 
 	messages := []message{}
@@ -305,10 +303,10 @@ func (p *produceCmd) batchRecords(in chan message, out chan []message) {
 			}
 
 			messages = append(messages, m)
-			if len(messages) > 0 && len(messages) >= p.batch {
+			if len(messages) > 0 && len(messages) >= cmd.batch {
 				send()
 			}
-		case <-time.After(p.timeout):
+		case <-time.After(cmd.timeout):
 			if len(messages) > 0 {
 				send()
 			}
@@ -332,7 +330,7 @@ func (m message) asSaramaMessage() *sarama.Message {
 	return &msg
 }
 
-func (p *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
+func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
@@ -345,7 +343,7 @@ func (p *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []mess
 			requests[broker] = req
 		}
 
-		req.AddMessage(p.topic, *msg.Partition, msg.asSaramaMessage())
+		req.AddMessage(cmd.topic, *msg.Partition, msg.asSaramaMessage())
 	}
 
 	for broker, req := range requests {
@@ -394,14 +392,14 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func (p *produceCmd) produce(in chan []message) {
+func (cmd *produceCmd) produce(in chan []message) {
 	for {
 		select {
 		case b, ok := <-in:
 			if !ok {
 				return
 			}
-			if err := p.produceBatch(p.leaders, b); err != nil {
+			if err := cmd.produceBatch(cmd.leaders, b); err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
 				return
 			}
@@ -409,15 +407,7 @@ func (p *produceCmd) produce(in chan []message) {
 	}
 }
 
-func readStdinLines(out chan string) {
-	defer close(out)
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		out <- scanner.Text()
-	}
-}
-
-func (p *produceCmd) readInput(q chan struct{}, stdin chan string, out chan string) {
+func (cmd *produceCmd) readInput(q chan struct{}, stdin chan string, out chan string) {
 	defer func() { close(out) }()
 	for {
 		select {
@@ -430,42 +420,6 @@ func (p *produceCmd) readInput(q chan struct{}, stdin chan string, out chan stri
 			return
 		}
 	}
-}
-
-// hashCode imitates the behavior of the JDK's String#hashCode method.
-// https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
-//
-// As strings are encoded in utf16 on the JVM, this implementation checks wether
-// s contains non-bmp runes and uses utf16 surrogate pairs for those.
-func hashCode(s string) (hc int32) {
-	for _, r := range s {
-		r1, r2 := utf16.EncodeRune(r)
-		if r1 == 0xfffd && r1 == r2 {
-			hc = hc*31 + r
-		} else {
-			hc = (hc*31+r1)*31 + r2
-		}
-	}
-	return
-}
-
-func kafkaAbs(i int32) int32 {
-	switch {
-	case i == -2147483648: // Integer.MIN_VALUE
-		return 0
-	case i < 0:
-		return i * -1
-	default:
-		return i
-	}
-}
-
-func hashCodePartition(key string, partitions int32) int32 {
-	if partitions <= 0 {
-		return -1
-	}
-
-	return kafkaAbs(hashCode(key)) % partitions
 }
 
 var produceDocString = `

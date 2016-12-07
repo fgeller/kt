@@ -37,7 +37,7 @@ type offset struct {
 	diff     int64
 }
 
-func (c *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
+func (cmd *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	if !o.relative {
 		return o.start, nil
 	}
@@ -48,7 +48,7 @@ func (c *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	)
 
 	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
-		if res, err = c.client.GetOffset(c.topic, partition, o.start); err != nil {
+		if res, err = cmd.client.GetOffset(cmd.topic, partition, o.start); err != nil {
 			return 0, err
 		}
 
@@ -175,27 +175,27 @@ func parseOffsets(str string) (map[int32]interval, error) {
 	return result, nil
 }
 
-func (c *consumeCmd) failStartup(msg string) {
+func (cmd *consumeCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	failf("use \"kt consume -help\" for more information")
 }
 
-func (c *consumeCmd) parseArgs(as []string) {
+func (cmd *consumeCmd) parseArgs(as []string) {
 	var (
 		err  error
-		args = c.read(as)
+		args = cmd.read(as)
 	)
 
 	envTopic := os.Getenv("KT_TOPIC")
 	if args.topic == "" {
 		if envTopic == "" {
-			c.failStartup("Topic name is required.")
+			cmd.failStartup("Topic name is required.")
 		}
 		args.topic = envTopic
 	}
-	c.topic = args.topic
-	c.verbose = args.verbose
-	c.version = kafkaVersion(args.version)
+	cmd.topic = args.topic
+	cmd.verbose = args.verbose
+	cmd.version = kafkaVersion(args.version)
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {
@@ -205,20 +205,20 @@ func (c *consumeCmd) parseArgs(as []string) {
 			args.brokers = "localhost:9092"
 		}
 	}
-	c.brokers = strings.Split(args.brokers, ",")
-	for i, b := range c.brokers {
+	cmd.brokers = strings.Split(args.brokers, ",")
+	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
-			c.brokers[i] = b + ":9092"
+			cmd.brokers[i] = b + ":9092"
 		}
 	}
 
-	c.offsets, err = parseOffsets(args.offsets)
+	cmd.offsets, err = parseOffsets(args.offsets)
 	if err != nil {
-		c.failStartup(fmt.Sprintf("%s", err))
+		cmd.failStartup(fmt.Sprintf("%s", err))
 	}
 }
 
-func (c *consumeCmd) read(as []string) consumeArgs {
+func (cmd *consumeCmd) read(as []string) consumeArgs {
 	var args consumeArgs
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
@@ -239,49 +239,49 @@ func (c *consumeCmd) read(as []string) consumeArgs {
 	return args
 }
 
-func (c *consumeCmd) setupClient() {
+func (cmd *consumeCmd) setupClient() {
 	var (
 		err error
 		usr *user.User
 		cfg = sarama.NewConfig()
 	)
-	cfg.Version = c.version
+	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-consume-" + usr.Username
-	if c.verbose {
+	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
 
-	if c.client, err = sarama.NewClient(c.brokers, cfg); err != nil {
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
 	}
 }
 
-func (c *consumeCmd) run(args []string, closer chan struct{}) {
+func (cmd *consumeCmd) run(args []string, closer chan struct{}) {
 	var err error
 
-	c.parseArgs(args)
-	c.closer = closer
+	cmd.parseArgs(args)
+	cmd.closer = closer
 
-	if c.verbose {
+	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	c.setupClient()
+	cmd.setupClient()
 
-	if c.consumer, err = sarama.NewConsumerFromClient(c.client); err != nil {
+	if cmd.consumer, err = sarama.NewConsumerFromClient(cmd.client); err != nil {
 		failf("failed to create consumer err=%v", err)
 	}
-	defer logClose("consumer", c.consumer)
+	defer logClose("consumer", cmd.consumer)
 
-	partitions := c.findPartitions()
+	partitions := cmd.findPartitions()
 	if len(partitions) == 0 {
 		failf("Found no partitions to consume")
 	}
 
-	c.consume(partitions)
+	cmd.consume(partitions)
 }
 
 func print(out <-chan printContext) {
@@ -292,7 +292,7 @@ func print(out <-chan printContext) {
 	}
 }
 
-func (c *consumeCmd) consume(partitions []int32) {
+func (cmd *consumeCmd) consume(partitions []int32) {
 	var (
 		wg  sync.WaitGroup
 		out = make(chan printContext)
@@ -302,12 +302,12 @@ func (c *consumeCmd) consume(partitions []int32) {
 
 	wg.Add(len(partitions))
 	for _, p := range partitions {
-		go func(p int32) { defer wg.Done(); c.consumePartition(out, p) }(p)
+		go func(p int32) { defer wg.Done(); cmd.consumePartition(out, p) }(p)
 	}
 	wg.Wait()
 }
 
-func (c *consumeCmd) consumePartition(out chan printContext, partition int32) {
+func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) {
 	var (
 		offsets interval
 		err     error
@@ -317,26 +317,26 @@ func (c *consumeCmd) consumePartition(out chan printContext, partition int32) {
 		ok      bool
 	)
 
-	if offsets, ok = c.offsets[partition]; !ok {
-		offsets, ok = c.offsets[-1]
+	if offsets, ok = cmd.offsets[partition]; !ok {
+		offsets, ok = cmd.offsets[-1]
 	}
 
-	if start, err = c.resolveOffset(offsets.start, partition); err != nil {
+	if start, err = cmd.resolveOffset(offsets.start, partition); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read start offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
-	if end, err = c.resolveOffset(offsets.end, partition); err != nil {
+	if end, err = cmd.resolveOffset(offsets.end, partition); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read end offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
-	if pcon, err = c.consumer.ConsumePartition(c.topic, partition, start); err != nil {
+	if pcon, err = cmd.consumer.ConsumePartition(cmd.topic, partition, start); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
 		return
 	}
 
-	c.partitionLoop(out, pcon, partition, end)
+	cmd.partitionLoop(out, pcon, partition, end)
 }
 
 type consumedMessage struct {
@@ -357,20 +357,20 @@ type printContext struct {
 	done chan struct{}
 }
 
-func (c *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
+func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 
 	for {
 		timeout := make(<-chan time.Time)
-		if c.timeout > 0 {
-			timeout = time.After(c.timeout)
+		if cmd.timeout > 0 {
+			timeout = time.After(cmd.timeout)
 		}
 
 		select {
 		case <-timeout:
-			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s.", p, c.timeout)
+			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s.", p, cmd.timeout)
 			return
-		case <-c.closer:
+		case <-cmd.closer:
 			fmt.Fprintf(os.Stderr, "shuttin down partition consumer for partition %v\n", p)
 			return
 		case msg, ok := <-pc.Messages():
@@ -389,7 +389,7 @@ func (c *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionCon
 			m := consumedMessage{msg.Partition, msg.Offset, &k, &v}
 			if buf, err = json.Marshal(m); err != nil {
 				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
-				close(c.closer)
+				close(cmd.closer)
 				return
 			}
 
@@ -404,22 +404,22 @@ func (c *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionCon
 	}
 }
 
-func (c *consumeCmd) findPartitions() []int32 {
+func (cmd *consumeCmd) findPartitions() []int32 {
 	var (
 		all []int32
 		res []int32
 		err error
 	)
-	if all, err = c.consumer.Partitions(c.topic); err != nil {
-		failf("failed to read partitions for topic %v err=%v", c.topic, err)
+	if all, err = cmd.consumer.Partitions(cmd.topic); err != nil {
+		failf("failed to read partitions for topic %v err=%v", cmd.topic, err)
 	}
 
-	if _, hasDefault := c.offsets[-1]; hasDefault {
+	if _, hasDefault := cmd.offsets[-1]; hasDefault {
 		return all
 	}
 
 	for _, p := range all {
-		if _, ok := c.offsets[p]; ok {
+		if _, ok := cmd.offsets[p]; ok {
 			res = append(res, p)
 		}
 	}

@@ -49,7 +49,7 @@ type partition struct {
 	Replicas     []int32 `json:"replicas,omitempty"`
 }
 
-func (t *topicCmd) parseFlags(as []string) topicArgs {
+func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	var (
 		args  topicArgs
 		flags = flag.NewFlagSet("topic", flag.ExitOnError)
@@ -76,12 +76,12 @@ The values supplied on the command line win over environment variable values.
 	return args
 }
 
-func (t *topicCmd) parseArgs(as []string) {
+func (cmd *topicCmd) parseArgs(as []string) {
 	var (
 		err error
 		re  *regexp.Regexp
 
-		args       = t.parseFlags(as)
+		args       = cmd.parseFlags(as)
 		envBrokers = os.Getenv("KT_BROKERS")
 	)
 	if args.brokers == "" {
@@ -91,10 +91,10 @@ func (t *topicCmd) parseArgs(as []string) {
 			args.brokers = "localhost:9092"
 		}
 	}
-	t.brokers = strings.Split(args.brokers, ",")
-	for i, b := range t.brokers {
+	cmd.brokers = strings.Split(args.brokers, ",")
+	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
-			t.brokers[i] = b + ":9092"
+			cmd.brokers[i] = b + ":9092"
 		}
 	}
 
@@ -102,57 +102,57 @@ func (t *topicCmd) parseArgs(as []string) {
 		failf("invalid regex for filter err=%s", err)
 	}
 
-	t.filter = re
-	t.partitions = args.partitions
-	t.leaders = args.leaders
-	t.replicas = args.replicas
-	t.verbose = args.verbose
-	t.version = kafkaVersion(args.version)
+	cmd.filter = re
+	cmd.partitions = args.partitions
+	cmd.leaders = args.leaders
+	cmd.replicas = args.replicas
+	cmd.verbose = args.verbose
+	cmd.version = kafkaVersion(args.version)
 }
 
-func (t *topicCmd) mkClient() {
+func (cmd *topicCmd) mkClient() {
 	var (
 		err error
 		usr *user.User
 		cfg = sarama.NewConfig()
 	)
 
-	cfg.Version = t.version
+	cfg.Version = cmd.version
 
 	if usr, err = user.Current(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-topic-" + usr.Username
-	if t.verbose {
+	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
 
-	if t.client, err = sarama.NewClient(t.brokers, cfg); err != nil {
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
 	}
 }
 
-func (t *topicCmd) run(as []string, closer chan struct{}) {
+func (cmd *topicCmd) run(as []string, closer chan struct{}) {
 	var (
 		err error
 		all []string
 		out = make(chan printContext)
 	)
 
-	if t.verbose {
+	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	t.mkClient()
-	defer t.client.Close()
+	cmd.mkClient()
+	defer cmd.client.Close()
 
-	if all, err = t.client.Topics(); err != nil {
+	if all, err = cmd.client.Topics(); err != nil {
 		failf("failed to read topics err=%v", err)
 	}
 
 	topics := []string{}
 	for _, a := range all {
-		if t.filter.MatchString(a) {
+		if cmd.filter.MatchString(a) {
 			topics = append(topics, a)
 		}
 	}
@@ -163,21 +163,21 @@ func (t *topicCmd) run(as []string, closer chan struct{}) {
 	for _, tn := range topics {
 		wg.Add(1)
 		go func(top string) {
-			t.print(top, out)
+			cmd.print(top, out)
 			wg.Done()
 		}(tn)
 	}
 	wg.Wait()
 }
 
-func (t *topicCmd) print(name string, out chan printContext) {
+func (cmd *topicCmd) print(name string, out chan printContext) {
 	var (
 		top topic
 		buf []byte
 		err error
 	)
 
-	if top, err = t.readTopic(name); err != nil {
+	if top, err = cmd.readTopic(name); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to read info for topic %s. err=%v\n", name, err)
 		return
 	}
@@ -192,7 +192,7 @@ func (t *topicCmd) print(name string, out chan printContext) {
 	<-ctx.done
 }
 
-func (t *topicCmd) readTopic(name string) (topic, error) {
+func (cmd *topicCmd) readTopic(name string) (topic, error) {
 	var (
 		err error
 		ps  []int32
@@ -200,34 +200,34 @@ func (t *topicCmd) readTopic(name string) (topic, error) {
 		top = topic{Name: name}
 	)
 
-	if !t.partitions {
+	if !cmd.partitions {
 		return top, nil
 	}
 
-	if ps, err = t.client.Partitions(name); err != nil {
+	if ps, err = cmd.client.Partitions(name); err != nil {
 		return top, err
 	}
 
 	for _, p := range ps {
 		np := partition{Id: p}
 
-		if np.OldestOffset, err = t.client.GetOffset(name, p, sarama.OffsetOldest); err != nil {
+		if np.OldestOffset, err = cmd.client.GetOffset(name, p, sarama.OffsetOldest); err != nil {
 			return top, err
 		}
 
-		if np.NewestOffset, err = t.client.GetOffset(name, p, sarama.OffsetNewest); err != nil {
+		if np.NewestOffset, err = cmd.client.GetOffset(name, p, sarama.OffsetNewest); err != nil {
 			return top, err
 		}
 
-		if t.leaders {
-			if led, err = t.client.Leader(name, p); err != nil {
+		if cmd.leaders {
+			if led, err = cmd.client.Leader(name, p); err != nil {
 				return top, err
 			}
 			np.Leader = led.Addr()
 		}
 
-		if t.replicas {
-			if np.Replicas, err = t.client.Replicas(name, p); err != nil {
+		if cmd.replicas {
+			if np.Replicas, err = cmd.client.Replicas(name, p); err != nil {
 				return top, err
 			}
 		}
