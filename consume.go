@@ -28,7 +28,7 @@ type consumeCmd struct {
 	client   sarama.Client
 	consumer sarama.Consumer
 
-	closer chan struct{}
+	q chan struct{}
 }
 
 type offset struct {
@@ -183,7 +183,7 @@ func (cmd *consumeCmd) failStartup(msg string) {
 func (cmd *consumeCmd) parseArgs(as []string) {
 	var (
 		err  error
-		args = cmd.read(as)
+		args = cmd.parseFlags(as)
 	)
 
 	envTopic := os.Getenv("KT_TOPIC")
@@ -194,6 +194,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 		args.topic = envTopic
 	}
 	cmd.topic = args.topic
+	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
 
@@ -218,7 +219,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	}
 }
 
-func (cmd *consumeCmd) read(as []string) consumeArgs {
+func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	var args consumeArgs
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
@@ -259,11 +260,11 @@ func (cmd *consumeCmd) setupClient() {
 	}
 }
 
-func (cmd *consumeCmd) run(args []string, closer chan struct{}) {
+func (cmd *consumeCmd) run(args []string, q chan struct{}) {
 	var err error
 
 	cmd.parseArgs(args)
-	cmd.closer = closer
+	cmd.q = q
 
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -368,10 +369,10 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 
 		select {
 		case <-timeout:
-			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s.", p, cmd.timeout)
+			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s\n", p, cmd.timeout)
 			return
-		case <-cmd.closer:
-			fmt.Fprintf(os.Stderr, "shuttin down partition consumer for partition %v\n", p)
+		case <-cmd.q:
+			fmt.Fprintf(os.Stderr, "shutting down partition consumer for partition %v\n", p)
 			return
 		case msg, ok := <-pc.Messages():
 			var (
@@ -389,7 +390,7 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			m := consumedMessage{msg.Partition, msg.Offset, &k, &v}
 			if buf, err = json.Marshal(m); err != nil {
 				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
-				close(cmd.closer)
+				close(cmd.q)
 				return
 			}
 
