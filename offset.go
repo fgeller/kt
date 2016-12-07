@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -27,7 +26,10 @@ type offsetCmd struct {
 	verbose    bool
 	version    sarama.KafkaVersion
 
+	out chan printContext
+
 	client        sarama.Client
+	broker        *sarama.Broker
 	offsetManager sarama.OffsetManager
 }
 
@@ -117,7 +119,7 @@ func (cmd *offsetCmd) parseArgs(as []string) {
 	}
 }
 
-func (cmd *offsetCmd) mkClient() {
+func (cmd *offsetCmd) connect() {
 	var (
 		err error
 		usr *user.User
@@ -141,146 +143,125 @@ func (cmd *offsetCmd) mkClient() {
 	if cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client); err != nil {
 		failf("failed to create offset manager for group=%s err=%v", cmd.group, err)
 	}
+
+	if cmd.group != "" {
+		if cmd.broker, err = cmd.client.Coordinator(cmd.group); err != nil {
+			failf("failed to create broker err=%v", err)
+		}
+		defer logClose("broker", cmd.broker)
+	}
 }
 
-func (cmd *offsetCmd) run(as []string, closer chan struct{}) {
-	var (
-		tps []string
-		err error
-	)
-
+func (cmd *offsetCmd) run(as []string, q chan struct{}) {
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	cmd.mkClient()
-	defer cmd.client.Close()
+	cmd.connect()
+	defer logClose("client", cmd.client)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	cmd.out = make(chan printContext)
+	go print(cmd.out)
 
-	out := make(chan printContext)
-	done := make(chan bool)
+	for _, top := range cmd.fetchTopics() {
+		if cmd.topic.MatchString(top) {
+			for _, prt := range cmd.fetchPartitions(top) {
+				if cmd.partition == -1 || cmd.partition == prt {
+					if cmd.setOffsets != "" {
+						cmd.setConsumerOffsets(top, prt)
+						continue
+					}
 
-	go func(out chan printContext, done chan bool) {
-		if tps, err = cmd.client.Topics(); err != nil {
-			failf("failed to read topics err=%v", err)
-		}
-
-		for _, t := range tps {
-			if !cmd.topic.MatchString(t) {
-				continue
+					po, co := cmd.fetchOffsets(top, prt)
+					off := offsets{Topic: top, Partition: prt, PartitionOffset: po}
+					if cmd.group != "" {
+						off.ConsumerGroup = cmd.group
+						off.ConsumerOffset = &co
+					}
+					cmd.printOffset(off)
+					select {
+					case <-q:
+						fmt.Fprintf(os.Stderr, "received signal, quitting.")
+						return
+					default:
+					}
+				}
 			}
-
-			cmd.offsetsForTopic(t, out)
-		}
-
-		done <- true
-	}(out, done)
-
-printLoop:
-	for {
-		select {
-		case m := <-out:
-			fmt.Println(m)
-		case <-done:
-			break printLoop
-		case <-closer:
-			break printLoop
 		}
 	}
 }
 
-func (cmd *offsetCmd) offsetsForTopic(topic string, out chan printContext) {
-	var (
-		ps  []int32
-		err error
-	)
-
-	if ps, err = cmd.client.Partitions(topic); err != nil {
-		failf("failed to read partitions for topic=%s err=%v", topic, err)
-	}
-
-	for _, p := range ps {
-		if cmd.partition == -1 || cmd.partition == p {
-			cmd.offsetsForPartition(topic, p, out)
-		}
-	}
-}
-
-// offsetsForPartition processes the offsets for a given partition of a given topic
-// if a group ID is passed, it will process the offsets for a consumer group
-func (cmd *offsetCmd) offsetsForPartition(topic string, partition int32, out chan printContext) {
-	po, err := cmd.client.GetOffset(topic, partition, sarama.OffsetNewest)
+func (cmd *offsetCmd) fetchTopics() []string {
+	tps, err := cmd.client.Topics()
 	if err != nil {
-		failf("failed to read offsets for topic=%s partition=%d err=%v", topic, partition, err)
+		failf("failed to read topics err=%v", err)
 	}
-
-	if cmd.group != "" {
-		cmd.offsetsForConsumer(topic, partition, po, out)
-		return
-	}
-
-	printOffset(offsets{Topic: topic, Partition: partition, PartitionOffset: po}, out)
+	return tps
 }
 
-// offsetsForConsumer processes the consumer group offsets for a given partition of a given topic
-func (cmd *offsetCmd) offsetsForConsumer(topic string, partition int32, partitionOffset int64, out chan printContext) {
+func (cmd *offsetCmd) fetchPartitions(top string) []int32 {
+	ps, err := cmd.client.Partitions(top)
+	if err != nil {
+		failf("failed to read partitions for topic=%s err=%v", top, err)
+	}
+	return ps
+}
 
-	if cmd.setOffsets != "" {
-		cmd.setConsumerOffsets(topic, partition)
-		return
+func (cmd *offsetCmd) fetchOffsets(top string, prt int32) (partitionOffset int64, groupOffset int64) {
+	var err error
+	if partitionOffset, err = cmd.client.GetOffset(top, prt, sarama.OffsetNewest); err != nil {
+		failf("failed to read offsets for topic=%s partition=%d err=%v", top, prt, err)
 	}
 
-	pom, err := cmd.offsetManager.ManagePartition(topic, partition)
+	if cmd.group == "" {
+		return partitionOffset, 0
+	}
+
+	return partitionOffset, cmd.fetchGroupOffset(top, prt, partitionOffset)
+}
+
+func (cmd *offsetCmd) fetchGroupOffset(top string, prt int32, po int64) int64 {
+	pom, err := cmd.offsetManager.ManagePartition(top, prt)
 	if err != nil {
-		failf("failed to read consumer offsets for group=%s topic=%s partition=%d err=%v", cmd.group, topic, partition, err)
+		failf("failed to read consumer offsets for group=%s topic=%s partition=%d err=%v", cmd.group, top, prt, err)
 	}
 	co, _ := pom.NextOffset()
 	pom.Close()
 
-	printOffset(offsets{ConsumerGroup: cmd.group, Topic: topic, Partition: partition, PartitionOffset: partitionOffset, ConsumerOffset: &co}, out)
+	return co
 }
 
-// setConsumerOffsets processes the setConsumerOffset flag
-func (cmd *offsetCmd) setConsumerOffsets(topic string, partition int32) {
+func (cmd *offsetCmd) setConsumerOffsets(top string, prt int32) {
 	var (
 		err error
-		brk *sarama.Broker
 		po  = cmd.newOffsets
 	)
-	if brk, err = cmd.client.Coordinator(cmd.group); err != nil {
-		failf("failed to create broker err=%v", err)
-	}
-	defer logClose("broker", brk)
 
-	memberID, generationID := joinGroup(brk, cmd.group, topic)
-
+	memberID, generationID := cmd.join(top)
 	if cmd.newOffsets == sarama.OffsetNewest || cmd.newOffsets == sarama.OffsetOldest {
-		if po, err = cmd.client.GetOffset(topic, partition, cmd.newOffsets); err != nil {
-			failf("failed to read offsets for topic=%s partition=%d err=%v", topic, partition, err)
+		if po, err = cmd.client.GetOffset(top, prt, cmd.newOffsets); err != nil {
+			failf("failed to read offsets for topic=%s partition=%d err=%v", top, prt, err)
 		}
 	}
 
-	cmd.commitOffset(brk, topic, partition, cmd.group, po, generationID, memberID)
+	cmd.commit(top, prt, po, generationID, memberID)
 }
 
-// joinGroup joins a consumer group and returns the group memberID and generationID
-func joinGroup(broker *sarama.Broker, group string, topic string) (string, int32) {
+func (cmd *offsetCmd) join(top string) (string, int32) {
 	var (
 		err error
 		res *sarama.JoinGroupResponse
 	)
 
 	joinGroupReq := &sarama.JoinGroupRequest{
-		GroupId:        group,
+		GroupId:        cmd.group,
 		SessionTimeout: int32((30 * time.Second) / time.Millisecond),
 		ProtocolType:   "consumer",
 	}
 
 	meta := &sarama.ConsumerGroupMemberMetadata{
 		Version: 1,
-		Topics:  []string{topic},
+		Topics:  []string{top},
 	}
 
 	if err := joinGroupReq.AddGroupProtocolMetadata("range", meta); err != nil {
@@ -291,16 +272,14 @@ func joinGroup(broker *sarama.Broker, group string, topic string) (string, int32
 		failf("failed to add meta data err=%v", err)
 	}
 
-	if res, err := broker.JoinGroup(joinGroupReq); err != nil || res.Err != sarama.ErrNoError {
+	if res, err := cmd.broker.JoinGroup(joinGroupReq); err != nil || res.Err != sarama.ErrNoError {
 		failf("failed to join consumer group err=%v responseErr=%v", err, res.Err)
 	}
 
 	return res.MemberId, res.GenerationId
 }
 
-// commitOffset sends an offset message to kafka for the given consumer group
-func (cmd *offsetCmd) commitOffset(broker *sarama.Broker, topic string, partition int32, group string, offset int64, generationID int32, memberID string) {
-
+func (cmd *offsetCmd) commit(top string, prt int32, offset int64, generationID int32, memberID string) {
 	var (
 		ocr *sarama.OffsetCommitResponse
 		err error
@@ -316,14 +295,14 @@ func (cmd *offsetCmd) commitOffset(broker *sarama.Broker, topic string, partitio
 
 	req := &sarama.OffsetCommitRequest{
 		Version:                 v,
-		ConsumerGroup:           group,
+		ConsumerGroup:           cmd.group,
 		ConsumerGroupGeneration: generationID,
 		ConsumerID:              memberID,
 		RetentionTime:           -1,
 	}
-	req.AddBlock(topic, partition, offset, 0, "")
+	req.AddBlock(top, prt, offset, 0, "")
 
-	if ocr, err = broker.CommitOffset(req); err != nil {
+	if ocr, err = cmd.broker.CommitOffset(req); err != nil {
 		failf("failed to commit offsets err=%v", err)
 	}
 
@@ -336,7 +315,7 @@ func (cmd *offsetCmd) commitOffset(broker *sarama.Broker, topic string, partitio
 	}
 }
 
-func printOffset(o offsets, out chan printContext) {
+func (cmd *offsetCmd) printOffset(o offsets) {
 	var (
 		err error
 		buf []byte
@@ -347,7 +326,7 @@ func printOffset(o offsets, out chan printContext) {
 	}
 
 	ctx := printContext{string(buf), make(chan struct{})}
-	out <- ctx
+	cmd.out <- ctx
 	<-ctx.done
 }
 
