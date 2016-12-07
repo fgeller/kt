@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Shopify/sarama"
 )
@@ -147,11 +146,11 @@ func (cmd *offsetCmd) connect() {
 		if cmd.broker, err = cmd.client.Coordinator(cmd.group); err != nil {
 			failf("failed to create broker err=%v", err)
 		}
-		defer logClose("broker", cmd.broker)
 	}
 }
 
 func (cmd *offsetCmd) run(as []string, q chan struct{}) {
+	cmd.parseArgs(as)
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
@@ -260,7 +259,7 @@ func (cmd *offsetCmd) join(top string) (string, int32) {
 
 	joinGroupReq := &sarama.JoinGroupRequest{
 		GroupId:        cmd.group,
-		SessionTimeout: int32((30 * time.Second) / time.Millisecond),
+		SessionTimeout: 30 * 1000,
 		ProtocolType:   "consumer",
 	}
 
@@ -277,8 +276,12 @@ func (cmd *offsetCmd) join(top string) (string, int32) {
 		failf("failed to add meta data err=%v", err)
 	}
 
-	if res, err := cmd.broker.JoinGroup(joinGroupReq); err != nil || res.Err != sarama.ErrNoError {
-		failf("failed to join consumer group err=%v responseErr=%v", err, res.Err)
+	if res, err = cmd.broker.JoinGroup(joinGroupReq); err != nil {
+		failf("failed to join consumer group err=%v", err)
+	}
+
+	if res.Err != sarama.ErrNoError {
+		failf("failed to join consumer group responseErr=%v", res.Err)
 	}
 
 	return res.MemberId, res.GenerationId
@@ -311,10 +314,10 @@ func (cmd *offsetCmd) commit(top string, prt int32, offset int64, generationID i
 		failf("failed to commit offsets err=%v", err)
 	}
 
-	for topic, perrs := range ocr.Errors {
-		for partition, kerr := range perrs {
+	for top, perrs := range ocr.Errors {
+		for prt, kerr := range perrs {
 			if kerr != sarama.ErrNoError {
-				failf("failed to commit offsets topic=%s, partition=%s. err=%v", topic, partition, err)
+				failf("failed to commit offsets topic=%s, partition=%v err=%v kerr=%v", top, prt, err, kerr)
 			}
 		}
 	}
