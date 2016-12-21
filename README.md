@@ -30,6 +30,11 @@ Produce messages:
     {"partition": 0, "startOffset": 3, "count": 1}
     {"partition": 0, "startOffset": 4, "count": 1}
 
+Or pass in JSON object to control key, value and partition:
+
+    $ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce -topic actor-news
+    {"partition": 0, "startOffset": 5, "count": 1}
+
 Read messages at specific offsets on specific partitions:
 
     $ kt consume -topic actor-news -offsets 0=1:2
@@ -41,6 +46,7 @@ Follow a topic, starting relative to newest offset:
     $ kt consume -topic actor-news -offsets all=newest-1:
     {"partition":0,"offset":3,"key":"","value":"Bourne sequel 8 in production."}
     {"partition":0,"offset":4,"key":"","value":"Bourne sequel 9 in production."}
+    {"partition":0,"offset":5,"key":"Arni","value":"Terminator terminated"}
     ^Creceived interrupt - shutting down
     shutting down partition consumer for partition 0
 
