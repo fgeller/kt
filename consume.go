@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -18,12 +20,14 @@ import (
 )
 
 type consumeCmd struct {
-	topic   string
-	brokers []string
-	offsets map[int32]interval
-	timeout time.Duration
-	verbose bool
-	version sarama.KafkaVersion
+	topic       string
+	brokers     []string
+	offsets     map[int32]interval
+	timeout     time.Duration
+	verbose     bool
+	version     sarama.KafkaVersion
+	decodeValue string
+	decodeKey   string
 
 	client   sarama.Client
 	consumer sarama.Consumer
@@ -68,12 +72,14 @@ type interval struct {
 }
 
 type consumeArgs struct {
-	topic   string
-	brokers string
-	timeout time.Duration
-	offsets string
-	verbose bool
-	version string
+	topic       string
+	brokers     string
+	timeout     time.Duration
+	offsets     string
+	verbose     bool
+	version     string
+	decodeValue string
+	decodeKey   string
 }
 
 func parseOffset(str string) (offset, error) {
@@ -190,6 +196,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	if args.topic == "" {
 		if envTopic == "" {
 			cmd.failStartup("Topic name is required.")
+			return
 		}
 		args.topic = envTopic
 	}
@@ -197,6 +204,18 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
+
+	if args.decodeValue != "string" && args.decodeValue != "hex" && args.decodeValue != "base64" {
+		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
+		return
+	}
+	cmd.decodeValue = args.decodeValue
+
+	if args.decodeKey != "string" && args.decodeKey != "hex" && args.decodeKey != "base64" {
+		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
+		return
+	}
+	cmd.decodeKey = args.decodeKey
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {
@@ -228,6 +247,8 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
+	flags.StringVar(&args.decodeKey, "decodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -388,6 +409,23 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			}
 
 			m := consumedMessage{msg.Partition, msg.Offset, &k, &v}
+			switch cmd.decodeValue {
+			case "hex":
+				str := hex.EncodeToString(msg.Value)
+				m.Value = &str
+			case "base64":
+				str := base64.StdEncoding.EncodeToString(msg.Value)
+				m.Value = &str
+			}
+			switch cmd.decodeKey {
+			case "hex":
+				str := hex.EncodeToString(msg.Key)
+				m.Key = &str
+			case "base64":
+				str := base64.StdEncoding.EncodeToString(msg.Key)
+				m.Key = &str
+			}
+
 			if buf, err = json.Marshal(m); err != nil {
 				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
 				close(cmd.q)
