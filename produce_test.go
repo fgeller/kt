@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHashCode(t *testing.T) {
@@ -194,6 +195,32 @@ func newMessage(key, value string, partition int32) message {
 		Value:     v,
 		Partition: &partition,
 	}
+}
+
+func TestMakeSaramaMessage(t *testing.T) {
+	target := &produceCmd{decodeKey: "string", decodeValue: "string"}
+	key, value := "key", "value"
+	msg := message{Key: &key, Value: &value}
+	actual, err := target.makeSaramaMessage(msg)
+	require.Nil(t, err)
+	require.Equal(t, []byte(key), actual.Key)
+	require.Equal(t, []byte(value), actual.Value)
+
+	target.decodeKey, target.decodeValue = "hex", "hex"
+	key, value = "41", "42"
+	msg = message{Key: &key, Value: &value}
+	actual, err = target.makeSaramaMessage(msg)
+	require.Nil(t, err)
+	require.Equal(t, []byte("A"), actual.Key)
+	require.Equal(t, []byte("B"), actual.Value)
+
+	target.decodeKey, target.decodeValue = "base64", "base64"
+	key, value = "aGFucw==", "cGV0ZXI="
+	msg = message{Key: &key, Value: &value}
+	actual, err = target.makeSaramaMessage(msg)
+	require.Nil(t, err)
+	require.Equal(t, []byte("hans"), actual.Key)
+	require.Equal(t, []byte("peter"), actual.Value)
 }
 
 func TestDeserializeLines(t *testing.T) {

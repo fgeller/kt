@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,6 +24,8 @@ type produceArgs struct {
 	verbose     bool
 	version     string
 	literal     bool
+	decodeKey   string
+	decodeValue string
 	partitioner string
 }
 
@@ -43,6 +47,8 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
+	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
+	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of produce:")
@@ -87,6 +93,18 @@ func (cmd *produceCmd) parseArgs(as []string) {
 			cmd.brokers[i] = b + ":9092"
 		}
 	}
+
+	if args.decodeValue != "string" && args.decodeValue != "hex" && args.decodeValue != "base64" {
+		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
+		return
+	}
+	cmd.decodeValue = args.decodeValue
+
+	if args.decodeKey != "string" && args.decodeKey != "hex" && args.decodeKey != "base64" {
+		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
+		return
+	}
+	cmd.decodeKey = args.decodeKey
 
 	cmd.batch = args.batch
 	cmd.timeout = args.timeout
@@ -197,6 +215,8 @@ type produceCmd struct {
 	partition   int32
 	version     sarama.KafkaVersion
 	partitioner string
+	decodeKey   string
+	decodeValue string
 
 	saramaConfig *sarama.Config
 	leaders      map[int32]*sarama.Broker
@@ -319,15 +339,43 @@ type partitionProduceResult struct {
 	count int64
 }
 
-func (m message) asSaramaMessage() *sarama.Message {
-	msg := sarama.Message{Codec: sarama.CompressionNone}
-	if m.Key != nil {
-		msg.Key = []byte(*m.Key)
+func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
+	var (
+		err error
+		sm  = &sarama.Message{Codec: sarama.CompressionNone}
+	)
+
+	if msg.Key != nil {
+		switch cmd.decodeKey {
+		case "hex":
+			if sm.Key, err = hex.DecodeString(*msg.Key); err != nil {
+				return sm, fmt.Errorf("failed to decode key as hex string, err=%v", err)
+			}
+		case "base64":
+			if sm.Key, err = base64.StdEncoding.DecodeString(*msg.Key); err != nil {
+				return sm, fmt.Errorf("failed to decode key as base64 string, err=%v", err)
+			}
+		default: // string
+			sm.Key = []byte(*msg.Key)
+		}
 	}
-	if m.Value != nil {
-		msg.Value = []byte(*m.Value)
+
+	if msg.Value != nil {
+		switch cmd.decodeValue {
+		case "hex":
+			if sm.Value, err = hex.DecodeString(*msg.Value); err != nil {
+				return sm, fmt.Errorf("failed to decode value as hex string, err=%v", err)
+			}
+		case "base64":
+			if sm.Value, err = base64.StdEncoding.DecodeString(*msg.Value); err != nil {
+				return sm, fmt.Errorf("failed to decode value as base64 string, err=%v", err)
+			}
+		default: // string
+			sm.Value = []byte(*msg.Value)
+		}
 	}
-	return &msg
+
+	return sm, nil
 }
 
 func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
@@ -343,7 +391,11 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 			requests[broker] = req
 		}
 
-		req.AddMessage(cmd.topic, *msg.Partition, msg.asSaramaMessage())
+		sm, err := cmd.makeSaramaMessage(msg)
+		if err != nil {
+			return err
+		}
+		req.AddMessage(cmd.topic, *msg.Partition, sm)
 	}
 
 	for broker, req := range requests {
