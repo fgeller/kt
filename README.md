@@ -10,6 +10,7 @@ Some reasons why you might be interested:
 * Configure brokers and topic via environment variables for a shell session
 * Fast start up time.
 * No buffering of output.
+* Binary keys and payloads can be passed and presented in base64 or hex encoding
 
 [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
 
