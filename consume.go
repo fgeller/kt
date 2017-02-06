@@ -381,11 +381,18 @@ type printContext struct {
 
 func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
+	var (
+		timer   *time.Timer
+		timeout = make(<-chan time.Time)
+	)
 
 	for {
-		timeout := make(<-chan time.Time)
 		if cmd.timeout > 0 {
-			timeout = time.After(cmd.timeout)
+			if timer != nil {
+				timer.Stop()
+			}
+			timer = time.NewTimer(cmd.timeout)
+			timeout = timer.C
 		}
 
 		select {
