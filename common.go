@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"unicode/utf16"
 
 	"github.com/Shopify/sarama"
@@ -16,6 +18,8 @@ var (
 	v900  = sarama.V0_9_0_0
 	v901  = sarama.V0_9_0_1
 	v1000 = sarama.V0_10_0_0
+
+	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 )
 
 func kafkaVersion(s string) sarama.KafkaVersion {
@@ -82,4 +86,13 @@ func hashCodePartition(key string, partitions int32) int32 {
 	}
 
 	return kafkaAbs(hashCode(key)) % partitions
+}
+
+func sanitizeUsername(u string) string {
+	// Windows user may have format "DOMAIN|MACHINE\username", remove domain/machine if present
+	s := strings.Split(u, "\\")
+	u = s[len(s)-1]
+	// Windows account can contain spaces or other special characters not supported
+	// in client ID. Keep the bare minimum and ditch the rest.
+	return invalidClientIDCharactersRegExp.ReplaceAllString(u, "")
 }

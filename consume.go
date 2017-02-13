@@ -271,7 +271,7 @@ func (cmd *consumeCmd) setupClient() {
 	if usr, err = user.Current(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
-	cfg.ClientID = "kt-consume-" + usr.Username
+	cfg.ClientID = "kt-consume-" + sanitizeUsername(usr.Username)
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
