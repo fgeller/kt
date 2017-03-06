@@ -44,12 +44,18 @@ func failf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func readStdinLines(out chan string) {
-	defer close(out)
+func readStdinLines(max int, out chan string) {
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, max), max)
+
 	for scanner.Scan() {
 		out <- scanner.Text()
 	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "scanning input failed err=%v\n", err)
+	}
+	close(out)
 }
 
 // hashCode imitates the behavior of the JDK's String#hashCode method.

@@ -27,6 +27,7 @@ type produceArgs struct {
 	decodeKey   string
 	decodeValue string
 	partitioner string
+	bufferSize  int
 }
 
 type message struct {
@@ -49,6 +50,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
 	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
+	flags.IntVar(&args.bufferSize, "buffersize", 16777216, "Buffer size for scanning stdin, defaults to 16777216=16*1024*1024.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of produce:")
@@ -57,7 +59,11 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 		os.Exit(2)
 	}
 
-	flags.Parse(as)
+	if err := flags.Parse(as); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse arguments err=%#v", err)
+		flags.Usage()
+	}
+
 	return args
 }
 
@@ -112,6 +118,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
 	cmd.version = kafkaVersion(args.version)
+	cmd.bufferSize = args.bufferSize
 }
 
 func (cmd *produceCmd) mkSaramaConfig() {
@@ -217,6 +224,7 @@ type produceCmd struct {
 	partitioner string
 	decodeKey   string
 	decodeValue string
+	bufferSize  int
 
 	saramaConfig *sarama.Config
 	leaders      map[int32]*sarama.Broker
@@ -235,7 +243,7 @@ func (cmd *produceCmd) run(as []string, q chan struct{}) {
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
 
-	go readStdinLines(stdin)
+	go readStdinLines(cmd.bufferSize, stdin)
 
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
