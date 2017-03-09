@@ -47,6 +47,7 @@ type offsets struct {
 	Partition       int32  `json:"partition"`
 	PartitionOffset int64  `json:"partition-offset"`
 	ConsumerOffset  *int64 `json:"consumer-offset,omitempty"`
+	ConsumerLag     *int64 `json:"consumer-lag,omitempty"`
 }
 
 func (cmd *offsetCmd) parseFlags(as []string) offsetArgs {
@@ -182,6 +183,10 @@ func (cmd *offsetCmd) do(q chan struct{}) {
 					if cmd.group != "" {
 						off.ConsumerGroup = cmd.group
 						off.ConsumerOffset = &co
+						if co > 0 {
+							cl := po - co
+							off.ConsumerLag = &cl
+						}
 					}
 					cmd.printOffset(off)
 					select {
