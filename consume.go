@@ -362,10 +362,11 @@ func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) 
 }
 
 type consumedMessage struct {
-	Partition int32   `json:"partition"`
-	Offset    int64   `json:"offset"`
-	Key       *string `json:"key"`
-	Value     *string `json:"value"`
+	Partition int32      `json:"partition"`
+	Offset    int64      `json:"offset"`
+	Key       *string    `json:"key"`
+	Value     *string    `json:"value"`
+	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
 func logClose(name string, c io.Closer) {
@@ -415,7 +416,12 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 				return
 			}
 
-			m := consumedMessage{msg.Partition, msg.Offset, &k, &v}
+			var ts *time.Time
+			if !msg.Timestamp.IsZero() {
+				ts = &msg.Timestamp
+			}
+
+			m := consumedMessage{msg.Partition, msg.Offset, &k, &v, ts}
 			switch cmd.encodeValue {
 			case "hex":
 				str := hex.EncodeToString(msg.Value)
