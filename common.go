@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -36,6 +37,20 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 		return sarama.V0_9_0_1
 	default:
 		return sarama.V0_10_0_0
+	}
+}
+
+func logClose(name string, c io.Closer) {
+	if err := c.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
+	}
+}
+
+func print(out <-chan printContext) {
+	for {
+		ctx := <-out
+		fmt.Println(ctx.line)
+		close(ctx.done)
 	}
 }
 

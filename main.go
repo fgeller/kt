@@ -45,6 +45,7 @@ The commands are:
 	produce    produce messages.
 	topic      topic information.
 	offset     offset information and modification
+	group      consumer group information and modification
 
 Use "kt [command] -help" for for information about the command.
 
@@ -64,6 +65,8 @@ func parseArgs() command {
 		return &topicCmd{}
 	case "offset":
 		return &offsetCmd{}
+	case "group":
+		return &groupCmd{}
 	default:
 		failf(usageMessage)
 		return nil

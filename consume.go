@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/user"
@@ -306,14 +305,6 @@ func (cmd *consumeCmd) run(args []string, q chan struct{}) {
 	cmd.consume(partitions)
 }
 
-func print(out <-chan printContext) {
-	for {
-		ctx := <-out
-		fmt.Println(ctx.line)
-		close(ctx.done)
-	}
-}
-
 func (cmd *consumeCmd) consume(partitions []int32) {
 	var (
 		wg  sync.WaitGroup
@@ -367,12 +358,6 @@ type consumedMessage struct {
 	Key       *string    `json:"key"`
 	Value     *string    `json:"value"`
 	Timestamp *time.Time `json:"timestamp,omitempty"`
-}
-
-func logClose(name string, c io.Closer) {
-	if err := c.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
-	}
 }
 
 type printContext struct {
