@@ -9,26 +9,41 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Shopify/sarama"
 )
 
 type groupCmd struct {
-	topic   string
-	brokers []string
-	group   string
-	set     int64
-	verbose bool
-	version sarama.KafkaVersion
+	brokers   []string
+	group     string
+	topic     string
+	partition int32
+	reset     int64
+	verbose   bool
+	version   sarama.KafkaVersion
+	offsets   bool
+
+	client        sarama.Client
+	offsetManager sarama.OffsetManager
 
 	q chan struct{}
 }
 
 type group struct {
-	Name string `json:"name"`
+	Name    string                `json:"name"`
+	Topic   string                `json:"topic,omitempty"`
+	Offsets map[int32]groupOffset `json:"offsets,omitempty"`
+}
+
+type groupOffset struct {
+	Offset int64 `json:"offset"`
+	Lag    int64 `json:"lag"`
 }
 
 func (cmd *groupCmd) run(args []string, q chan struct{}) {
+	var err error
+
 	cmd.parseArgs(args)
 	cmd.q = q
 
@@ -36,31 +51,130 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cmd.saramaConfig()); err != nil {
+		failf("failed to create client err=%v", err)
+	}
+
 	brokers := cmd.findBrokers()
 	if len(brokers) == 0 {
 		failf("failed to find brokers")
 	}
 
-	groups := []group{{cmd.group}}
+	groups := []string{cmd.group}
 	if cmd.group == "" {
 		groups = cmd.findGroups(brokers)
 	}
 
-	for _, g := range groups {
-		buf, _ := json.Marshal(g)
-		fmt.Println(string(buf))
+	topics := []string{cmd.topic}
+	if cmd.topic == "" {
+		topics = cmd.fetchTopics()
 	}
 
-	// DONE: kt group
-	// TODO: kt group -topic events
-	// TODO: kt group -topic events -group duper
-	// TODO: kt group -topic events -group duper -set 123
+	if !cmd.offsets {
+		for i, grp := range groups {
+			buf, _ := json.Marshal(group{Name: grp})
+			fmt.Println(string(buf))
+			if cmd.verbose {
+				fmt.Fprintf(os.Stderr, "%v/%v\n", i+1, len(groups))
+			}
+		}
+		return
+	}
+
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "about to search for group offsets for %v groups on %v topics\n", len(groups), len(topics))
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(len(groups) * len(topics))
+	for _, grp := range groups {
+		for _, top := range topics {
+			go func(grp, topic string) {
+				target := group{Name: grp, Topic: topic, Offsets: map[int32]groupOffset{}}
+				cmd.fetchGroupTopicOffset(target.Offsets, grp, topic)
+				if len(target.Offsets) > 0 {
+					buf, _ := json.Marshal(target)
+					fmt.Println(string(buf))
+				}
+				wg.Done()
+			}(grp, top)
+		}
+	}
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-cmd.q:
+	case <-done:
+	}
 }
 
-func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) []group {
+func (cmd *groupCmd) fetchGroupTopicOffset(target map[int32]groupOffset, grp, top string) {
+	parts := []int32{cmd.partition}
+	if cmd.partition == -23 {
+		parts = cmd.fetchPartitions(top)
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(len(parts))
+	for _, part := range parts {
+		go cmd.fetchGroupOffset(wg, target, grp, top, part)
+	}
+	wg.Wait()
+}
+func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, target map[int32]groupOffset, grp, top string, part int32) {
+	var (
+		err           error
+		groupOff      int64
+		partOff       int64
+		offsetManager sarama.OffsetManager
+	)
+
+	defer wg.Done()
+
+	if offsetManager, err = sarama.NewOffsetManagerFromClient(grp, cmd.client); err != nil {
+		failf("failed to create client err=%v", err)
+	}
+	pom, err := offsetManager.ManagePartition(top, part)
+	if err != nil {
+		failf("failed to manage partition group=%s topic=%s partition=%d err=%v", grp, top, part, err)
+	}
+	groupOff, _ = pom.NextOffset()
+	if groupOff == sarama.OffsetNewest {
+		// no offset recorded yet
+		return
+	}
+
+	if cmd.reset > 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
+		pom.MarkOffset(cmd.reset, "")
+	}
+
+	if partOff, err = cmd.client.GetOffset(top, part, sarama.OffsetNewest); err != nil {
+		failf("failed to read partition offset for topic=%s partition=%d err=%v", top, part, err)
+	}
+
+	target[part] = groupOffset{Offset: groupOff, Lag: partOff - groupOff}
+	go logClose("partition offset manager", pom)
+}
+
+func (cmd *groupCmd) fetchTopics() []string {
+	tps, err := cmd.client.Topics()
+	if err != nil {
+		failf("failed to read topics err=%v", err)
+	}
+	return tps
+}
+
+func (cmd *groupCmd) fetchPartitions(top string) []int32 {
+	ps, err := cmd.client.Partitions(top)
+	if err != nil {
+		failf("failed to read partitions for topic=%s err=%v", top, err)
+	}
+	return ps
+}
+
+func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) []string {
 	var (
 		err    error
-		groups = []group{}
+		groups = []string{}
 		resp   *sarama.ListGroupsResponse
 	)
 	for _, broker := range brokers {
@@ -77,7 +191,7 @@ func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) []group {
 		}
 
 		for name := range resp.Groups {
-			groups = append(groups, group{name})
+			groups = append(groups, name)
 		}
 
 	}
@@ -165,22 +279,28 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.topic = args.topic
 	cmd.group = args.group
 	cmd.verbose = args.verbose
+	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
+	cmd.partition = int32(args.partition)
 
-	switch args.set {
+	if args.reset != "" && (args.topic == "" || args.partition == -23) {
+		failf("topic and partition are required to reset offsets")
+	}
+
+	switch args.reset {
 	case "newest":
-		cmd.set = sarama.OffsetNewest
+		cmd.reset = sarama.OffsetNewest
 	case "oldest":
-		cmd.set = sarama.OffsetOldest
+		cmd.reset = sarama.OffsetOldest
 	case "":
 		// optional flag
 	default:
-		cmd.set, err = strconv.ParseInt(args.set, 10, 64)
+		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
 			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "failed to parse set %#v err=%v", args.set, err)
+				fmt.Fprintf(os.Stderr, "failed to parse set %#v err=%v", args.reset, err)
 			}
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either newest, oldest or specific offset expected.`, args.set))
+			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either newest, oldest or specific offset expected.`, args.reset))
 		}
 	}
 
@@ -201,12 +321,14 @@ func (cmd *groupCmd) parseArgs(as []string) {
 }
 
 type groupArgs struct {
-	topic   string
-	brokers string
-	group   string
-	set     string
-	verbose bool
-	version string
+	topic     string
+	brokers   string
+	partition int
+	group     string
+	reset     string
+	verbose   bool
+	version   string
+	offsets   bool
 }
 
 func (cmd *groupCmd) parseFlags(as []string) groupArgs {
@@ -215,9 +337,11 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
-	flags.StringVar(&args.set, "set", "", "Target offset to set for consumer group (newest, oldest, or specific offset)")
+	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.IntVar(&args.partition, "partition", -23, "Partition to limit offsets to")
+	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of group:")
