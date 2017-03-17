@@ -236,6 +236,12 @@ func (cmd *groupCmd) findBrokers() []*sarama.Broker {
 
 loop:
 	for _, addr := range cmd.brokers {
+		select {
+		case <-cmd.q:
+			fmt.Printf("interrupt - quits.")
+			os.Exit(1)
+		default:
+		}
 		broker := sarama.NewBroker(addr)
 		if err = cmd.connect(broker); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to open broker connection to %#v err=%s\n", addr, err)
