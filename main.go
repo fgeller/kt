@@ -63,8 +63,6 @@ func parseArgs() command {
 		return &produceCmd{}
 	case "topic":
 		return &topicCmd{}
-	case "offset":
-		return &offsetCmd{}
 	case "group":
 		return &groupCmd{}
 	default:
