@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 type groupCmd struct {
 	brokers   []string
 	group     string
+	filter    *regexp.Regexp
 	topic     string
 	partition int32
 	reset     int64
@@ -62,7 +64,11 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 
 	groups := []string{cmd.group}
 	if cmd.group == "" {
-		groups = cmd.findGroups(brokers)
+		for _, g := range cmd.findGroups(brokers) {
+			if cmd.filter.MatchString(g) {
+				groups = append(groups, g)
+			}
+		}
 	}
 
 	topics := []string{cmd.topic}
@@ -283,8 +289,12 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.version = kafkaVersion(args.version)
 	cmd.partition = int32(args.partition)
 
-	if args.reset != "" && (args.topic == "" || args.partition == -23) {
-		failf("topic and partition are required to reset offsets")
+	if cmd.filter, err = regexp.Compile(args.filter); err != nil {
+		failf("filter regexp invalid err=%v", err)
+	}
+
+	if args.reset != "" && (args.topic == "" || args.partition == -23 || args.group == "") {
+		failf("group, topic, partition are required to reset offsets")
 	}
 
 	switch args.reset {
@@ -325,6 +335,7 @@ type groupArgs struct {
 	brokers   string
 	partition int
 	group     string
+	filter    string
 	reset     string
 	verbose   bool
 	version   string
@@ -337,6 +348,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
+	flags.StringVar(&args.filter, "filter", "", "Regex to filter groups.")
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
@@ -358,5 +370,25 @@ var groupDocString = `
 The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
 The values supplied on the command line win over environment variable values.
 
-TODO
+The group command can be used to list groups, their offsets and lag and to reset a group's offset.
+
+To simply list all groups:
+
+kt group
+
+This is faster when not fetching offsets:
+
+kt group -offsets=false
+
+To filter by regex:
+
+kt group -filter specials
+
+To filter by topic:
+
+kt group -topic fav-topic
+
+To reset a consumer group's offset:
+
+kt group -reset 23 -topic fav-topic -group specials -partition 2
 `
