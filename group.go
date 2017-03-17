@@ -64,17 +64,20 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 
 	groups := []string{cmd.group}
 	if cmd.group == "" {
+		groups = []string{}
 		for _, g := range cmd.findGroups(brokers) {
 			if cmd.filter.MatchString(g) {
 				groups = append(groups, g)
 			}
 		}
 	}
+	fmt.Fprintf(os.Stderr, "found %v groups\n", len(groups))
 
 	topics := []string{cmd.topic}
 	if cmd.topic == "" {
 		topics = cmd.fetchTopics()
 	}
+	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
 
 	if !cmd.offsets {
 		for i, grp := range groups {
