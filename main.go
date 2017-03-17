@@ -44,7 +44,6 @@ The commands are:
 	consume    consume messages.
 	produce    produce messages.
 	topic      topic information.
-	offset     offset information and modification
 	group      consumer group information and modification
 
 Use "kt [command] -help" for for information about the command.
