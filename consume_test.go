@@ -513,6 +513,10 @@ func (c tConsumer) Close() error {
 	return c.closeErr
 }
 
+func (c tConsumer) HighWaterMarks() map[string]map[int32]int64 {
+	return nil
+}
+
 func TestConsumeParseArgs(t *testing.T) {
 	topic := "test-topic"
 	givenBroker := "hans:9092"
