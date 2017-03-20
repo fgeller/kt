@@ -53,13 +53,13 @@ Follow a topic, starting relative to newest offset:
 
 View offsets for a given consumer group:
 
-    $ kt offset -topic actor-news -group enews
+    $ kt group -group enews -topic actor-news -partition 0
     {"consumer-group":"enews","topic":"actor-news","partition":0,"partition-offset":5,"consumer-offset":-1}
 
 Change consumer group offset:
 
-    $ kt offset -topic actor-news -group enews -setConsumerOffsets 1
-    $ kt offset -topic actor-news -group enews
+    $ kt group -group enews -topic actor-news -partition 0 -reset 1
+    $ kt group -group enews -topic actor-news -partition 0
     {"consumer-group":"enews","topic":"actor-news","partition":0,"partition-offset":5,"consumer-offset":1}
 
 ## Installation
@@ -84,7 +84,7 @@ Alternatively, the usual way via the go tool, for example:
             consume        consume messages.
             produce        produce messages.
             topic          topic information.
-            offset         offset information and modification.
+            group          consumer group information and modification.
 
     Use "kt [command] -help" for for information about the command.
 
