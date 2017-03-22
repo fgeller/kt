@@ -153,6 +153,7 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, target map[int32]group
 	}
 
 	if cmd.reset > 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
+		groupOff = cmd.reset
 		pom.MarkOffset(cmd.reset, "")
 	}
 
@@ -161,7 +162,8 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, target map[int32]group
 	}
 
 	target[part] = groupOffset{Offset: groupOff, Lag: partOff - groupOff}
-	go logClose("partition offset manager", pom)
+	logClose("partition offset manager", pom)
+	logClose("offset manager", offsetManager)
 }
 
 func (cmd *groupCmd) fetchTopics() []string {
