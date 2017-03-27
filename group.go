@@ -182,31 +182,63 @@ func (cmd *groupCmd) fetchPartitions(top string) []int32 {
 	return ps
 }
 
+type findGroupResult struct {
+	done  bool
+	group string
+}
+
 func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) []string {
 	var (
-		err    error
-		groups = []string{}
-		resp   *sarama.ListGroupsResponse
+		doneCount int
+		groups    = []string{}
+		results   = make(chan findGroupResult)
+		errs      = make(chan error)
 	)
+
 	for _, broker := range brokers {
-		if err = cmd.connect(broker); err != nil {
-			failf("failed to connect to broker %#v err=%s\n", broker.Addr(), err)
-		}
-
-		if resp, err = broker.ListGroups(&sarama.ListGroupsRequest{}); err != nil {
-			failf("failed to list brokers on %#v err=%v", broker.Addr(), err)
-		}
-
-		if resp.Err != sarama.ErrNoError {
-			failf("failed to list brokers on %#v err=%v", broker.Addr(), resp.Err)
-		}
-
-		for name := range resp.Groups {
-			groups = append(groups, name)
-		}
-
+		go cmd.findGroupsOnBroker(broker, results, errs)
 	}
-	return groups
+
+awaitGroups:
+	for {
+		if doneCount == len(brokers) {
+			return groups
+		}
+
+		select {
+		case err := <-errs:
+			failf("failed to find groups err=%v", err)
+		case res := <-results:
+			if res.done {
+				doneCount++
+				continue awaitGroups
+			}
+			groups = append(groups, res.group)
+		}
+	}
+}
+
+func (cmd *groupCmd) findGroupsOnBroker(broker *sarama.Broker, results chan findGroupResult, errs chan error) {
+	var (
+		err  error
+		resp *sarama.ListGroupsResponse
+	)
+	if err = cmd.connect(broker); err != nil {
+		errs <- fmt.Errorf("failed to connect to broker %#v err=%s\n", broker.Addr(), err)
+	}
+
+	if resp, err = broker.ListGroups(&sarama.ListGroupsRequest{}); err != nil {
+		errs <- fmt.Errorf("failed to list brokers on %#v err=%v", broker.Addr(), err)
+	}
+
+	if resp.Err != sarama.ErrNoError {
+		errs <- fmt.Errorf("failed to list brokers on %#v err=%v", broker.Addr(), resp.Err)
+	}
+
+	for name := range resp.Groups {
+		results <- findGroupResult{group: name}
+	}
+	results <- findGroupResult{done: true}
 }
 
 func (cmd *groupCmd) connect(broker *sarama.Broker) error {
