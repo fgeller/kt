@@ -90,9 +90,6 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 		return
 	}
 
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "about to search for group offsets for %v groups on %v topics\n", len(groups), len(topics))
-	}
 	wg := &sync.WaitGroup{}
 	wg.Add(len(groups) * len(topics))
 	for _, grp := range groups {
