@@ -176,7 +176,7 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		return
 	}
 
-	if cmd.reset > 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
+	if cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
 		groupOff = cmd.reset
 		pom.MarkOffset(cmd.reset, "")
 	}
