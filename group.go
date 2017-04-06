@@ -369,6 +369,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		cmd.reset = sarama.OffsetOldest
 	case "":
 		// optional flag
+		cmd.reset = -23
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
