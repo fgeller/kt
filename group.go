@@ -177,6 +177,17 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	}
 
 	if cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
+		switch cmd.reset {
+		case sarama.OffsetNewest, sarama.OffsetOldest:
+			off, err := cmd.client.GetOffset(top, part, cmd.reset)
+			if err != nil {
+				failf("failed to get offset to reset to err=%v", err)
+			}
+			cmd.reset = off
+			if cmd.verbose {
+				fmt.Fprintf(os.Stderr, "resolved reset offset to %v", cmd.reset)
+			}
+		}
 		groupOff = cmd.reset
 		pom.MarkOffset(cmd.reset, "")
 	}
