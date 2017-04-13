@@ -43,6 +43,9 @@ type groupOffset struct {
 	Lag    int64 `json:"lag"`
 }
 
+const fetchAllPartitions = -23
+const resetAllPartitions = -1
+
 func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	var err error
 
@@ -114,7 +117,7 @@ func (cmd *groupCmd) printGroupTopicOffset(grp, top string) {
 	results := make(chan groupOffsetResult)
 	done := make(chan struct{})
 	parts := []int32{cmd.partition}
-	if cmd.partition == -23 {
+	if cmd.partition == fetchAllPartitions || cmd.partition == resetAllPartitions {
 		parts = cmd.fetchPartitions(top)
 	}
 	wg := &sync.WaitGroup{}
@@ -369,8 +372,8 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		failf("filter regexp invalid err=%v", err)
 	}
 
-	if args.reset != "" && (args.topic == "" || args.partition == -23 || args.group == "") {
-		failf("group, topic, partition are required to reset offsets")
+	if args.reset != "" && (args.topic == "" || args.partition == fetchAllPartitions || args.group == "") {
+		failf("group and topic are required to reset offsets. for all partitions, run with -partition -1")
 	}
 
 	switch args.reset {
@@ -429,7 +432,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.IntVar(&args.partition, "partition", -23, "Partition to limit offsets to")
+	flags.IntVar(&args.partition, "partition", fetchAllPartitions, "Partition to limit offsets to")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
 
 	flags.Usage = func() {
@@ -468,4 +471,8 @@ kt group -topic fav-topic
 To reset a consumer group's offset:
 
 kt group -reset 23 -topic fav-topic -group specials -partition 2
+
+To reset a consumer group's offset for all partitions:
+
+kt group -reset newest -topic fav-topic -group specials -partition -1
 `
