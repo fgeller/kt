@@ -43,8 +43,9 @@ type groupOffset struct {
 	Lag    int64 `json:"lag"`
 }
 
-const fetchAllPartitions = -23
-const resetAllPartitions = -1
+const allPartitions = -1
+const allPartitionsHuman = "all"
+const resetNotSpecified = -23
 
 func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	var err error
@@ -117,7 +118,7 @@ func (cmd *groupCmd) printGroupTopicOffset(grp, top string) {
 	results := make(chan groupOffsetResult)
 	done := make(chan struct{})
 	parts := []int32{cmd.partition}
-	if cmd.partition == fetchAllPartitions || cmd.partition == resetAllPartitions {
+	if cmd.partition == allPartitions {
 		parts = cmd.fetchPartitions(top)
 	}
 	wg := &sync.WaitGroup{}
@@ -367,14 +368,23 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
-	cmd.partition = int32(args.partition)
+
+	if strings.ToLower(args.partition) == allPartitionsHuman {
+		cmd.partition = allPartitions
+	} else {
+		p, err := strconv.ParseInt(args.partition, 10, 32)
+		if err != nil {
+			failf("partition id invalid err=%v", err)
+		}
+		cmd.partition = int32(p)
+	}
 
 	if cmd.filter, err = regexp.Compile(args.filter); err != nil {
 		failf("filter regexp invalid err=%v", err)
 	}
 
-	if args.reset != "" && (args.topic == "" || args.partition == fetchAllPartitions || args.group == "") {
-		failf("group and topic are required to reset offsets. for all partitions, run with -partition -1")
+	if args.reset != "" && (args.topic == "" || args.group == "") {
+		failf("group and topic are required to reset offsets.")
 	}
 
 	switch args.reset {
@@ -384,7 +394,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		cmd.reset = sarama.OffsetOldest
 	case "":
 		// optional flag
-		cmd.reset = -23
+		cmd.reset = resetNotSpecified
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
@@ -414,7 +424,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 type groupArgs struct {
 	topic     string
 	brokers   string
-	partition int
+	partition string
 	group     string
 	filter    string
 	reset     string
@@ -433,7 +443,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.IntVar(&args.partition, "partition", fetchAllPartitions, "Partition to limit offsets to")
+	flags.StringVar(&args.partition, "partition", allPartitionsHuman, "Partition to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
 
 	flags.Usage = func() {
@@ -475,5 +485,5 @@ kt group -reset 23 -topic fav-topic -group specials -partition 2
 
 To reset a consumer group's offset for all partitions:
 
-kt group -reset newest -topic fav-topic -group specials -partition -1
+kt group -reset newest -topic fav-topic -group specials -partition all
 `
