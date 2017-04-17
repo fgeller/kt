@@ -19,6 +19,8 @@ var (
 	v900  = sarama.V0_9_0_0
 	v901  = sarama.V0_9_0_1
 	v1000 = sarama.V0_10_0_0
+	v1001 = sarama.V0_10_0_1
+	v1010 = sarama.V0_10_1_0
 
 	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 )
@@ -35,8 +37,12 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 		return sarama.V0_9_0_0
 	case "v0.9.0.1":
 		return sarama.V0_9_0_1
-	default:
+	case "v0.10.0.0":
 		return sarama.V0_10_0_0
+	case "v0.10.0.1":
+		return sarama.V0_10_0_1
+	default:
+		return sarama.V0_10_1_0
 	}
 }
 
