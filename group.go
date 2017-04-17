@@ -26,8 +26,7 @@ type groupCmd struct {
 	version   sarama.KafkaVersion
 	offsets   bool
 
-	client        sarama.Client
-	offsetManager sarama.OffsetManager
+	client sarama.Client
 
 	q chan struct{}
 }
