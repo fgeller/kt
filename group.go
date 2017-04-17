@@ -180,20 +180,20 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	}
 
 	if cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
-		rst := cmd.reset
-		switch rst {
+		resolvedOff := cmd.reset
+		switch resolvedOff {
 		case sarama.OffsetNewest, sarama.OffsetOldest:
 			off, err := cmd.client.GetOffset(top, part, cmd.reset)
 			if err != nil {
-				failf("failed to get offset to reset to err=%v", err)
+				failf("failed to get offset to reset to for partition=%d err=%v", part, err)
 			}
-			rst = off
+			resolvedOff = off
 			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "resolved reset offset to %v", rst)
+				fmt.Fprintf(os.Stderr, "resolved reset offset for partition=%d to %v", part, resolvedOff)
 			}
 		}
-		groupOff = rst
-		pom.MarkOffset(rst, "")
+		groupOff = resolvedOff
+		pom.MarkOffset(resolvedOff, "")
 	}
 
 	if partOff, err = cmd.client.GetOffset(top, part, sarama.OffsetNewest); err != nil {
