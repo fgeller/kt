@@ -43,6 +43,10 @@ type groupOffset struct {
 	Lag    int64 `json:"lag"`
 }
 
+const allPartitions = -1
+const allPartitionsHuman = "all"
+const resetNotSpecified = -23
+
 func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	var err error
 
@@ -114,7 +118,7 @@ func (cmd *groupCmd) printGroupTopicOffset(grp, top string) {
 	results := make(chan groupOffsetResult)
 	done := make(chan struct{})
 	parts := []int32{cmd.partition}
-	if cmd.partition == -23 {
+	if cmd.partition == allPartitions {
 		parts = cmd.fetchPartitions(top)
 	}
 	wg := &sync.WaitGroup{}
@@ -177,19 +181,20 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	}
 
 	if cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
-		switch cmd.reset {
+		resolvedOff := cmd.reset
+		switch resolvedOff {
 		case sarama.OffsetNewest, sarama.OffsetOldest:
 			off, err := cmd.client.GetOffset(top, part, cmd.reset)
 			if err != nil {
-				failf("failed to get offset to reset to err=%v", err)
+				failf("failed to get offset to reset to for partition=%d err=%v", part, err)
 			}
-			cmd.reset = off
+			resolvedOff = off
 			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "resolved reset offset to %v", cmd.reset)
+				fmt.Fprintf(os.Stderr, "resolved reset offset for partition=%d to %v", part, resolvedOff)
 			}
 		}
-		groupOff = cmd.reset
-		pom.MarkOffset(cmd.reset, "")
+		groupOff = resolvedOff
+		pom.MarkOffset(resolvedOff, "")
 	}
 
 	if partOff, err = cmd.client.GetOffset(top, part, sarama.OffsetNewest); err != nil {
@@ -363,14 +368,23 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
-	cmd.partition = int32(args.partition)
+
+	if strings.ToLower(args.partition) == allPartitionsHuman {
+		cmd.partition = allPartitions
+	} else {
+		p, err := strconv.ParseInt(args.partition, 10, 32)
+		if err != nil {
+			failf("partition id invalid err=%v", err)
+		}
+		cmd.partition = int32(p)
+	}
 
 	if cmd.filter, err = regexp.Compile(args.filter); err != nil {
 		failf("filter regexp invalid err=%v", err)
 	}
 
-	if args.reset != "" && (args.topic == "" || args.partition == -23 || args.group == "") {
-		failf("group, topic, partition are required to reset offsets")
+	if args.reset != "" && (args.topic == "" || args.group == "") {
+		failf("group and topic are required to reset offsets.")
 	}
 
 	switch args.reset {
@@ -380,7 +394,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		cmd.reset = sarama.OffsetOldest
 	case "":
 		// optional flag
-		cmd.reset = -23
+		cmd.reset = resetNotSpecified
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
@@ -410,7 +424,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 type groupArgs struct {
 	topic     string
 	brokers   string
-	partition int
+	partition string
 	group     string
 	filter    string
 	reset     string
@@ -429,7 +443,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.IntVar(&args.partition, "partition", -23, "Partition to limit offsets to")
+	flags.StringVar(&args.partition, "partition", allPartitionsHuman, "Partition to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
 
 	flags.Usage = func() {
@@ -468,4 +482,8 @@ kt group -topic fav-topic
 To reset a consumer group's offset:
 
 kt group -reset 23 -topic fav-topic -group specials -partition 2
+
+To reset a consumer group's offset for all partitions:
+
+kt group -reset newest -topic fav-topic -group specials -partition all
 `
