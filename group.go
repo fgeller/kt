@@ -140,7 +140,7 @@ awaitGroupOffsets:
 	}
 
 	if len(target.Offsets) > 0 {
-		buf, _ := json.Marshal(target)
+		buf, _ := json.MarshalIndent(target, "", "  ")
 		fmt.Println(string(buf))
 	}
 }
