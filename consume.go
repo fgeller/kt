@@ -19,17 +19,19 @@ import (
 )
 
 type consumeCmd struct {
-	topic       string
-	brokers     []string
-	offsets     map[int32]interval
-	timeout     time.Duration
-	verbose     bool
-	version     sarama.KafkaVersion
-	encodeValue string
-	encodeKey   string
-
-	client   sarama.Client
-	consumer sarama.Consumer
+	topic         string
+	brokers       []string
+	offsets       map[int32]interval
+	timeout       time.Duration
+	verbose       bool
+	version       sarama.KafkaVersion
+	encodeValue   string
+	encodeKey     string
+	protobuffType string
+	rpcProcessCmd string
+	client        sarama.Client
+	consumer      sarama.Consumer
+	protoDecoder  *ProtoDecoder
 
 	q chan struct{}
 }
@@ -71,14 +73,16 @@ type interval struct {
 }
 
 type consumeArgs struct {
-	topic       string
-	brokers     string
-	timeout     time.Duration
-	offsets     string
-	verbose     bool
-	version     string
-	encodeValue string
-	encodeKey   string
+	topic         string
+	brokers       string
+	timeout       time.Duration
+	offsets       string
+	verbose       bool
+	version       string
+	encodeValue   string
+	encodeKey     string
+	rpcProcessCmd string
+	pType         string
 }
 
 func parseOffset(str string) (offset, error) {
@@ -204,11 +208,18 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
 
-	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue))
+	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" && args.encodeValue != "proto" {
+		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex, base64 and proto are supported.`, args.encodeValue))
 		return
 	}
+	if args.encodeValue == "proto" && (args.pType == "" || args.rpcProcessCmd == "") {
+		cmd.failStartup("-ptype and -rpcprocesscmd arguments must be specified if encodevalue is proto")
+		return
+	}
+
 	cmd.encodeValue = args.encodeValue
+	cmd.protobuffType = args.pType
+	cmd.rpcProcessCmd = args.rpcProcessCmd
 
 	if args.encodeKey != "string" && args.encodeKey != "hex" && args.encodeKey != "base64" {
 		cmd.failStartup(fmt.Sprintf(`unsupported encodekey argument %#v, only string, hex and base64 are supported.`, args.encodeValue))
@@ -246,9 +257,10 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
+	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64|binary|proto), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
-
+	flags.StringVar(&args.pType, "ptype", "", "Protobuff type name to be used for decoding encodevalue=proto")
+	flags.StringVar(&args.rpcProcessCmd, "rpcprocesscmd", "", "command to run to start RPC process for protobuff deserialization")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		flags.PrintDefaults()
@@ -277,6 +289,13 @@ func (cmd *consumeCmd) setupClient() {
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
+	}
+	if cmd.encodeValue == "proto" {
+		client, err := MustNewProtoDecoder(cmd.rpcProcessCmd, "tcp", "localhost:8080")
+		if err != nil {
+			failf("failed to create client to talk to proto decoder", err)
+		}
+		cmd.protoDecoder = client
 	}
 }
 
@@ -367,6 +386,9 @@ type printContext struct {
 
 func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
+	if cmd.encodeValue == "proto" {
+		defer cmd.protoDecoder.Close()
+	}
 	var (
 		timer   *time.Timer
 		timeout = make(<-chan time.Time)
@@ -414,6 +436,14 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			case "base64":
 				str := base64.StdEncoding.EncodeToString(msg.Value)
 				m.Value = &str
+			case "proto":
+				protoMsg, err := cmd.protoDecoder.DeserializeAny(cmd.protobuffType, msg.Value)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Quitting due to unexpected error protobuff deserialization: %v\n", err)
+					close(cmd.q)
+					return
+				}
+				m.Value = &protoMsg
 			}
 			switch cmd.encodeKey {
 			case "hex":
@@ -423,7 +453,6 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 				str := base64.StdEncoding.EncodeToString(msg.Key)
 				m.Key = &str
 			}
-
 			if buf, err = json.Marshal(m); err != nil {
 				fmt.Fprintf(os.Stderr, "Quitting due to unexpected error during marshal: %v\n", err)
 				close(cmd.q)
