@@ -22,6 +22,7 @@ type produceArgs struct {
 	batch       int
 	timeout     time.Duration
 	verbose     bool
+	pretty      bool
 	version     string
 	literal     bool
 	decodeKey   string
@@ -45,6 +46,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
 	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
+	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
@@ -115,6 +117,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.batch = args.batch
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
+	cmd.pretty = args.pretty
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
 	cmd.version = kafkaVersion(args.version)
@@ -218,6 +221,7 @@ type produceCmd struct {
 	batch       int
 	timeout     time.Duration
 	verbose     bool
+	pretty      bool
 	literal     bool
 	partition   int32
 	version     sarama.KafkaVersion

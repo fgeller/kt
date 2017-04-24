@@ -23,6 +23,7 @@ type groupCmd struct {
 	partition int32
 	reset     int64
 	verbose   bool
+	pretty    bool
 	version   sarama.KafkaVersion
 	offsets   bool
 
@@ -365,6 +366,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.topic = args.topic
 	cmd.group = args.group
 	cmd.verbose = args.verbose
+	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
 
@@ -428,6 +430,7 @@ type groupArgs struct {
 	filter    string
 	reset     string
 	verbose   bool
+	pretty    bool
 	version   string
 	offsets   bool
 }
@@ -441,6 +444,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.filter, "filter", "", "Regex to filter groups.")
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partition, "partition", allPartitionsHuman, "Partition to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
