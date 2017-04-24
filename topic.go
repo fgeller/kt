@@ -160,7 +160,7 @@ func (cmd *topicCmd) run(as []string, q chan struct{}) {
 		}
 	}
 
-	go print(out)
+	go print(out, true) // TODO
 
 	var wg sync.WaitGroup
 	for _, tn := range topics {

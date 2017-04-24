@@ -61,14 +61,14 @@ type printContext struct {
 	done   chan struct{}
 }
 
-func print(in <-chan printContext) {
+func print(in <-chan printContext, pretty bool) {
 	var (
 		buf     []byte
 		err     error
 		marshal = json.Marshal
 	)
 
-	if terminal.IsTerminal(syscall.Stdout) {
+	if pretty && terminal.IsTerminal(syscall.Stdout) {
 		marshal = func(i interface{}) ([]byte, error) { return json.MarshalIndent(i, "", "  ") }
 	}
 

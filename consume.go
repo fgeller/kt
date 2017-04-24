@@ -26,6 +26,7 @@ type consumeCmd struct {
 	version     sarama.KafkaVersion
 	encodeValue string
 	encodeKey   string
+	pretty      bool
 
 	client   sarama.Client
 	consumer sarama.Consumer
@@ -78,6 +79,7 @@ type consumeArgs struct {
 	version     string
 	encodeValue string
 	encodeKey   string
+	pretty      bool
 }
 
 func parseOffset(str string) (offset, error) {
@@ -201,6 +203,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.topic = args.topic
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
+	cmd.pretty = args.pretty
 	cmd.version = kafkaVersion(args.version)
 
 	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
@@ -244,6 +247,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
@@ -310,7 +314,7 @@ func (cmd *consumeCmd) consume(partitions []int32) {
 		out = make(chan printContext)
 	)
 
-	go print(out)
+	go print(out, cmd.pretty)
 
 	wg.Add(len(partitions))
 	for _, p := range partitions {
