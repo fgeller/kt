@@ -2,12 +2,16 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"unicode/utf16"
+
+	"golang.org/x/crypto/ssh/terminal"
 
 	"github.com/Shopify/sarama"
 )
@@ -52,10 +56,29 @@ func logClose(name string, c io.Closer) {
 	}
 }
 
-func print(out <-chan printContext) {
+type printContext struct {
+	output interface{}
+	done   chan struct{}
+}
+
+func print(in <-chan printContext) {
+	var (
+		buf     []byte
+		err     error
+		marshal = json.Marshal
+	)
+
+	if terminal.IsTerminal(syscall.Stdout) {
+		marshal = func(i interface{}) ([]byte, error) { return json.MarshalIndent(i, "", "  ") }
+	}
+
 	for {
-		ctx := <-out
-		fmt.Println(ctx.line)
+		ctx := <-in
+		if buf, err = marshal(ctx.output); err != nil {
+			failf("failed to marshal output %#v, err=%v", ctx.output, err)
+		}
+
+		fmt.Println(string(buf))
 		close(ctx.done)
 	}
 }
