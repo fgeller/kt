@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -83,10 +82,15 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	}
 	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
 
+	out := make(chan printContext)
+	go print(out, cmd.pretty)
+
 	if !cmd.offsets {
 		for i, grp := range groups {
-			buf, _ := json.Marshal(group{Name: grp})
-			fmt.Println(string(buf))
+			ctx := printContext{output: group{Name: grp}, done: make(chan struct{})}
+			out <- ctx
+			<-ctx.done
+
 			if cmd.verbose {
 				fmt.Fprintf(os.Stderr, "%v/%v\n", i+1, len(groups))
 			}
@@ -99,7 +103,7 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	for _, grp := range groups {
 		for _, top := range topics {
 			go func(grp, topic string) {
-				cmd.printGroupTopicOffset(grp, topic)
+				cmd.printGroupTopicOffset(out, grp, topic)
 				wg.Done()
 			}(grp, top)
 		}
@@ -113,7 +117,7 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	}
 }
 
-func (cmd *groupCmd) printGroupTopicOffset(grp, top string) {
+func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string) {
 	target := group{Name: grp, Topic: top, Offsets: map[int32]groupOffset{}}
 	results := make(chan groupOffsetResult)
 	done := make(chan struct{})
@@ -141,8 +145,9 @@ awaitGroupOffsets:
 	}
 
 	if len(target.Offsets) > 0 {
-		buf, _ := json.Marshal(target)
-		fmt.Println(string(buf))
+		ctx := printContext{output: target, done: make(chan struct{})}
+		out <- ctx
+		<-ctx.done
 	}
 }
 
