@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -180,7 +179,6 @@ func (cmd *topicCmd) run(as []string, q chan struct{}) {
 func (cmd *topicCmd) print(name string, out chan printContext) {
 	var (
 		top topic
-		buf []byte
 		err error
 	)
 
@@ -189,12 +187,7 @@ func (cmd *topicCmd) print(name string, out chan printContext) {
 		return
 	}
 
-	if buf, err = json.Marshal(top); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to marshal JSON for topic %s. err=%v\n", name, err)
-		return
-	}
-
-	ctx := printContext{string(buf), make(chan struct{})}
+	ctx := printContext{output: top, done: make(chan struct{})}
 	out <- ctx
 	<-ctx.done
 }
