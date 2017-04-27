@@ -498,9 +498,9 @@ kt group -topic fav-topic
 
 To reset a consumer group's offset:
 
-kt group -reset 23 -topic fav-topic -group specials -partition 2
+kt group -reset 23 -topic fav-topic -group specials -partitions 2
 
 To reset a consumer group's offset for all partitions:
 
-kt group -reset newest -topic fav-topic -group specials -partition all
+kt group -reset newest -topic fav-topic -group specials -partitions all
 `
