@@ -15,16 +15,16 @@ import (
 )
 
 type groupCmd struct {
-	brokers   []string
-	group     string
-	filter    *regexp.Regexp
-	topic     string
-	partition int32
-	reset     int64
-	verbose   bool
-	pretty    bool
-	version   sarama.KafkaVersion
-	offsets   bool
+	brokers    []string
+	group      string
+	filter     *regexp.Regexp
+	topic      string
+	partitions []int32
+	reset      int64
+	verbose    bool
+	pretty     bool
+	version    sarama.KafkaVersion
+	offsets    bool
 
 	client sarama.Client
 
@@ -42,9 +42,10 @@ type groupOffset struct {
 	Lag    int64 `json:"lag"`
 }
 
-const allPartitions = -1
-const allPartitionsHuman = "all"
-const resetNotSpecified = -23
+const (
+	allPartitionsHuman = "all"
+	resetNotSpecified  = -23
+)
 
 func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	var err error
@@ -121,8 +122,8 @@ func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top strin
 	target := group{Name: grp, Topic: top, Offsets: map[int32]groupOffset{}}
 	results := make(chan groupOffsetResult)
 	done := make(chan struct{})
-	parts := []int32{cmd.partition}
-	if cmd.partition == allPartitions {
+	parts := cmd.partitions
+	if len(cmd.partitions) == 0 {
 		parts = cmd.fetchPartitions(top)
 	}
 	wg := &sync.WaitGroup{}
@@ -375,14 +376,22 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
 
-	if strings.ToLower(args.partition) == allPartitionsHuman {
-		cmd.partition = allPartitions
-	} else {
-		p, err := strconv.ParseInt(args.partition, 10, 32)
-		if err != nil {
-			failf("partition id invalid err=%v", err)
+	switch args.partitions {
+	case "", "all":
+		cmd.partitions = []int32{}
+	default:
+		pss := strings.Split(args.partitions, ",")
+		for _, ps := range pss {
+			p, err := strconv.ParseInt(ps, 10, 32)
+			if err != nil {
+				failf("partition id invalid err=%v", err)
+			}
+			cmd.partitions = append(cmd.partitions, int32(p))
 		}
-		cmd.partition = int32(p)
+	}
+
+	if cmd.partitions == nil {
+		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, args.partitions)
 	}
 
 	if cmd.filter, err = regexp.Compile(args.filter); err != nil {
@@ -428,16 +437,16 @@ func (cmd *groupCmd) parseArgs(as []string) {
 }
 
 type groupArgs struct {
-	topic     string
-	brokers   string
-	partition string
-	group     string
-	filter    string
-	reset     string
-	verbose   bool
-	pretty    bool
-	version   string
-	offsets   bool
+	topic      string
+	brokers    string
+	partitions string
+	group      string
+	filter     string
+	reset      string
+	verbose    bool
+	pretty     bool
+	version    string
+	offsets    bool
 }
 
 func (cmd *groupCmd) parseFlags(as []string) groupArgs {
@@ -451,7 +460,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.partition, "partition", allPartitionsHuman, "Partition to limit offsets to, or all")
+	flags.StringVar(&args.partitions, "partitions", allPartitionsHuman, "comma separated list of partitions to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
 
 	flags.Usage = func() {
