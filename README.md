@@ -19,48 +19,138 @@ Some reasons why you might be interested:
 Read details about topics that match the regex `output`
 
     $ kt topic -filter news -partitions
-    {"name":"actor-news","partitions":[{"id":0,"oldest":0,"newest":0}]}
+    {
+      "name": "actor-news",
+      "partitions": [
+        {
+          "id": 0,
+          "oldest": 0,
+          "newest": 0
+        }
+      ]
+    }
 
 Produce messages:
 
     $ echo 'Alice wins Oscar' | kt produce -topic actor-news -literal
-    {"partition": 0, "startOffset": 0, "count": 1}
-    $ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic actor-news -literal ; done
-    {"partition": 0, "startOffset": 1, "count": 1}
-    {"partition": 0, "startOffset": 2, "count": 1}
-    {"partition": 0, "startOffset": 3, "count": 1}
-    {"partition": 0, "startOffset": 4, "count": 1}
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 0
+    }
+    $ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic actor-news -literal ;done
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 1
+    }
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 2
+    }
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 3
+    }
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 4
+    }
 
 Or pass in JSON object to control key, value and partition:
 
     $ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce -topic actor-news
-    {"partition": 0, "startOffset": 5, "count": 1}
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 5
+    }
 
 Read messages at specific offsets on specific partitions:
 
     $ kt consume -topic actor-news -offsets 0=1:2
-    {"partition":0,"offset":1,"key":"","value":"Bourne sequel 6 in production."}
-    {"partition":0,"offset":2,"key":"","value":"Bourne sequel 7 in production."}
+    {
+      "partition": 0,
+      "offset": 1,
+      "key": "",
+      "value": "Bourne sequel 6 in production.",
+      "timestamp": "1970-01-01T00:59:59.999+01:00"
+    }
+    {
+      "partition": 0,
+      "offset": 2,
+      "key": "",
+      "value": "Bourne sequel 7 in production.",
+      "timestamp": "1970-01-01T00:59:59.999+01:00"
+    }
 
 Follow a topic, starting relative to newest offset:
 
     $ kt consume -topic actor-news -offsets all=newest-1:
-    {"partition":0,"offset":3,"key":"","value":"Bourne sequel 8 in production."}
-    {"partition":0,"offset":4,"key":"","value":"Bourne sequel 9 in production."}
-    {"partition":0,"offset":5,"key":"Arni","value":"Terminator terminated"}
+    {
+      "partition": 0,
+      "offset": 4,
+      "key": "",
+      "value": "Bourne sequel 9 in production.",
+      "timestamp": "1970-01-01T00:59:59.999+01:00"
+    }
+    {
+      "partition": 0,
+      "offset": 5,
+      "key": "Arni",
+      "value": "Terminator terminated",
+      "timestamp": "1970-01-01T00:59:59.999+01:00"
+    }
     ^Creceived interrupt - shutting down
     shutting down partition consumer for partition 0
 
 View offsets for a given consumer group:
 
-    $ kt group -group enews -topic actor-news -partition 0
-    {"consumer-group":"enews","topic":"actor-news","partition":0,"partition-offset":5,"consumer-offset":-1}
+    $ kt group -group enews -topic actor-news -partitions 0
+    found 1 groups
+    found 1 topics
+    {
+      "name": "enews",
+      "topic": "actor-news",
+      "offsets": {
+        "0": {
+          "offset": 6,
+          "lag": 0
+        }
+      }
+    }
 
 Change consumer group offset:
 
-    $ kt group -group enews -topic actor-news -partition 0 -reset 1
-    $ kt group -group enews -topic actor-news -partition 0
-    {"consumer-group":"enews","topic":"actor-news","partition":0,"partition-offset":5,"consumer-offset":1}
+    $ kt group -group enews -topic actor-news -partitions 0 -reset 1
+    found 1 groups
+    found 1 topics
+    {
+      "name": "enews",
+      "topic": "actor-news",
+      "offsets": {
+        "0": {
+          "offset": 1,
+          "lag": 5
+        }
+      }
+    }
+    $ kt group -group enews -topic actor-news -partitions 0
+    found 1 groups
+    found 1 topics
+    {
+      "name": "enews",
+      "topic": "actor-news",
+      "offsets": {
+        "0": {
+          "offset": 1,
+          "lag": 5
+        }
+      }
+    }
 
 ## Installation
 
