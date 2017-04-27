@@ -81,6 +81,18 @@
 			"path": "github.com/stretchr/testify/require",
 			"revision": "18a02ba4a312f95da08ff4cfc0055750ce50ae9e",
 			"revisionTime": "2016-11-17T07:43:51Z"
+		},
+		{
+			"checksumSHA1": "ZaU56svwLgiJD0y8JOB3+/mpYBA=",
+			"path": "golang.org/x/crypto/ssh/terminal",
+			"revision": "96846453c37f0876340a66a47f3f75b1f3a6cd2d",
+			"revisionTime": "2017-04-21T04:26:53Z"
+		},
+		{
+			"checksumSHA1": "ZVZBntvdoK/qUq/6uF8YMWmuMC4=",
+			"path": "golang.org/x/sys/unix",
+			"revision": "ea9bcade75cb975a0b9738936568ab388b845617",
+			"revisionTime": "2017-03-08T18:50:27Z"
 		}
 	],
 	"rootPath": "github.com/fgeller/kt"

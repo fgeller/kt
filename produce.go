@@ -22,6 +22,7 @@ type produceArgs struct {
 	batch       int
 	timeout     time.Duration
 	verbose     bool
+	pretty      bool
 	version     string
 	literal     bool
 	decodeKey   string
@@ -45,6 +46,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
 	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
+	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
@@ -115,6 +117,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.batch = args.batch
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
+	cmd.pretty = args.pretty
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
 	cmd.version = kafkaVersion(args.version)
@@ -218,6 +221,7 @@ type produceCmd struct {
 	batch       int
 	timeout     time.Duration
 	verbose     bool
+	pretty      bool
 	literal     bool
 	partition   int32
 	version     sarama.KafkaVersion
@@ -242,13 +246,15 @@ func (cmd *produceCmd) run(as []string, q chan struct{}) {
 	lines := make(chan string)
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
+	out := make(chan printContext)
 
 	go readStdinLines(cmd.bufferSize, stdin)
+	go print(out, cmd.pretty)
 
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
 	go cmd.batchRecords(messages, batchedMessages)
-	cmd.produce(batchedMessages)
+	cmd.produce(batchedMessages, out)
 }
 
 func (cmd *produceCmd) close() {
@@ -386,7 +392,7 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	return sm, nil
 }
 
-func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message) error {
+func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message, out chan printContext) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
@@ -419,14 +425,10 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 		}
 
 		for p, o := range offsets {
-			fmt.Fprintf(
-				os.Stdout,
-				`{"partition": %v, "startOffset": %v, "count": %v}
-`,
-				p,
-				o.start,
-				o.count,
-			)
+			result := map[string]interface{}{"partition": p, "startOffset": o.start, "count": o.count}
+			ctx := printContext{output: result, done: make(chan struct{})}
+			out <- ctx
+			<-ctx.done
 		}
 	}
 
@@ -452,15 +454,15 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func (cmd *produceCmd) produce(in chan []message) {
+func (cmd *produceCmd) produce(in chan []message, out chan printContext) {
 	for {
 		select {
 		case b, ok := <-in:
 			if !ok {
 				return
 			}
-			if err := cmd.produceBatch(cmd.leaders, b); err != nil {
-				fmt.Fprintln(os.Stderr, err.Error())
+			if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
+				fmt.Fprintln(os.Stderr, err.Error()) // TODO: failf
 				return
 			}
 		}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -23,6 +22,7 @@ type groupCmd struct {
 	partition int32
 	reset     int64
 	verbose   bool
+	pretty    bool
 	version   sarama.KafkaVersion
 	offsets   bool
 
@@ -82,10 +82,15 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	}
 	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
 
+	out := make(chan printContext)
+	go print(out, cmd.pretty)
+
 	if !cmd.offsets {
 		for i, grp := range groups {
-			buf, _ := json.Marshal(group{Name: grp})
-			fmt.Println(string(buf))
+			ctx := printContext{output: group{Name: grp}, done: make(chan struct{})}
+			out <- ctx
+			<-ctx.done
+
 			if cmd.verbose {
 				fmt.Fprintf(os.Stderr, "%v/%v\n", i+1, len(groups))
 			}
@@ -98,7 +103,7 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	for _, grp := range groups {
 		for _, top := range topics {
 			go func(grp, topic string) {
-				cmd.printGroupTopicOffset(grp, topic)
+				cmd.printGroupTopicOffset(out, grp, topic)
 				wg.Done()
 			}(grp, top)
 		}
@@ -112,7 +117,7 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 	}
 }
 
-func (cmd *groupCmd) printGroupTopicOffset(grp, top string) {
+func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string) {
 	target := group{Name: grp, Topic: top, Offsets: map[int32]groupOffset{}}
 	results := make(chan groupOffsetResult)
 	done := make(chan struct{})
@@ -140,8 +145,9 @@ awaitGroupOffsets:
 	}
 
 	if len(target.Offsets) > 0 {
-		buf, _ := json.Marshal(target)
-		fmt.Println(string(buf))
+		ctx := printContext{output: target, done: make(chan struct{})}
+		out <- ctx
+		<-ctx.done
 	}
 }
 
@@ -365,6 +371,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.topic = args.topic
 	cmd.group = args.group
 	cmd.verbose = args.verbose
+	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
 
@@ -428,6 +435,7 @@ type groupArgs struct {
 	filter    string
 	reset     string
 	verbose   bool
+	pretty    bool
 	version   string
 	offsets   bool
 }
@@ -441,6 +449,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.filter, "filter", "", "Regex to filter groups.")
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partition, "partition", allPartitionsHuman, "Partition to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")

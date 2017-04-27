@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -21,6 +20,7 @@ type topicArgs struct {
 	leaders    bool
 	replicas   bool
 	verbose    bool
+	pretty     bool
 	version    string
 }
 
@@ -31,6 +31,7 @@ type topicCmd struct {
 	leaders    bool
 	replicas   bool
 	verbose    bool
+	pretty     bool
 	version    sarama.KafkaVersion
 
 	client sarama.Client
@@ -61,6 +62,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
 	flags.StringVar(&args.filter, "filter", "", "Regex to filter topics by name.")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
+	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
@@ -106,6 +108,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.partitions = args.partitions
 	cmd.leaders = args.leaders
 	cmd.replicas = args.replicas
+	cmd.pretty = args.pretty
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
 }
@@ -160,7 +163,7 @@ func (cmd *topicCmd) run(as []string, q chan struct{}) {
 		}
 	}
 
-	go print(out)
+	go print(out, cmd.pretty)
 
 	var wg sync.WaitGroup
 	for _, tn := range topics {
@@ -176,7 +179,6 @@ func (cmd *topicCmd) run(as []string, q chan struct{}) {
 func (cmd *topicCmd) print(name string, out chan printContext) {
 	var (
 		top topic
-		buf []byte
 		err error
 	)
 
@@ -185,12 +187,7 @@ func (cmd *topicCmd) print(name string, out chan printContext) {
 		return
 	}
 
-	if buf, err = json.Marshal(top); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to marshal JSON for topic %s. err=%v\n", name, err)
-		return
-	}
-
-	ctx := printContext{string(buf), make(chan struct{})}
+	ctx := printContext{output: top, done: make(chan struct{})}
 	out <- ctx
 	<-ctx.done
 }
