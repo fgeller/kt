@@ -165,6 +165,7 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		groupOff      int64
 		partOff       int64
 		offsetManager sarama.OffsetManager
+		shouldReset   = cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
 	)
 
 	defer wg.Done()
@@ -181,12 +182,12 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	defer logClose("partition offset manager", pom)
 
 	groupOff, _ = pom.NextOffset()
-	if groupOff == sarama.OffsetNewest {
+	if !shouldReset && groupOff == sarama.OffsetNewest {
 		results <- groupOffsetResult{empty: true}
 		return
 	}
 
-	if cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest {
+	if shouldReset {
 		resolvedOff := cmd.reset
 		switch resolvedOff {
 		case sarama.OffsetNewest, sarama.OffsetOldest:
