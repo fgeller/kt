@@ -48,6 +48,7 @@ type partition struct {
 	NewestOffset int64   `json:"newest"`
 	Leader       string  `json:"leader,omitempty"`
 	Replicas     []int32 `json:"replicas,omitempty"`
+	ISRs         []int32 `json:"isrs,omitempty"`
 }
 
 func (cmd *topicCmd) parseFlags(as []string) topicArgs {
@@ -228,6 +229,10 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 
 		if cmd.replicas {
 			if np.Replicas, err = cmd.client.Replicas(name, p); err != nil {
+				return top, err
+			}
+
+			if np.ISRs, err = cmd.client.InSyncReplicas(name, p); err != nil {
 				return top, err
 			}
 		}
