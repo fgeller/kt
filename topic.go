@@ -202,6 +202,12 @@ type brokerInfo struct {
 	Version                     int               `json:"version"`
 }
 
+func printZookeeperEvents(evs <-chan zk.Event) {
+	for {
+		fmt.Fprintf(os.Stderr, "received zookeeper event %#v", <-evs)
+	}
+}
+
 func (cmd *topicCmd) createTopic() {
 	// TODO replication factor
 	// TODO partitions
@@ -218,24 +224,26 @@ func (cmd *topicCmd) createTopic() {
 	}
 
 	if cmd.verbose {
-		go func() {
-			for {
-				fmt.Fprintf(os.Stderr, "received zookeeper event %#v", <-evs)
-			}
-		}()
+		go printZookeeperEvents(evs)
 	}
 
+	brokers := readBrokers(conn)
+	fmt.Printf("found brokers %#v\n", brokers)
+}
+
+func readBrokers(conn *zk.Conn) []broker {
 	var (
-		rawBrokerIDs []string
-		brokers      []broker
+		rawIDs  []string
+		brokers []broker
+		err     error
 	)
 
-	if rawBrokerIDs, _, err = conn.Children(zkPathBrokersIDs); err != nil {
+	if rawIDs, _, err = conn.Children(zkPathBrokersIDs); err != nil {
 		failf("failed to retrieve broker ids from zookeeper err=%v", err)
 	}
 
-	fmt.Printf("found broker ids %#v\n", rawBrokerIDs)
-	for _, rawID := range rawBrokerIDs {
+	fmt.Printf("found broker ids %#v\n", rawIDs)
+	for _, rawID := range rawIDs {
 		id, err := strconv.Atoi(rawID)
 		if err != nil {
 			failf("failed to convert broker id %#v to int err=%v", rawID, err)
@@ -249,7 +257,7 @@ func (cmd *topicCmd) createTopic() {
 		brokers = append(brokers, newBroker(id, buf))
 	}
 
-	fmt.Printf("found brokers %#v\n", brokers)
+	return brokers
 }
 
 func newBroker(id int, info []byte) broker {
