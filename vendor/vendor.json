@@ -41,12 +41,6 @@
 			"revisionTime": "2016-05-29T05:00:41Z"
 		},
 		{
-			"checksumSHA1": "BM6ZlNJmtKy3GBoWwg2X55gnZ4A=",
-			"path": "github.com/klauspost/crc32",
-			"revision": "cb6bfca970f6908083f26f39a79009d608efd5cd",
-			"revisionTime": "2016-10-16T15:41:25Z"
-		},
-		{
 			"checksumSHA1": "WmrPO1ovmQ7t7hs9yZGbr2SAoM4=",
 			"path": "github.com/pierrec/lz4",
 			"revision": "90290f74b1b4d9c097f0a3b3c7eba2ef3875c699",
