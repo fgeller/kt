@@ -44,7 +44,8 @@ The commands are:
 	consume    consume messages.
 	produce    produce messages.
 	topic      topic information.
-	group      consumer group information and modification
+	group      consumer group information and modification.
+	zk         basic zookeeper related administration.
 
 Use "kt [command] -help" for for information about the command.
 
@@ -64,6 +65,8 @@ func parseArgs() command {
 		return &topicCmd{}
 	case "group":
 		return &groupCmd{}
+	case "zk":
+		return &zkCmd{}
 	default:
 		failf(usageMessage)
 		return nil
