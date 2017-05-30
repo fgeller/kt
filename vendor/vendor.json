@@ -3,12 +3,12 @@
 	"ignore": "test",
 	"package": [
 		{
-			"checksumSHA1": "/CNNUrYbF0jeVJ/0GbvW8npU+jE=",
+			"checksumSHA1": "50/2Bv2EHsoyhrd7ddZKIFMIkoo=",
 			"path": "github.com/Shopify/sarama",
-			"revision": "dbc0382c178bf0da82e37b98b9b9434feddfc264",
-			"revisionTime": "2017-05-01T19:19:41Z",
-			"version": "v1.11.0",
-			"versionExact": "v1.11.0"
+			"revision": "c01858abb625b73a3af51d0798e4ad42c8147093",
+			"revisionTime": "2017-05-08T18:36:27Z",
+			"version": "v1.12.0",
+			"versionExact": "v1.12.0"
 		},
 		{
 			"checksumSHA1": "dvabztWVQX8f6oMLRyv4dLH+TGY=",
@@ -39,12 +39,6 @@
 			"path": "github.com/golang/snappy",
 			"revision": "d9eb7a3d35ec988b8585d4a0068e462c27d28380",
 			"revisionTime": "2016-05-29T05:00:41Z"
-		},
-		{
-			"checksumSHA1": "BM6ZlNJmtKy3GBoWwg2X55gnZ4A=",
-			"path": "github.com/klauspost/crc32",
-			"revision": "cb6bfca970f6908083f26f39a79009d608efd5cd",
-			"revisionTime": "2016-10-16T15:41:25Z"
 		},
 		{
 			"checksumSHA1": "WmrPO1ovmQ7t7hs9yZGbr2SAoM4=",
