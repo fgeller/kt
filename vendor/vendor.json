@@ -3,12 +3,12 @@
 	"ignore": "test",
 	"package": [
 		{
-			"checksumSHA1": "/CNNUrYbF0jeVJ/0GbvW8npU+jE=",
+			"checksumSHA1": "50/2Bv2EHsoyhrd7ddZKIFMIkoo=",
 			"path": "github.com/Shopify/sarama",
-			"revision": "dbc0382c178bf0da82e37b98b9b9434feddfc264",
-			"revisionTime": "2017-05-01T19:19:41Z",
-			"version": "v1.11.0",
-			"versionExact": "v1.11.0"
+			"revision": "c01858abb625b73a3af51d0798e4ad42c8147093",
+			"revisionTime": "2017-05-08T18:36:27Z",
+			"version": "v1.12.0",
+			"versionExact": "v1.12.0"
 		},
 		{
 			"checksumSHA1": "dvabztWVQX8f6oMLRyv4dLH+TGY=",
