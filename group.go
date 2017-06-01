@@ -137,9 +137,7 @@ awaitGroupOffsets:
 	for {
 		select {
 		case res := <-results:
-			if !res.empty {
-				target.Offsets[res.partition] = groupOffset{Offset: res.offset, Lag: res.lag}
-			}
+			target.Offsets[res.partition] = groupOffset{Offset: res.offset, Lag: res.lag}
 		case <-done:
 			break awaitGroupOffsets
 		}
@@ -156,7 +154,6 @@ type groupOffsetResult struct {
 	partition int32
 	offset    int64
 	lag       int64
-	empty     bool
 }
 
 func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part int32, results chan groupOffsetResult) {
@@ -182,11 +179,6 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	defer logClose("partition offset manager", pom)
 
 	groupOff, _ = pom.NextOffset()
-	if !shouldReset && groupOff == sarama.OffsetNewest {
-		results <- groupOffsetResult{empty: true}
-		return
-	}
-
 	if shouldReset {
 		resolvedOff := cmd.reset
 		switch resolvedOff {
@@ -480,6 +472,8 @@ The values for -topic and -brokers can also be set via environment variables KT_
 The values supplied on the command line win over environment variable values.
 
 The group command can be used to list groups, their offsets and lag and to reset a group's offset.
+
+When an explicit offset hasn't been set yet, kt prints out the respective sarama constants, cf. https://godoc.org/github.com/Shopify/sarama#pkg-constants
 
 To simply list all groups:
 
