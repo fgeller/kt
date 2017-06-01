@@ -30,6 +30,7 @@ var (
 )
 
 func kafkaVersion(s string) sarama.KafkaVersion {
+	dflt := sarama.V0_10_1_0
 	switch s {
 	case "v0.8.2.0":
 		return sarama.V0_8_2_0
@@ -45,9 +46,12 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 		return sarama.V0_10_0_0
 	case "v0.10.0.1":
 		return sarama.V0_10_0_1
-	default:
-		return sarama.V0_10_1_0
+	case "v0.10.1.0", "":
+		return dflt
 	}
+
+	failf("unsupported kafka version %#v - supported: v0.8.2.0, v0.8.2.1, v0.8.2.2, v0.9.0.0, v0.9.0.1, v0.10.0.0, v0.10.0.1, v0.10.1.0", s)
+	return dflt
 }
 
 func logClose(name string, c io.Closer) {
