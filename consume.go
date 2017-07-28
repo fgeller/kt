@@ -386,6 +386,9 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 		case <-cmd.q:
 			fmt.Fprintf(os.Stderr, "shutting down partition consumer for partition %v\n", p)
 			return
+		case err := <-pc.Errors():
+			fmt.Fprintf(os.Stderr, "partition %v consumer encountered err %s", p, err)
+			return
 		case msg, ok := <-pc.Messages():
 			if !ok {
 				fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
