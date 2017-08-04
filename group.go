@@ -189,7 +189,7 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 			}
 			resolvedOff = off
 			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "resolved reset offset for partition=%d to %v", part, resolvedOff)
+				fmt.Fprintf(os.Stderr, "resolved reset offset for partition=%d to %v\n", part, resolvedOff)
 			}
 		}
 		groupOff = resolvedOff
