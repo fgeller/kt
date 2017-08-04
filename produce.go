@@ -124,25 +124,6 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.bufferSize = args.bufferSize
 }
 
-func (cmd *produceCmd) mkSaramaConfig() {
-	var (
-		usr *user.User
-		err error
-	)
-
-	cmd.saramaConfig = sarama.NewConfig()
-	cmd.saramaConfig.Producer.RequiredAcks = sarama.WaitForAll
-	cmd.saramaConfig.Version = cmd.version
-	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
-	}
-	cmd.saramaConfig.ClientID = "kt-produce-" + usr.Username
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cmd.saramaConfig)
-	}
-
-}
-
 func (cmd *produceCmd) findLeaders() {
 	var (
 		usr *user.User
@@ -230,8 +211,7 @@ type produceCmd struct {
 	decodeValue string
 	bufferSize  int
 
-	saramaConfig *sarama.Config
-	leaders      map[int32]*sarama.Broker
+	leaders map[int32]*sarama.Broker
 }
 
 func (cmd *produceCmd) run(as []string, q chan struct{}) {

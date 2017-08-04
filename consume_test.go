@@ -457,12 +457,6 @@ func (a ByPartitionOffset) Less(i, j int) bool {
 	return a[i].partition < a[j].partition || a[i].offset < a[j].offset
 }
 
-type tConsumerError struct {
-	Topic     string
-	Partition int32
-	Err       error
-}
-
 type tPartitionConsumer struct {
 	closeErr            error
 	highWaterMarkOffset int64

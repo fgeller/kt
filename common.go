@@ -17,15 +17,6 @@ import (
 )
 
 var (
-	v820  = sarama.V0_8_2_0
-	v821  = sarama.V0_8_2_1
-	v822  = sarama.V0_8_2_2
-	v900  = sarama.V0_9_0_0
-	v901  = sarama.V0_9_0_1
-	v1000 = sarama.V0_10_0_0
-	v1001 = sarama.V0_10_0_1
-	v1010 = sarama.V0_10_1_0
-
 	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 )
 
