@@ -122,6 +122,9 @@ func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top strin
 	parts := cmd.partitions
 	if len(cmd.partitions) == 0 {
 		parts = cmd.fetchPartitions(top)
+		if cmd.verbose {
+			fmt.Fprintf(os.Stderr, "resolved partitions for topic=%v to %v\n", top, parts)
+		}
 	}
 	wg := &sync.WaitGroup{}
 	wg.Add(len(parts))
@@ -166,6 +169,10 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		offsetManager sarama.OffsetManager
 		shouldReset   = cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
 	)
+
+	if cmd.verbose {
+		fmt.Fprintf(os.Stderr, "fetching offset information for group=%v topic=%v partition=%v\n", grp, top, part)
+	}
 
 	defer wg.Done()
 
