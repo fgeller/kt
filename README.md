@@ -115,12 +115,13 @@ View offsets for a given consumer group:
     {
       "name": "enews",
       "topic": "actor-news",
-      "offsets": {
-        "0": {
+      "offsets": [
+        {
+          "partition": 0,
           "offset": 6,
           "lag": 0
         }
-      }
+      ]
     }
 
 Change consumer group offset:
@@ -131,12 +132,13 @@ Change consumer group offset:
     {
       "name": "enews",
       "topic": "actor-news",
-      "offsets": {
-        "0": {
+      "offsets": [
+        {
+          "partition": 0,
           "offset": 1,
           "lag": 5
         }
-      }
+      ]
     }
     $ kt group -group enews -topic actor-news -partitions 0
     found 1 groups
@@ -144,12 +146,13 @@ Change consumer group offset:
     {
       "name": "enews",
       "topic": "actor-news",
-      "offsets": {
-        "0": {
+      "offsets": [
+        {
+          "partition": 0,
           "offset": 1,
           "lag": 5
         }
-      }
+      ]
     }
 
 ## Installation
