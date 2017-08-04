@@ -72,7 +72,7 @@ func print(in <-chan printContext, pretty bool) {
 		marshal = json.Marshal
 	)
 
-	if pretty && terminal.IsTerminal(syscall.Stdout) {
+	if pretty && terminal.IsTerminal(int(syscall.Stdout)) {
 		marshal = func(i interface{}) ([]byte, error) { return json.MarshalIndent(i, "", "  ") }
 	}
 
