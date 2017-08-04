@@ -30,7 +30,7 @@ var (
 )
 
 func kafkaVersion(s string) sarama.KafkaVersion {
-	dflt := sarama.V0_10_1_0
+	dflt := sarama.V0_10_0_0
 	switch s {
 	case "v0.8.2.0":
 		return sarama.V0_8_2_0
