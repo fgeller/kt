@@ -62,11 +62,7 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 		failf("failed to create client err=%v", err)
 	}
 
-	brokers := cmd.findBrokers()
-	if len(brokers) == 0 {
-		failf("failed to find brokers")
-	}
-
+	brokers := cmd.client.Brokers()
 	groups := []string{cmd.group}
 	if cmd.group == "" {
 		groups = []string{}
@@ -299,37 +295,6 @@ func (cmd *groupCmd) connect(broker *sarama.Broker) error {
 	}
 
 	return nil
-}
-
-func (cmd *groupCmd) findBrokers() []*sarama.Broker {
-	var (
-		err  error
-		meta *sarama.MetadataResponse
-	)
-
-loop:
-	for _, addr := range cmd.brokers {
-		select {
-		case <-cmd.q:
-			fmt.Printf("interrupt - quits.")
-			os.Exit(1)
-		default:
-		}
-		broker := sarama.NewBroker(addr)
-		if err = cmd.connect(broker); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to open broker connection to %#v err=%s\n", addr, err)
-			continue loop
-		}
-
-		if meta, err = broker.GetMetadata(&sarama.MetadataRequest{Topics: []string{}}); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to request metadata from %#v. err=%s\n", addr, err)
-			continue loop
-		}
-
-		return meta.Brokers
-	}
-
-	return []*sarama.Broker{}
 }
 
 func (cmd *groupCmd) saramaConfig() *sarama.Config {
