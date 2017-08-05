@@ -65,6 +65,18 @@
 			"revisionTime": "2016-11-28T21:05:44Z"
 		},
 		{
+			"checksumSHA1": "MFzYQgva79KXz61C+a09UqAd6s0=",
+			"path": "github.com/samuel/go-zookeeper",
+			"revision": "1d7be4effb13d2d908342d349d71a284a7542693",
+			"revisionTime": "2016-10-28T23:23:40Z"
+		},
+		{
+			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
+			"path": "github.com/samuel/go-zookeeper/zk",
+			"revision": "1d7be4effb13d2d908342d349d71a284a7542693",
+			"revisionTime": "2016-10-28T23:23:40Z"
+		},
+		{
 			"checksumSHA1": "hIEmcd7hIDqO/xWSp1rJJHd0TpE=",
 			"path": "github.com/stretchr/testify/assert",
 			"revision": "18a02ba4a312f95da08ff4cfc0055750ce50ae9e",
