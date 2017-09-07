@@ -27,8 +27,6 @@ type groupCmd struct {
 	offsets    bool
 
 	client sarama.Client
-
-	q chan struct{}
 }
 
 type group struct {
@@ -48,11 +46,10 @@ const (
 	resetNotSpecified  = -23
 )
 
-func (cmd *groupCmd) run(args []string, q chan struct{}) {
+func (cmd *groupCmd) run(args []string) {
 	var err error
 
 	cmd.parseArgs(args)
-	cmd.q = q
 
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -106,13 +103,7 @@ func (cmd *groupCmd) run(args []string, q chan struct{}) {
 			}(grp, top)
 		}
 	}
-
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-cmd.q:
-	case <-done:
-	}
+	wg.Wait()
 }
 
 func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string) {

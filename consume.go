@@ -30,8 +30,6 @@ type consumeCmd struct {
 
 	client   sarama.Client
 	consumer sarama.Consumer
-
-	q chan struct{}
 }
 
 type offset struct {
@@ -283,11 +281,10 @@ func (cmd *consumeCmd) setupClient() {
 	}
 }
 
-func (cmd *consumeCmd) run(args []string, q chan struct{}) {
+func (cmd *consumeCmd) run(args []string) {
 	var err error
 
 	cmd.parseArgs(args)
-	cmd.q = q
 
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -382,9 +379,6 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 		select {
 		case <-timeout:
 			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s\n", p, cmd.timeout)
-			return
-		case <-cmd.q:
-			fmt.Fprintf(os.Stderr, "shutting down partition consumer for partition %v\n", p)
 			return
 		case err := <-pc.Errors():
 			fmt.Fprintf(os.Stderr, "partition %v consumer encountered err %s", p, err)

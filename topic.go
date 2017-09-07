@@ -136,14 +136,12 @@ func (cmd *topicCmd) connect() {
 	}
 }
 
-func (cmd *topicCmd) run(as []string, q chan struct{}) {
+func (cmd *topicCmd) run(as []string) {
 	var (
 		err error
 		all []string
 		out = make(chan printContext)
 	)
-
-	go func() { <-q; failf("received quit signal.") }()
 
 	cmd.parseArgs(as)
 	if cmd.verbose {

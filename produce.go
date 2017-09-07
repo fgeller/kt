@@ -214,7 +214,7 @@ type produceCmd struct {
 	leaders map[int32]*sarama.Broker
 }
 
-func (cmd *produceCmd) run(as []string, q chan struct{}) {
+func (cmd *produceCmd) run(as []string) {
 	cmd.parseArgs(as)
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -227,10 +227,12 @@ func (cmd *produceCmd) run(as []string, q chan struct{}) {
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
 	out := make(chan printContext)
+	q := make(chan struct{})
 
 	go readStdinLines(cmd.bufferSize, stdin)
 	go print(out, cmd.pretty)
 
+	go listenForInterrupt(q)
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
 	go cmd.batchRecords(messages, batchedMessages)

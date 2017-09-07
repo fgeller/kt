@@ -3,27 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
 )
 
 // TODO have these all the time
 var buildVersion, buildTime string
 
-func listenForInterrupt() chan struct{} {
-	closer := make(chan struct{})
-	go func() {
-		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Kill, os.Interrupt)
-		<-signals
-		fmt.Fprintf(os.Stderr, "received interrupt - shutting down\n")
-		close(closer)
-	}()
-
-	return closer
-}
-
 type command interface {
-	run(args []string, closer chan struct{})
+	run(args []string)
 }
 
 func init() {
@@ -72,6 +58,5 @@ func parseArgs() command {
 
 func main() {
 	cmd := parseArgs()
-	closer := listenForInterrupt()
-	cmd.run(os.Args[2:], closer)
+	cmd.run(os.Args[2:])
 }

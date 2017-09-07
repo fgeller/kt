@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
 	"syscall"
@@ -19,6 +20,14 @@ import (
 var (
 	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 )
+
+func listenForInterrupt(q chan struct{}) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Kill, os.Interrupt)
+	sig := <-signals
+	fmt.Fprintf(os.Stderr, "received signal %s\n", sig)
+	close(q)
+}
 
 func kafkaVersion(s string) sarama.KafkaVersion {
 	dflt := sarama.V0_10_0_0
