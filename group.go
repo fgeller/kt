@@ -60,6 +60,8 @@ func (cmd *groupCmd) run(args []string) {
 	}
 
 	brokers := cmd.client.Brokers()
+	fmt.Fprintf(os.Stderr, "found %v brokers\n", len(brokers))
+
 	groups := []string{cmd.group}
 	if cmd.group == "" {
 		groups = []string{}
@@ -93,30 +95,34 @@ func (cmd *groupCmd) run(args []string) {
 		return
 	}
 
+	topicPartitions := map[string][]int32{}
+	for _, topic := range topics {
+		parts := cmd.partitions
+		if len(parts) == 0 {
+			parts = cmd.fetchPartitions(topic)
+			fmt.Fprintf(os.Stderr, "found partitions=%v for topic=%v\n", parts, topic)
+		}
+		topicPartitions[topic] = parts
+	}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(len(groups) * len(topics))
 	for _, grp := range groups {
-		for _, top := range topics {
-			go func(grp, topic string) {
-				cmd.printGroupTopicOffset(out, grp, topic)
+		for top, parts := range topicPartitions {
+			go func(grp, topic string, partitions []int32) {
+				cmd.printGroupTopicOffset(out, grp, topic, partitions)
 				wg.Done()
-			}(grp, top)
+			}(grp, top, parts)
 		}
 	}
 	wg.Wait()
 }
 
-func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string) {
+func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string, parts []int32) {
 	target := group{Name: grp, Topic: top, Offsets: []groupOffset{}}
 	results := make(chan groupOffset)
 	done := make(chan struct{})
-	parts := cmd.partitions
-	if len(cmd.partitions) == 0 {
-		parts = cmd.fetchPartitions(top)
-		if cmd.verbose {
-			fmt.Fprintf(os.Stderr, "resolved partitions for topic=%v to %v\n", top, parts)
-		}
-	}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(len(parts))
 	for _, part := range parts {
