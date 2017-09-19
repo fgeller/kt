@@ -389,28 +389,40 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 				return
 			}
 
-			k, v := string(msg.Key), string(msg.Value)
+			// TODO: move the below into a constructor
+			m := consumedMessage{Partition: msg.Partition, Offset: msg.Offset}
 
-			var ts *time.Time
 			if !msg.Timestamp.IsZero() {
-				ts = &msg.Timestamp
+				m.Timestamp = &msg.Timestamp
 			}
 
-			m := consumedMessage{msg.Partition, msg.Offset, &k, &v, ts}
-			switch cmd.encodeValue {
-			case "hex":
-				str := hex.EncodeToString(msg.Value)
-				m.Value = &str
-			case "base64":
-				str := base64.StdEncoding.EncodeToString(msg.Value)
+			if len(msg.Value) == 0 {
+				m.Value = nil
+			} else {
+				var str string
+				switch cmd.encodeValue {
+				case "hex":
+					str = hex.EncodeToString(msg.Value)
+				case "base64":
+					str = base64.StdEncoding.EncodeToString(msg.Value)
+				default:
+					str = string(msg.Value)
+				}
 				m.Value = &str
 			}
-			switch cmd.encodeKey {
-			case "hex":
-				str := hex.EncodeToString(msg.Key)
-				m.Key = &str
-			case "base64":
-				str := base64.StdEncoding.EncodeToString(msg.Key)
+
+			if len(msg.Key) == 0 {
+				m.Key = nil
+			} else {
+				var str string
+				switch cmd.encodeKey {
+				case "hex":
+					str = hex.EncodeToString(msg.Key)
+				case "base64":
+					str = base64.StdEncoding.EncodeToString(msg.Key)
+				default:
+					str = string(msg.Key)
+				}
 				m.Key = &str
 			}
 
