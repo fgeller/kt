@@ -16,6 +16,7 @@ install:
 
 before_script:
 - docker-compose -f $TRAVIS_BUILD_DIR/test-dependencies.yml up -d
+- sleep 15
 
 script:
 - make test
