@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"os/signal"
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf16"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -153,4 +155,11 @@ func sanitizeUsername(u string) string {
 	// Windows account can contain spaces or other special characters not supported
 	// in client ID. Keep the bare minimum and ditch the rest.
 	return invalidClientIDCharactersRegExp.ReplaceAllString(u, "")
+}
+
+func randomString(length int) string {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	buf := make([]byte, length)
+	r.Read(buf)
+	return fmt.Sprintf("%x", buf)[:length]
 }
