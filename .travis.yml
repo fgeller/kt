@@ -2,6 +2,9 @@ sudo: required
 dist: trusty
 language: go
 
+go:
+  - 1.9
+
 install:
 - curl -sSL "https://get.docker.com/gpg" | sudo -E apt-key add -
 - echo "deb https://apt.dockerproject.org/repo ubuntu-trusty main" | sudo tee -a /etc/apt/sources.list
@@ -14,5 +17,5 @@ install:
 before_script:
 - docker-compose -f $TRAVIS_BUILD_DIR/test-dependencies.yml up -d
 
-go:
-  - 1.9
+script:
+- make test
