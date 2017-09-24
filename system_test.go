@@ -68,6 +68,8 @@ func TestSystem(t *testing.T) {
 	buf, err := json.Marshal(req)
 	require.NoError(t, err)
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "produce", "-topic", "kt-test")
+	fmt.Printf(">> system test kt produce stdout:\n%s\n", stdOut)
+	fmt.Printf(">> system test kt produce stderr:\n%s\n", stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
