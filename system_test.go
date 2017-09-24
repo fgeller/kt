@@ -84,7 +84,7 @@ func TestSystem(t *testing.T) {
 	// kt consume
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", "kt-test", "-timeout", "10ms")
+	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", "kt-test", "-timeout", "500ms")
 	require.Zero(t, status)
 
 	lines := strings.Split(stdOut, "\n")
