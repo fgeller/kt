@@ -165,7 +165,7 @@ Alternatively, the usual way via the go tool, for example:
 
 ### Docker
 
-@Paxa maintains an image to run kt in a Docker environment - thanks!
+[@Paxa](https://github.com/Paxa) maintains an image to run kt in a Docker environment - thanks!
 
 For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
 
