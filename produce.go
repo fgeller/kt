@@ -120,6 +120,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.pretty = args.pretty
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
+	cmd.partitioner = args.partitioner
 	cmd.version = kafkaVersion(args.version)
 	cmd.bufferSize = args.bufferSize
 }
