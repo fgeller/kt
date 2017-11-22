@@ -76,7 +76,6 @@ func (cmd *groupCmd) run(args []string) {
 
 	topics := []string{cmd.topic}
 	if cmd.topic == "" {
-		//topics = cmd.fetchTopics()
 		topics = []string{}
 		for _, t := range cmd.fetchTopics() {
 			if cmd.tfilter.MatchString(t) {
