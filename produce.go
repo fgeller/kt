@@ -24,6 +24,7 @@ type produceArgs struct {
 	verbose     bool
 	pretty      bool
 	version     string
+	compression string
 	literal     bool
 	decodeKey   string
 	decodeValue string
@@ -49,6 +50,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.compression, "compression", "", "Kafka message compression codec [gzip|snappy|lz4] (defaults to none)")
 	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
 	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
@@ -122,7 +124,24 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.partition = int32(args.partition)
 	cmd.partitioner = args.partitioner
 	cmd.version = kafkaVersion(args.version)
+	cmd.compression = kafkaCompression(args.compression)
 	cmd.bufferSize = args.bufferSize
+}
+
+func kafkaCompression(codecName string) sarama.CompressionCodec {
+	switch codecName {
+	case "gzip":
+		return sarama.CompressionGZIP
+	case "snappy":
+		return sarama.CompressionSnappy
+	case "lz4":
+		return sarama.CompressionLZ4
+	case "":
+		return sarama.CompressionNone
+	}
+
+	failf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
+	panic("unreachable")
 }
 
 func (cmd *produceCmd) findLeaders() {
@@ -207,6 +226,7 @@ type produceCmd struct {
 	literal     bool
 	partition   int32
 	version     sarama.KafkaVersion
+	compression sarama.CompressionCodec
 	partitioner string
 	decodeKey   string
 	decodeValue string
@@ -339,7 +359,7 @@ type partitionProduceResult struct {
 func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	var (
 		err error
-		sm  = &sarama.Message{Codec: sarama.CompressionNone}
+		sm  = &sarama.Message{Codec: cmd.compression}
 	)
 
 	if msg.Key != nil {
