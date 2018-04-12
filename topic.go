@@ -70,8 +70,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, `
 The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
-`)
+The values supplied on the command line win over environment variable values.`)
 		os.Exit(2)
 	}
 
