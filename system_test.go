@@ -149,6 +149,6 @@ func TestSystem(t *testing.T) {
 		if l == "" { // final newline
 			continue
 		}
-		require.JSONEq(t, expectedLines[i-1], l, fmt.Sprintf("line %d", i-1))
+		require.JSONEq(t, expectedLines[i-1], l, fmt.Sprintf("line %i", i-1))
 	}
 }
