@@ -18,6 +18,7 @@ type groupCmd struct {
 	brokers    []string
 	group      string
 	filter     *regexp.Regexp
+	tfilter    *regexp.Regexp
 	topic      string
 	partitions []int32
 	reset      int64
@@ -75,7 +76,12 @@ func (cmd *groupCmd) run(args []string) {
 
 	topics := []string{cmd.topic}
 	if cmd.topic == "" {
-		topics = cmd.fetchTopics()
+		topics = []string{}
+		for _, t := range cmd.fetchTopics() {
+			if cmd.tfilter.MatchString(t) {
+				topics = append(topics, t)
+			}
+		}
 	}
 	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
 
@@ -362,6 +368,10 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		failf("filter regexp invalid err=%v", err)
 	}
 
+	if cmd.tfilter, err = regexp.Compile(args.tfilter); err != nil {
+		failf("tfilter regexp invalid err=%v", err)
+	}
+
 	if args.reset != "" && (args.topic == "" || args.group == "") {
 		failf("group and topic are required to reset offsets.")
 	}
@@ -406,6 +416,7 @@ type groupArgs struct {
 	partitions string
 	group      string
 	filter     string
+	tfilter    string
 	reset      string
 	verbose    bool
 	pretty     bool
@@ -420,6 +431,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
 	flags.StringVar(&args.filter, "filter", "", "Regex to filter groups.")
+	flags.StringVar(&args.tfilter, "tfilter", "", "Regex to filter topics.")
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
