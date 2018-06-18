@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -147,6 +148,9 @@ awaitGroupOffsets:
 	}
 
 	if len(target.Offsets) > 0 {
+		sort.Slice(target.Offsets, func(i, j int) bool {
+			return target.Offsets[j].Partition > target.Offsets[i].Partition
+		})
 		ctx := printContext{output: target, done: make(chan struct{})}
 		out <- ctx
 		<-ctx.done
