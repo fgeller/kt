@@ -240,5 +240,4 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 
 var topicDocString = `
 The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
-`
+The values supplied on the command line win over environment variable values.`
