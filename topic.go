@@ -68,9 +68,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
 		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, `
-The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.`)
+		fmt.Fprintln(os.Stderr, topicDocString)
 		os.Exit(2)
 	}
 
@@ -239,3 +237,7 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 
 	return top, nil
 }
+
+var topicDocString = `
+The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
+The values supplied on the command line win over environment variable values.`

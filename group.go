@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,16 +16,17 @@ import (
 )
 
 type groupCmd struct {
-	brokers    []string
-	group      string
-	filter     *regexp.Regexp
-	topic      string
-	partitions []int32
-	reset      int64
-	verbose    bool
-	pretty     bool
-	version    sarama.KafkaVersion
-	offsets    bool
+	brokers      []string
+	group        string
+	filterGroups *regexp.Regexp
+	filterTopics *regexp.Regexp
+	topic        string
+	partitions   []int32
+	reset        int64
+	verbose      bool
+	pretty       bool
+	version      sarama.KafkaVersion
+	offsets      bool
 
 	client sarama.Client
 }
@@ -66,7 +68,7 @@ func (cmd *groupCmd) run(args []string) {
 	if cmd.group == "" {
 		groups = []string{}
 		for _, g := range cmd.findGroups(brokers) {
-			if cmd.filter.MatchString(g) {
+			if cmd.filterGroups.MatchString(g) {
 				groups = append(groups, g)
 			}
 		}
@@ -75,7 +77,12 @@ func (cmd *groupCmd) run(args []string) {
 
 	topics := []string{cmd.topic}
 	if cmd.topic == "" {
-		topics = cmd.fetchTopics()
+		topics = []string{}
+		for _, t := range cmd.fetchTopics() {
+			if cmd.filterTopics.MatchString(t) {
+				topics = append(topics, t)
+			}
+		}
 	}
 	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
 
@@ -141,6 +148,9 @@ awaitGroupOffsets:
 	}
 
 	if len(target.Offsets) > 0 {
+		sort.Slice(target.Offsets, func(i, j int) bool {
+			return target.Offsets[j].Partition > target.Offsets[i].Partition
+		})
 		ctx := printContext{output: target, done: make(chan struct{})}
 		out <- ctx
 		<-ctx.done
@@ -358,8 +368,12 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, args.partitions)
 	}
 
-	if cmd.filter, err = regexp.Compile(args.filter); err != nil {
-		failf("filter regexp invalid err=%v", err)
+	if cmd.filterGroups, err = regexp.Compile(args.filterGroups); err != nil {
+		failf("groups filter regexp invalid err=%v", err)
+	}
+
+	if cmd.filterTopics, err = regexp.Compile(args.filterTopics); err != nil {
+		failf("topics filter regexp invalid err=%v", err)
 	}
 
 	if args.reset != "" && (args.topic == "" || args.group == "") {
@@ -401,16 +415,17 @@ func (cmd *groupCmd) parseArgs(as []string) {
 }
 
 type groupArgs struct {
-	topic      string
-	brokers    string
-	partitions string
-	group      string
-	filter     string
-	reset      string
-	verbose    bool
-	pretty     bool
-	version    string
-	offsets    bool
+	topic        string
+	brokers      string
+	partitions   string
+	group        string
+	filterGroups string
+	filterTopics string
+	reset        string
+	verbose      bool
+	pretty       bool
+	version      string
+	offsets      bool
 }
 
 func (cmd *groupCmd) parseFlags(as []string) groupArgs {
@@ -419,7 +434,8 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
-	flags.StringVar(&args.filter, "filter", "", "Regex to filter groups.")
+	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
+	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
