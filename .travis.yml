@@ -3,7 +3,7 @@ dist: trusty
 language: go
 
 go:
-  - 1.10.1
+  - 1.10.3
 
 install:
 - curl -sSL "https://get.docker.com/gpg" | sudo -E apt-key add -
