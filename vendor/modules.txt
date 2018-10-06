@@ -1,27 +1,27 @@
-# github.com/Shopify/sarama v1.12.0
+# github.com/Shopify/sarama v1.19.0
 github.com/Shopify/sarama
-# github.com/davecgh/go-spew v1.1.0
+# github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/eapache/go-resiliency v0.0.0-20160104191539-b86b1ec0dd42
+# github.com/eapache/go-resiliency v1.1.0
 github.com/eapache/go-resiliency/breaker
-# github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934
+# github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21
 github.com/eapache/go-xerial-snappy
 # github.com/eapache/queue v1.1.0
 github.com/eapache/queue
-# github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
+# github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
 github.com/golang/snappy
-# github.com/pierrec/lz4 v0.0.0-20170226142621-90290f74b1b4
+# github.com/pierrec/lz4 v2.0.5+incompatible
 github.com/pierrec/lz4
-# github.com/pierrec/xxHash v0.0.0-20160112165351-5a004441f897
-github.com/pierrec/xxHash/xxHash32
+github.com/pierrec/lz4/internal/xxh32
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/rcrowley/go-metrics v0.0.0-20161128210544-1f30fe9094a5
+# github.com/rcrowley/go-metrics v0.0.0-20180503174638-e2704e165165
 github.com/rcrowley/go-metrics
-# github.com/stretchr/testify v0.0.0-20161117074351-18a02ba4a312
+# github.com/stretchr/testify v1.2.2
 github.com/stretchr/testify/require
 github.com/stretchr/testify/assert
-# golang.org/x/crypto v0.0.0-20170421043120-96846453c37f
+# golang.org/x/crypto v0.0.0-20181001203147-e3636079e1a4
 golang.org/x/crypto/ssh/terminal
-# golang.org/x/sys v0.0.0-20170421005244-ea9bcade75cb
+# golang.org/x/sys v0.0.0-20181005133103-4497e2df6f9e
 golang.org/x/sys/unix
+golang.org/x/sys/windows
