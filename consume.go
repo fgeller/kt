@@ -20,6 +20,9 @@ import (
 type consumeCmd struct {
 	topic       string
 	brokers     []string
+	tlsCA       string
+	tlsCert     string
+	tlsCertKey  string
 	offsets     map[int32]interval
 	timeout     time.Duration
 	verbose     bool
@@ -71,6 +74,9 @@ type interval struct {
 type consumeArgs struct {
 	topic       string
 	brokers     string
+	tlsCA       string
+	tlsCert     string
+	tlsCertKey  string
 	timeout     time.Duration
 	offsets     string
 	verbose     bool
@@ -199,6 +205,9 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 		args.topic = envTopic
 	}
 	cmd.topic = args.topic
+	cmd.tlsCA = args.tlsCA
+	cmd.tlsCert = args.tlsCert
+	cmd.tlsCertKey = args.tlsCertKey
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
@@ -242,6 +251,9 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the tls certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the tls client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the tls client certificate key file")
 	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
@@ -274,6 +286,16 @@ func (cmd *consumeCmd) setupClient() {
 	cfg.ClientID = "kt-consume-" + sanitizeUsername(usr.Username)
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
+	}
+	// AFAIK kafka authentication only works when the ca, cert and certkey are
+	// presented.
+	if cmd.tlsCert != "" && cmd.tlsCA != "" && cmd.tlsCertKey != "" {
+		cfg.Net.TLS.Enable = true
+		tlsConfig, err := certSetup(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+		if err != nil {
+			failf("failed to setup certificates as consumer err=%v", err)
+		}
+		cfg.Net.TLS.Config = tlsConfig
 	}
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {

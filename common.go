@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -162,4 +165,28 @@ func randomString(length int) string {
 	buf := make([]byte, length)
 	r.Read(buf)
 	return fmt.Sprintf("%x", buf)[:length]
+}
+
+// certSetup takes the paths to a tls certificate, CA, and certificate key in
+// a PEM format and returns a constructed tls.Config object.
+func certSetup(tlsCert, tlsCA, tlsCertKey string) (*tls.Config, error) {
+	caCert, err := ioutil.ReadFile(tlsCA)
+	if err != nil {
+		return nil, err
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	clientCertificate, err := tls.LoadX509KeyPair(tlsCert, tlsCertKey)
+	if err != nil {
+		return nil, err
+	}
+
+	certBundle := &tls.Config{
+		RootCAs:      caCertPool,
+		Certificates: []tls.Certificate{clientCertificate},
+	}
+	certBundle.BuildNameToCertificate()
+	return certBundle, nil
 }

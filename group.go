@@ -17,6 +17,9 @@ import (
 
 type groupCmd struct {
 	brokers      []string
+	tlsCA        string
+	tlsCert      string
+	tlsCertKey   string
 	group        string
 	filterGroups *regexp.Regexp
 	filterTopics *regexp.Regexp
@@ -323,6 +326,16 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
+	// AFAIK kafka authentication only works when the ca, cert and certkey are
+	// presented.
+	if cmd.tlsCert != "" && cmd.tlsCA != "" && cmd.tlsCertKey != "" {
+		cfg.Net.TLS.Enable = true
+		tlsConfig, err := certSetup(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+		if err != nil {
+			failf("failed to setup certificates as consumer err=%v", err)
+		}
+		cfg.Net.TLS.Config = tlsConfig
+	}
 
 	return cfg
 }
@@ -344,6 +357,9 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	}
 
 	cmd.topic = args.topic
+	cmd.tlsCA = args.tlsCA
+	cmd.tlsCert = args.tlsCert
+	cmd.tlsCertKey = args.tlsCertKey
 	cmd.group = args.group
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
@@ -417,6 +433,9 @@ func (cmd *groupCmd) parseArgs(as []string) {
 type groupArgs struct {
 	topic        string
 	brokers      string
+	tlsCA        string
+	tlsCert      string
+	tlsCertKey   string
 	partitions   string
 	group        string
 	filterGroups string
@@ -433,6 +452,9 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags := flag.NewFlagSet("group", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the tls certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the tls client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the tls client certificate key file")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
 	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
 	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")
