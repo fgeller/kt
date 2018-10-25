@@ -7,7 +7,7 @@ Some reasons why you might be interested:
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition)
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers and topic via environment variables for a shell session
+* Configure brokers and topic via environment variables `KT_BROKERS` and `KT_TOPIC` for a shell session
 * Fast start up time.
 * No buffering of output.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding
