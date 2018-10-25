@@ -155,6 +155,11 @@ Change consumer group offset:
       ]
     }
 
+Change broker address via environment variable:
+
+    $ export KT_BROKERS=brokers.kafka:9092
+    $ kt <command> <option>
+
 ## Installation
 
 You can download kt via the [Releases](https://github.com/fgeller/kt/releases) section.
