@@ -11,6 +11,7 @@ Some reasons why you might be interested:
 * Fast start up time.
 * No buffering of output.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding
+* Support for tls authentication
 
 [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
 
@@ -33,6 +34,12 @@ Read details about topics that match the regex `output`
 Produce messages:
 
     $ echo 'Alice wins Oscar' | kt produce -topic actor-news -literal
+    {
+      "count": 1,
+      "partition": 0,
+      "startOffset": 0
+    }
+    $ echo 'Bob wins Oscar' | kt produce -tlsca myca.pem -tlscert myclientcert.pem -tlscertkey mycertkey.pem -topic actor-news -literal
     {
       "count": 1,
       "partition": 0,
