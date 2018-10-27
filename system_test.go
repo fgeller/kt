@@ -35,7 +35,11 @@ func (c *cmd) run(name string, args ...string) (int, string, string) {
 
 	_ = cmd.Run()
 	status := cmd.ProcessState.Sys().(syscall.WaitStatus)
-	return status.ExitStatus(), stdOut.String(), stdErr.String()
+
+	strOut := stdOut.String()
+	strErr := stdErr.String()
+
+	return status.ExitStatus(), strOut, strErr
 
 }
 
