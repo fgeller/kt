@@ -1,15 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/user"
 	"strings"
 
 	"github.com/Shopify/sarama"
-	"github.com/davecgh/go-spew/spew"
 )
 
 type adminCmd struct {
@@ -17,16 +18,26 @@ type adminCmd struct {
 	verbose bool
 	version sarama.KafkaVersion
 
-	client sarama.Client
+	createTopic  string
+	topicDetail  *sarama.TopicDetail
+	validateOnly bool
+
+	admin sarama.ClusterAdmin
 }
 
 type adminArgs struct {
 	brokers string
 	verbose bool
 	version string
+
+	createTopic     string
+	topicDetailPath string
+	validateOnly    bool
 }
 
-// kt admin -createtopic name -topiccfg path
+// TODO tls
+// TODO read detail from stdin?
+// kt admin -createtopic name -topicdetail path -validateonly false
 func (cmd *adminCmd) parseArgs(as []string) {
 	var (
 		args = cmd.parseFlags(as)
@@ -49,6 +60,22 @@ func (cmd *adminCmd) parseArgs(as []string) {
 			cmd.brokers[i] = b + ":9092"
 		}
 	}
+
+	cmd.validateOnly = args.validateOnly
+	cmd.createTopic = args.createTopic
+
+	if cmd.createTopic != "" {
+		buf, err := ioutil.ReadFile(args.topicDetailPath)
+		if err != nil {
+			failf("failed to read topic detail err=%v", err)
+		}
+
+		var detail sarama.TopicDetail
+		if err = json.Unmarshal(buf, &detail); err != nil {
+			failf("failed to unmarshal topic detail err=%v", err)
+		}
+		cmd.topicDetail = &detail
+	}
 }
 
 func (cmd *adminCmd) run(args []string) {
@@ -60,15 +87,22 @@ func (cmd *adminCmd) run(args []string) {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	if cmd.client, err = sarama.NewClient(cmd.brokers, cmd.saramaConfig()); err != nil {
-		failf("failed to create client err=%v", err)
+	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cmd.saramaConfig()); err != nil {
+		failf("failed to create cluster admin err=%v", err)
 	}
 
-	brokers := cmd.client.Brokers()
-	fmt.Fprintf(os.Stderr, "found %v brokers\n", len(brokers))
+	if cmd.createTopic != "" {
+		cmd.runCreateTopic()
+	} else {
+		failf("need to supply at least one sub-command of: createtopic")
+	}
+}
 
-	spew.Printf("hello there TODO\n")
-
+func (cmd *adminCmd) runCreateTopic() {
+	err := cmd.admin.CreateTopic(cmd.createTopic, cmd.topicDetail, cmd.validateOnly)
+	if err != nil {
+		failf("failed to create topic err=%v", err)
+	}
 }
 
 func (cmd *adminCmd) saramaConfig() *sarama.Config {
@@ -94,13 +128,19 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 
+	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
+	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")
+	flags.BoolVar(&args.validateOnly, "validateonly", false, "Flag to indicate whether operation should only validate input (supported for createtopic).")
+
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of admin:")
 		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, consumeDocString)
+		fmt.Fprintln(os.Stderr, adminDocString)
 		os.Exit(2)
 	}
 
 	flags.Parse(as)
 	return args
 }
+
+var adminDocString = `TODO`
