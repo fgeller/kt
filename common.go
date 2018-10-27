@@ -14,9 +14,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"golang.org/x/crypto/ssh/terminal"
-
 	"github.com/Shopify/sarama"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
@@ -33,7 +32,7 @@ func listenForInterrupt(q chan struct{}) {
 
 func kafkaVersion(s string) sarama.KafkaVersion {
 	if s == "" {
-		return sarama.V0_10_0_0
+		return sarama.V2_0_0_0
 	}
 
 	v, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
