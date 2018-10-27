@@ -167,26 +167,29 @@ func randomString(length int) string {
 	return fmt.Sprintf("%x", buf)[:length]
 }
 
-// certSetup takes the paths to a tls certificate, CA, and certificate key in
+// setupCerts takes the paths to a tls certificate, CA, and certificate key in
 // a PEM format and returns a constructed tls.Config object.
-func certSetup(tlsCert, tlsCA, tlsCertKey string) (*tls.Config, error) {
-	caCert, err := ioutil.ReadFile(tlsCA)
+func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
+	caString, err := ioutil.ReadFile(caPath)
 	if err != nil {
 		return nil, err
 	}
 
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caString)
+	if !ok {
+		failf("unable to add ca at %s to certificate pool", caPath)
+	}
 
-	clientCertificate, err := tls.LoadX509KeyPair(tlsCert, tlsCertKey)
+	clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return nil, err
 	}
 
-	certBundle := &tls.Config{
-		RootCAs:      caCertPool,
-		Certificates: []tls.Certificate{clientCertificate},
+	bundle := &tls.Config{
+		RootCAs:      caPool,
+		Certificates: []tls.Certificate{clientCert},
 	}
-	certBundle.BuildNameToCertificate()
-	return certBundle, nil
+	bundle.BuildNameToCertificate()
+	return bundle, nil
 }

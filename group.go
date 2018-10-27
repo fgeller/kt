@@ -329,12 +329,14 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	// AFAIK kafka authentication only works when the ca, cert and certkey are
 	// presented.
 	if cmd.tlsCert != "" && cmd.tlsCA != "" && cmd.tlsCertKey != "" {
-		cfg.Net.TLS.Enable = true
-		tlsConfig, err := certSetup(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+		tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 		if err != nil {
-			failf("failed to setup certificates as consumer err=%v", err)
+			failf("failed to setup certificates as group err=%v", err)
 		}
-		cfg.Net.TLS.Config = tlsConfig
+		if tlsConfig != nil {
+			cfg.Net.TLS.Enable = true
+			cfg.Net.TLS.Config = tlsConfig
+		}
 	}
 
 	return cfg
