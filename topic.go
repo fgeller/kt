@@ -64,9 +64,9 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	)
 
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the tls certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the tls client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the tls client certificate key file")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
 	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
 	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
 	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")

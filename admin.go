@@ -142,9 +142,9 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the tls certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the tls client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the tls client certificate key file")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
 
 	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
 	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")
