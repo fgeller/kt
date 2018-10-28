@@ -14,9 +14,12 @@ import (
 )
 
 type adminCmd struct {
-	brokers []string
-	verbose bool
-	version sarama.KafkaVersion
+	brokers    []string
+	verbose    bool
+	version    sarama.KafkaVersion
+	tlsCA      string
+	tlsCert    string
+	tlsCertKey string
 
 	createTopic  string
 	topicDetail  *sarama.TopicDetail
@@ -26,18 +29,18 @@ type adminCmd struct {
 }
 
 type adminArgs struct {
-	brokers string
-	verbose bool
-	version string
+	brokers    string
+	verbose    bool
+	version    string
+	tlsCA      string
+	tlsCert    string
+	tlsCertKey string
 
 	createTopic     string
 	topicDetailPath string
 	validateOnly    bool
 }
 
-// TODO tls
-// TODO read detail from stdin?
-// kt admin -createtopic name -topicdetail path -validateonly false
 func (cmd *adminCmd) parseArgs(as []string) {
 	var (
 		args = cmd.parseFlags(as)
@@ -45,6 +48,9 @@ func (cmd *adminCmd) parseArgs(as []string) {
 
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
+	cmd.tlsCA = args.tlsCA
+	cmd.tlsCert = args.tlsCert
+	cmd.tlsCertKey = args.tlsCertKey
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {
@@ -118,6 +124,15 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 	}
 	cfg.ClientID = "kt-admin-" + sanitizeUsername(usr.Username)
 
+	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	if err != nil {
+		failf("failed to setup certificates err=%v", err)
+	}
+	if tlsConfig != nil {
+		cfg.Net.TLS.Enable = true
+		cfg.Net.TLS.Config = tlsConfig
+	}
+
 	return cfg
 }
 
@@ -127,6 +142,9 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the tls certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the tls client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the tls client certificate key file")
 
 	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
 	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")
