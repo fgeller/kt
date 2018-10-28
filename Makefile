@@ -18,7 +18,7 @@ release-darwin:
 
 release: test clean release-linux release-darwin
 
-test:
+test: clean
 	go test -v
 
 clean:
