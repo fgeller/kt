@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +37,11 @@ func (c *cmd) run(name string, args ...string) (int, string, string) {
 
 	_ = cmd.Run()
 	status := cmd.ProcessState.Sys().(syscall.WaitStatus)
-	return status.ExitStatus(), stdOut.String(), stdErr.String()
+
+	strOut := stdOut.String()
+	strErr := stdErr.String()
+
+	return status.ExitStatus(), strOut, strErr
 
 }
 
@@ -57,6 +63,28 @@ func TestSystem(t *testing.T) {
 	var stdOut, stdErr string
 
 	//
+	// kt admin -createtopic
+	//
+	topicName := fmt.Sprintf("kt-test-%v", randomString(6))
+	topicDetail := &sarama.TopicDetail{
+		NumPartitions:     1,
+		ReplicationFactor: 1,
+	}
+	buf, err := json.Marshal(topicDetail)
+	require.NoError(t, err)
+	fnTopicDetail := fmt.Sprintf("topic-detail-%v.json", randomString(6))
+	err = ioutil.WriteFile(fnTopicDetail, buf, 0666)
+	require.NoError(t, err)
+	defer os.RemoveAll(fnTopicDetail)
+
+	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "admin", "-createtopic", topicName, "-topicdetail", fnTopicDetail)
+	fmt.Printf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
+	require.Zero(t, status)
+	require.Empty(t, stdErr)
+
+	fmt.Printf(">> ✓\n")
+	//
 	// kt produce
 	//
 
@@ -65,11 +93,11 @@ func TestSystem(t *testing.T) {
 		"key":       "boom",
 		"partition": float64(0),
 	}
-	buf, err := json.Marshal(req)
+	buf, err = json.Marshal(req)
 	require.NoError(t, err)
-	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "produce", "-topic", "kt-test")
-	fmt.Printf(">> system test kt produce stdout:\n%s\n", stdOut)
-	fmt.Printf(">> system test kt produce stderr:\n%s\n", stdErr)
+	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "produce", "-topic", topicName)
+	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
@@ -78,13 +106,16 @@ func TestSystem(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, produceMessage["count"])
 	require.Equal(t, 0, produceMessage["partition"])
-	// ignoring startOffset
+	require.Equal(t, 0, produceMessage["startOffset"])
 
+	fmt.Printf(">> ✓\n")
 	//
 	// kt consume
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", "kt-test", "-timeout", "500ms")
+	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", topicName, "-timeout", "500ms", "-group", "hans")
+	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines := strings.Split(stdOut, "\n")
@@ -97,20 +128,26 @@ func TestSystem(t *testing.T) {
 	require.Equal(t, req["key"], lastConsumed["key"])
 	require.Equal(t, req["partition"], lastConsumed["partition"])
 
+	fmt.Printf(">> ✓\n")
 	//
 	// kt group
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", "kt-test")
+	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName)
+	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
-	require.Contains(t, stdErr, "found partitions=[0] for topic=kt-test")
-	require.Empty(t, stdOut)
+	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
+	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, topicName))
 
+	fmt.Printf(">> ✓\n")
 	//
 	// kt group reset
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", "kt-test", "-partitions", "0", "-group", "hans", "-reset", "1")
+	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName, "-partitions", "0", "-group", "hans", "-reset", "0")
+	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines = strings.Split(stdOut, "\n")
@@ -121,17 +158,32 @@ func TestSystem(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, groupReset["name"], "hans")
-	require.Equal(t, groupReset["topic"], "kt-test")
+	require.Equal(t, groupReset["topic"], topicName)
 	require.Len(t, groupReset["offsets"], 1)
 	offsets := groupReset["offsets"].([]interface{})[0].(map[string]interface{})
 	require.Equal(t, offsets["partition"], float64(0))
-	require.Equal(t, offsets["offset"], float64(1))
+	require.Equal(t, offsets["offset"], float64(0))
 
+	fmt.Printf(">> ✓\n")
+	//
+	// kt group
+	//
+
+	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName)
+	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
+	require.Zero(t, status)
+	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
+	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":0,"lag":1}]}`, topicName))
+
+	fmt.Printf(">> ✓\n")
 	//
 	// kt topic
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "topic")
+	status, stdOut, stdErr = newCmd().run("./kt", "topic", "-filter", topicName)
+	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
+	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
@@ -139,8 +191,7 @@ func TestSystem(t *testing.T) {
 	require.True(t, len(lines) > 0)
 
 	expectedLines := []string{
-		`{"name": "kt-test"}`,
-		`{"name": "__consumer_offsets"}`,
+		fmt.Sprintf(`{"name": "%v"}`, topicName),
 	}
 	sort.Strings(lines)
 	sort.Strings(expectedLines)
