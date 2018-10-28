@@ -17,9 +17,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"golang.org/x/crypto/ssh/terminal"
-
 	"github.com/Shopify/sarama"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
@@ -154,6 +153,15 @@ func randomString(length int) string {
 // setupCerts takes the paths to a tls certificate, CA, and certificate key in
 // a PEM format and returns a constructed tls.Config object.
 func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
+	if certPath == "" && caPath == "" && keyPath == "" {
+		return nil, nil
+	}
+
+	if certPath == "" || caPath == "" || keyPath == "" {
+		err := fmt.Errorf("certificate, CA and key path are required - got cert=%#v ca=%#v key=%#v", certPath, caPath, keyPath)
+		return nil, err
+	}
+
 	caString, err := ioutil.ReadFile(caPath)
 	if err != nil {
 		return nil, err

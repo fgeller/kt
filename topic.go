@@ -139,17 +139,14 @@ func (cmd *topicCmd) connect() {
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
-	// AFAIK kafka authentication only works when the ca, cert and certkey are
-	// presented.
-	if cmd.tlsCert != "" && cmd.tlsCA != "" && cmd.tlsCertKey != "" {
-		tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
-		if err != nil {
-			failf("failed to setup certificates as topic viewer err=%v", err)
-		}
-		if tlsConfig != nil {
-			cfg.Net.TLS.Enable = true
-			cfg.Net.TLS.Config = tlsConfig
-		}
+
+	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	if err != nil {
+		failf("failed to setup certificates err=%v", err)
+	}
+	if tlsConfig != nil {
+		cfg.Net.TLS.Enable = true
+		cfg.Net.TLS.Config = tlsConfig
 	}
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
