@@ -130,6 +130,30 @@ func TestSystem(t *testing.T) {
 
 	fmt.Printf(">> ✓\n")
 	//
+	// kt group reset
+	//
+
+	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName, "-partitions", "0", "-group", "hans", "-reset", "1")
+	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 1 stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 1  stderr:\n%s\n", topicName, stdErr)
+	require.Zero(t, status)
+
+	lines = strings.Split(stdOut, "\n")
+	require.True(t, len(lines) > 1)
+
+	var groupReset map[string]interface{}
+	err = json.Unmarshal([]byte(lines[len(lines)-2]), &groupReset)
+	require.NoError(t, err)
+
+	require.Equal(t, groupReset["name"], "hans")
+	require.Equal(t, groupReset["topic"], topicName)
+	require.Len(t, groupReset["offsets"], 1)
+	offsets := groupReset["offsets"].([]interface{})[0].(map[string]interface{})
+	require.Equal(t, offsets["partition"], float64(0))
+	require.Equal(t, offsets["offset"], float64(1))
+
+	fmt.Printf(">> ✓\n")
+	//
 	// kt group
 	//
 
@@ -138,35 +162,9 @@ func TestSystem(t *testing.T) {
 	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
-	require.Empty(t, stdOut)
+	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, topicName))
 
 	fmt.Printf(">> ✓\n")
-
-	// TODO
-	//
-	// kt group reset
-	//
-
-	// status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName, "-partitions", "0", "-group", "hans", "-reset", "0")
-	// fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 1 stdout:\n%s\n", topicName, stdOut)
-	// fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 1  stderr:\n%s\n", topicName, stdErr)
-	// require.Zero(t, status)
-
-	// lines = strings.Split(stdOut, "\n")
-	// require.True(t, len(lines) > 1)
-
-	// var groupReset map[string]interface{}
-	// err = json.Unmarshal([]byte(lines[len(lines)-2]), &groupReset)
-	// require.NoError(t, err)
-
-	// require.Equal(t, groupReset["name"], "hans")
-	// require.Equal(t, groupReset["topic"], topicName)
-	// require.Len(t, groupReset["offsets"], 1)
-	// offsets := groupReset["offsets"].([]interface{})[0].(map[string]interface{})
-	// require.Equal(t, offsets["partition"], float64(0))
-	// require.Equal(t, offsets["offset"], float64(1))
-
-	// fmt.Printf(">> ✓\n")
 	//
 	// kt topic
 	//
