@@ -113,7 +113,7 @@ func TestSystem(t *testing.T) {
 	// kt consume
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", topicName, "-timeout", "500ms")
+	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", topicName, "-timeout", "500ms", "-group", "hans")
 	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -130,12 +130,24 @@ func TestSystem(t *testing.T) {
 
 	fmt.Printf(">> ✓\n")
 	//
+	// kt group
+	//
+
+	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName)
+	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
+	require.Zero(t, status)
+	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
+	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, topicName))
+
+	fmt.Printf(">> ✓\n")
+	//
 	// kt group reset
 	//
 
-	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName, "-partitions", "0", "-group", "hans", "-reset", "1")
-	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 1 stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 1  stderr:\n%s\n", topicName, stdErr)
+	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName, "-partitions", "0", "-group", "hans", "-reset", "0")
+	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines = strings.Split(stdOut, "\n")
@@ -150,7 +162,7 @@ func TestSystem(t *testing.T) {
 	require.Len(t, groupReset["offsets"], 1)
 	offsets := groupReset["offsets"].([]interface{})[0].(map[string]interface{})
 	require.Equal(t, offsets["partition"], float64(0))
-	require.Equal(t, offsets["offset"], float64(1))
+	require.Equal(t, offsets["offset"], float64(0))
 
 	fmt.Printf(">> ✓\n")
 	//
@@ -162,7 +174,7 @@ func TestSystem(t *testing.T) {
 	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
-	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, topicName))
+	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":0,"lag":1}]}`, topicName))
 
 	fmt.Printf(">> ✓\n")
 	//
