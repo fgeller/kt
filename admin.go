@@ -161,4 +161,7 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	return args
 }
 
-var adminDocString = `TODO`
+var adminDocString = `
+The value for -brokers can also be set via environment variables KT_BROKERS.
+The value supplied on the command line wins over the environment variable value.
+`
