@@ -3,15 +3,16 @@
 Some reasons why you might be interested:
 
 * Consume messages on specific partitions between specific offsets.
-* Display topic information (e.g., with partition offset and leader info)
-* Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition)
+* Display topic information (e.g., with partition offset and leader info).
+* Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers and topic via environment variables `KT_BROKERS` and `KT_TOPIC` for a shell session
+* Configure brokers and topic via environment variables `KT_BROKERS` and `KT_TOPIC` for a shell session.
 * Fast start up time.
 * No buffering of output.
-* Binary keys and payloads can be passed and presented in base64 or hex encoding
-* Support for tls authentication
+* Binary keys and payloads can be passed and presented in base64 or hex encoding.
+* Support for TLS authentication.
+* Basic cluster admin functions: Create & delete topics.
 
 [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
 
@@ -162,6 +163,16 @@ Change consumer group offset:
       ]
     }
 
+Create and delete a topic:
+
+    $ kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)                  
+    $ kt topic -filter news                                                                                         
+    {                                                                                                               
+      "name": "morenews"                                                                                            
+    }                                                                                                               
+    $ kt admin -deletetopic morenews                                                                                
+    $ kt topic -filter news
+
 Change broker address via environment variable:
 
     $ export KT_BROKERS=brokers.kafka:9092
@@ -196,6 +207,7 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
             produce        produce messages.
             topic          topic information.
             group          consumer group information and modification.
+            admin          basic cluster administration
 
     Use "kt [command] -help" for for information about the command.
 
