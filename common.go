@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -14,9 +17,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"golang.org/x/crypto/ssh/terminal"
-
 	"github.com/Shopify/sarama"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
@@ -32,32 +34,16 @@ func listenForInterrupt(q chan struct{}) {
 }
 
 func kafkaVersion(s string) sarama.KafkaVersion {
-	dflt := sarama.V0_10_0_0
-	switch s {
-	case "v0.8.2.0":
-		return sarama.V0_8_2_0
-	case "v0.8.2.1":
-		return sarama.V0_8_2_1
-	case "v0.8.2.2":
-		return sarama.V0_8_2_2
-	case "v0.9.0.0":
-		return sarama.V0_9_0_0
-	case "v0.9.0.1":
-		return sarama.V0_9_0_1
-	case "v0.10.0.0":
-		return sarama.V0_10_0_0
-	case "v0.10.0.1":
-		return sarama.V0_10_0_1
-	case "v0.10.1.0":
-		return sarama.V0_10_1_0
-	case "v0.10.2.0":
-		return sarama.V0_10_2_0
-	case "":
-		return dflt
+	if s == "" {
+		return sarama.V2_0_0_0
 	}
 
-	failf("unsupported kafka version %#v - supported: v0.8.2.0, v0.8.2.1, v0.8.2.2, v0.9.0.0, v0.9.0.1, v0.10.0.0, v0.10.0.1, v0.10.1.0, v0.10.2.0", s)
-	return dflt
+	v, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
+	if err != nil {
+		failf(err.Error())
+	}
+
+	return v
 }
 
 func logClose(name string, c io.Closer) {
@@ -162,4 +148,40 @@ func randomString(length int) string {
 	buf := make([]byte, length)
 	r.Read(buf)
 	return fmt.Sprintf("%x", buf)[:length]
+}
+
+// setupCerts takes the paths to a tls certificate, CA, and certificate key in
+// a PEM format and returns a constructed tls.Config object.
+func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
+	if certPath == "" && caPath == "" && keyPath == "" {
+		return nil, nil
+	}
+
+	if certPath == "" || caPath == "" || keyPath == "" {
+		err := fmt.Errorf("certificate, CA and key path are required - got cert=%#v ca=%#v key=%#v", certPath, caPath, keyPath)
+		return nil, err
+	}
+
+	caString, err := ioutil.ReadFile(caPath)
+	if err != nil {
+		return nil, err
+	}
+
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caString)
+	if !ok {
+		failf("unable to add ca at %s to certificate pool", caPath)
+	}
+
+	clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	bundle := &tls.Config{
+		RootCAs:      caPool,
+		Certificates: []tls.Certificate{clientCert},
+	}
+	bundle.BuildNameToCertificate()
+	return bundle, nil
 }

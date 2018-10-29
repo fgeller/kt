@@ -17,6 +17,9 @@ import (
 
 type groupCmd struct {
 	brokers      []string
+	tlsCA        string
+	tlsCert      string
+	tlsCertKey   string
 	group        string
 	filterGroups *regexp.Regexp
 	filterTopics *regexp.Regexp
@@ -126,7 +129,7 @@ func (cmd *groupCmd) run(args []string) {
 }
 
 func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string, parts []int32) {
-	target := group{Name: grp, Topic: top, Offsets: []groupOffset{}}
+	target := group{Name: grp, Topic: top, Offsets: make([]groupOffset, 0, len(parts))}
 	results := make(chan groupOffset)
 	done := make(chan struct{})
 
@@ -170,20 +173,15 @@ func (cmd *groupCmd) resolveOffset(top string, part int32, off int64) int64 {
 	return resolvedOff
 }
 
-func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part int32, results chan groupOffset) {
-	var (
-		err           error
-		offsetManager sarama.OffsetManager
-		shouldReset   = cmd.reset >= 0 || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
-	)
+func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part int32, results chan<- groupOffset) {
+	defer wg.Done()
 
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "fetching offset information for group=%v topic=%v partition=%v\n", grp, top, part)
 	}
 
-	defer wg.Done()
-
-	if offsetManager, err = sarama.NewOffsetManagerFromClient(grp, cmd.client); err != nil {
+	offsetManager, err := sarama.NewOffsetManagerFromClient(grp, cmd.client)
+	if err != nil {
 		failf("failed to create client err=%v", err)
 	}
 	defer logClose("offset manager", offsetManager)
@@ -194,18 +192,25 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	}
 	defer logClose("partition offset manager", pom)
 
+	specialOffset := cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
+
 	groupOff, _ := pom.NextOffset()
-	if shouldReset {
+	if cmd.reset >= 0 || specialOffset {
 		resolvedOff := cmd.reset
-		if resolvedOff == sarama.OffsetNewest || resolvedOff == sarama.OffsetOldest {
+		if specialOffset {
 			resolvedOff = cmd.resolveOffset(top, part, cmd.reset)
 		}
+		if resolvedOff > groupOff {
+			pom.MarkOffset(resolvedOff, "")
+		} else {
+			pom.ResetOffset(resolvedOff, "")
+		}
+
 		groupOff = resolvedOff
-		pom.MarkOffset(resolvedOff, "")
 	}
 
 	// we haven't reset it, and it wasn't set before - lag depends on client's config
-	if groupOff == sarama.OffsetNewest || groupOff == sarama.OffsetOldest {
+	if specialOffset {
 		results <- groupOffset{Partition: part}
 		return
 	}
@@ -324,6 +329,15 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	}
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
 
+	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	if err != nil {
+		failf("failed to setup certificates err=%v", err)
+	}
+	if tlsConfig != nil {
+		cfg.Net.TLS.Enable = true
+		cfg.Net.TLS.Config = tlsConfig
+	}
+
 	return cfg
 }
 
@@ -344,6 +358,9 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	}
 
 	cmd.topic = args.topic
+	cmd.tlsCA = args.tlsCA
+	cmd.tlsCert = args.tlsCert
+	cmd.tlsCertKey = args.tlsCertKey
 	cmd.group = args.group
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
@@ -417,6 +434,9 @@ func (cmd *groupCmd) parseArgs(as []string) {
 type groupArgs struct {
 	topic        string
 	brokers      string
+	tlsCA        string
+	tlsCert      string
+	tlsCertKey   string
 	partitions   string
 	group        string
 	filterGroups string
@@ -433,6 +453,9 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags := flag.NewFlagSet("group", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
 	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
 	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")

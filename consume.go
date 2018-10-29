@@ -20,6 +20,9 @@ import (
 type consumeCmd struct {
 	topic       string
 	brokers     []string
+	tlsCA       string
+	tlsCert     string
+	tlsCertKey  string
 	offsets     map[int32]interval
 	timeout     time.Duration
 	verbose     bool
@@ -27,9 +30,11 @@ type consumeCmd struct {
 	encodeValue string
 	encodeKey   string
 	pretty      bool
+	group       string
 
-	client   sarama.Client
-	consumer sarama.Consumer
+	client        sarama.Client
+	consumer      sarama.Consumer
+	offsetManager sarama.OffsetManager
 }
 
 type offset struct {
@@ -71,6 +76,9 @@ type interval struct {
 type consumeArgs struct {
 	topic       string
 	brokers     string
+	tlsCA       string
+	tlsCert     string
+	tlsCertKey  string
 	timeout     time.Duration
 	offsets     string
 	verbose     bool
@@ -78,6 +86,7 @@ type consumeArgs struct {
 	encodeValue string
 	encodeKey   string
 	pretty      bool
+	group       string
 }
 
 func parseOffset(str string) (offset, error) {
@@ -199,10 +208,14 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 		args.topic = envTopic
 	}
 	cmd.topic = args.topic
+	cmd.tlsCA = args.tlsCA
+	cmd.tlsCert = args.tlsCert
+	cmd.tlsCertKey = args.tlsCertKey
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.version = kafkaVersion(args.version)
+	cmd.group = args.group
 
 	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
 		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue))
@@ -242,6 +255,9 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags := flag.NewFlagSet("consume", flag.ExitOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
+	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
+	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
 	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
@@ -249,6 +265,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
+	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -275,6 +292,14 @@ func (cmd *consumeCmd) setupClient() {
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
+	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	if err != nil {
+		failf("failed to setup certificates err=%v", err)
+	}
+	if tlsConfig != nil {
+		cfg.Net.TLS.Enable = true
+		cfg.Net.TLS.Config = tlsConfig
+	}
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
@@ -291,6 +316,7 @@ func (cmd *consumeCmd) run(args []string) {
 	}
 
 	cmd.setupClient()
+	cmd.setupOffsetManager()
 
 	if cmd.consumer, err = sarama.NewConsumerFromClient(cmd.client); err != nil {
 		failf("failed to create consumer err=%v", err)
@@ -303,6 +329,17 @@ func (cmd *consumeCmd) run(args []string) {
 	}
 
 	cmd.consume(partitions)
+}
+
+func (cmd *consumeCmd) setupOffsetManager() {
+	if cmd.group == "" {
+		return
+	}
+
+	var err error
+	if cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client); err != nil {
+		failf("failed to create offsetmanager err=%v", err)
+	}
 }
 
 func (cmd *consumeCmd) consume(partitions []int32) {
@@ -397,8 +434,18 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 	var (
 		timer   *time.Timer
+		pom     sarama.PartitionOffsetManager
+		err     error
 		timeout = make(<-chan time.Time)
 	)
+
+	if cmd.group != "" {
+		pom, err = cmd.offsetManager.ManagePartition(cmd.topic, p)
+		if err != nil {
+			failf("failed to create partition offset manager err=%v", err)
+		}
+		defer pom.Close()
+	}
 
 	for {
 		if cmd.timeout > 0 {
@@ -426,6 +473,10 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			ctx := printContext{output: m, done: make(chan struct{})}
 			out <- ctx
 			<-ctx.done
+
+			if cmd.group != "" {
+				pom.MarkOffset(msg.Offset+1, "")
+			}
 
 			if end > 0 && msg.Offset >= end {
 				return
