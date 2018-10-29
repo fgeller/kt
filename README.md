@@ -1,4 +1,4 @@
-# kt - a Kafka tool that likes JSON.
+# kt - a Kafka tool that likes JSON [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
 
 Some reasons why you might be interested:
 
@@ -14,169 +14,196 @@ Some reasons why you might be interested:
 * Support for TLS authentication.
 * Basic cluster admin functions: Create & delete topics.
 
-[![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
-
 ## Examples
 
-Read details about topics that match the regex `output`
+<details><summary>Read details about topics that match a regex</summary>
 
-    $ kt topic -filter news -partitions
+```sh
+$ kt topic -filter news -partitions
+{
+  "name": "actor-news",
+  "partitions": [
     {
-      "name": "actor-news",
-      "partitions": [
-        {
-          "id": 0,
-          "oldest": 0,
-          "newest": 0
-        }
-      ]
+      "id": 0,
+      "oldest": 0,
+      "newest": 0
     }
+  ]
+}
+```
+</details>
 
-Produce messages:
+<details><summary>Produce messages</summary>
 
-    $ echo 'Alice wins Oscar' | kt produce -topic actor-news -literal
-    {
-      "count": 1,
-      "partition": 0,
-      "startOffset": 0
-    }
-    $ echo 'Bob wins Oscar' | kt produce -tlsca myca.pem -tlscert myclientcert.pem -tlscertkey mycertkey.pem -topic actor-news -literal
-    {
-      "count": 1,
-      "partition": 0,
-      "startOffset": 0
-    }
-    $ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic actor-news -literal ;done
-    {
-      "count": 1,
-      "partition": 0,
-      "startOffset": 1
-    }
-    {
-      "count": 1,
-      "partition": 0,
-      "startOffset": 2
-    }
-    {
-      "count": 1,
-      "partition": 0,
-      "startOffset": 3
-    }
-    {
-      "count": 1,
-      "partition": 0,
-      "startOffset": 4
-    }
+```sh
+$ echo 'Alice wins Oscar' | kt produce -topic actor-news -literal
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 0
+}
+$ echo 'Bob wins Oscar' | kt produce -tlsca myca.pem -tlscert myclientcert.pem -tlscertkey mycertkey.pem -topic actor-news -literal
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 0
+}
+$ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic actor-news -literal ;done
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 1
+}
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 2
+}
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 3
+}
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 4
+}
+```
+</details>
 
-Or pass in JSON object to control key, value and partition:
+<details><summary>Or pass in JSON object to control key, value and partition</summary>
 
-    $ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce -topic actor-news
+```sh
+$ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce -topic actor-news
+{
+  "count": 1,
+  "partition": 0,
+  "startOffset": 5
+}
+```
+</details>
+
+<details><summary>Read messages at specific offsets on specific partitions</summary>
+
+```sh
+$ kt consume -topic actor-news -offsets 0=1:2
+{
+  "partition": 0,
+  "offset": 1,
+  "key": "",
+  "value": "Bourne sequel 6 in production.",
+  "timestamp": "1970-01-01T00:59:59.999+01:00"
+}
+{
+  "partition": 0,
+  "offset": 2,
+  "key": "",
+  "value": "Bourne sequel 7 in production.",
+  "timestamp": "1970-01-01T00:59:59.999+01:00"
+}
+```
+</details>
+
+<details><summary>Follow a topic, starting relative to newest offset</summary>
+
+```sh
+$ kt consume -topic actor-news -offsets all=newest-1:
+{
+  "partition": 0,
+  "offset": 4,
+  "key": "",
+  "value": "Bourne sequel 9 in production.",
+  "timestamp": "1970-01-01T00:59:59.999+01:00"
+}
+{
+  "partition": 0,
+  "offset": 5,
+  "key": "Arni",
+  "value": "Terminator terminated",
+  "timestamp": "1970-01-01T00:59:59.999+01:00"
+}
+^Creceived interrupt - shutting down
+shutting down partition consumer for partition 0
+```
+</details>
+
+<details><summary>View offsets for a given consumer group</summary>
+
+```sh
+$ kt group -group enews -topic actor-news -partitions 0
+found 1 groups
+found 1 topics
+{
+  "name": "enews",
+  "topic": "actor-news",
+  "offsets": [
     {
-      "count": 1,
       "partition": 0,
-      "startOffset": 5
+      "offset": 6,
+      "lag": 0
     }
+  ]
+}
+```
+</details>
 
-Read messages at specific offsets on specific partitions:
+<details><summary>Change consumer group offset</summary>
 
-    $ kt consume -topic actor-news -offsets 0=1:2
+```sh
+$ kt group -group enews -topic actor-news -partitions 0 -reset 1
+found 1 groups
+found 1 topics
+{
+  "name": "enews",
+  "topic": "actor-news",
+  "offsets": [
     {
       "partition": 0,
       "offset": 1,
-      "key": "",
-      "value": "Bourne sequel 6 in production.",
-      "timestamp": "1970-01-01T00:59:59.999+01:00"
+      "lag": 5
     }
+  ]
+}
+$ kt group -group enews -topic actor-news -partitions 0
+found 1 groups
+found 1 topics
+{
+  "name": "enews",
+  "topic": "actor-news",
+  "offsets": [
     {
       "partition": 0,
-      "offset": 2,
-      "key": "",
-      "value": "Bourne sequel 7 in production.",
-      "timestamp": "1970-01-01T00:59:59.999+01:00"
+      "offset": 1,
+      "lag": 5
     }
+  ]
+}
+```
+</details>
 
-Follow a topic, starting relative to newest offset:
+<details><summary>Create and delete a topic</summary>
 
-    $ kt consume -topic actor-news -offsets all=newest-1:
-    {
-      "partition": 0,
-      "offset": 4,
-      "key": "",
-      "value": "Bourne sequel 9 in production.",
-      "timestamp": "1970-01-01T00:59:59.999+01:00"
-    }
-    {
-      "partition": 0,
-      "offset": 5,
-      "key": "Arni",
-      "value": "Terminator terminated",
-      "timestamp": "1970-01-01T00:59:59.999+01:00"
-    }
-    ^Creceived interrupt - shutting down
-    shutting down partition consumer for partition 0
+```sh
+$ kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)
+$ kt topic -filter news
+{
+  "name": "morenews"
+}
+$ kt admin -deletetopic morenews
+$ kt topic -filter news
+```
 
-View offsets for a given consumer group:
+</details>
 
-    $ kt group -group enews -topic actor-news -partitions 0
-    found 1 groups
-    found 1 topics
-    {
-      "name": "enews",
-      "topic": "actor-news",
-      "offsets": [
-        {
-          "partition": 0,
-          "offset": 6,
-          "lag": 0
-        }
-      ]
-    }
+<details><summary>Change broker address via environment variable</summary>
 
-Change consumer group offset:
+```sh
+$ export KT_BROKERS=brokers.kafka:9092
+$ kt <command> <option>
+```
 
-    $ kt group -group enews -topic actor-news -partitions 0 -reset 1
-    found 1 groups
-    found 1 topics
-    {
-      "name": "enews",
-      "topic": "actor-news",
-      "offsets": [
-        {
-          "partition": 0,
-          "offset": 1,
-          "lag": 5
-        }
-      ]
-    }
-    $ kt group -group enews -topic actor-news -partitions 0
-    found 1 groups
-    found 1 topics
-    {
-      "name": "enews",
-      "topic": "actor-news",
-      "offsets": [
-        {
-          "partition": 0,
-          "offset": 1,
-          "lag": 5
-        }
-      ]
-    }
-
-Create and delete a topic:
-
-    $ kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)                  
-    $ kt topic -filter news                                                                                         
-    {                                                                                                               
-      "name": "morenews"                                                                                            
-    }                                                                                                               
-    $ kt admin -deletetopic morenews                                                                                
-    $ kt topic -filter news
-
-Change broker address via environment variable:
-
-    $ export KT_BROKERS=brokers.kafka:9092
-    $ kt <command> <option>
+</details>
 
 ## Installation
 
@@ -210,4 +237,3 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
             admin          basic cluster administration.
 
     Use "kt [command] -help" for for information about the command.
-
