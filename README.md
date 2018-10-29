@@ -213,6 +213,11 @@ Alternatively, the usual way via the go tool, for example:
 
     $ go get -u github.com/fgeller/kt
 
+Or via Homebrew on OSX:
+
+    $ brew tap fgeller/tap
+    $ brew install kt
+
 ### Docker
 
 [@Paxa](https://github.com/Paxa) maintains an image to run kt in a Docker environment - thanks!
