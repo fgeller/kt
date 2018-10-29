@@ -24,6 +24,7 @@ type adminCmd struct {
 	createTopic  string
 	topicDetail  *sarama.TopicDetail
 	validateOnly bool
+	deleteTopic  string
 
 	admin sarama.ClusterAdmin
 }
@@ -39,6 +40,7 @@ type adminArgs struct {
 	createTopic     string
 	topicDetailPath string
 	validateOnly    bool
+	deleteTopic     string
 }
 
 func (cmd *adminCmd) parseArgs(as []string) {
@@ -69,6 +71,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 
 	cmd.validateOnly = args.validateOnly
 	cmd.createTopic = args.createTopic
+	cmd.deleteTopic = args.deleteTopic
 
 	if cmd.createTopic != "" {
 		buf, err := ioutil.ReadFile(args.topicDetailPath)
@@ -99,8 +102,11 @@ func (cmd *adminCmd) run(args []string) {
 
 	if cmd.createTopic != "" {
 		cmd.runCreateTopic()
+
+	} else if cmd.deleteTopic != "" {
+		cmd.runDeleteTopic()
 	} else {
-		failf("need to supply at least one sub-command of: createtopic")
+		failf("need to supply at least one sub-command of: createtopic, deletetopic")
 	}
 }
 
@@ -108,6 +114,13 @@ func (cmd *adminCmd) runCreateTopic() {
 	err := cmd.admin.CreateTopic(cmd.createTopic, cmd.topicDetail, cmd.validateOnly)
 	if err != nil {
 		failf("failed to create topic err=%v", err)
+	}
+}
+
+func (cmd *adminCmd) runDeleteTopic() {
+	err := cmd.admin.DeleteTopic(cmd.deleteTopic)
+	if err != nil {
+		failf("failed to delete topic err=%v", err)
 	}
 }
 
@@ -149,6 +162,8 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
 	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")
 	flags.BoolVar(&args.validateOnly, "validateonly", false, "Flag to indicate whether operation should only validate input (supported for createtopic).")
+
+	flags.StringVar(&args.deleteTopic, "deletetopic", "", "Name of the topic that should be deleted.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of admin:")

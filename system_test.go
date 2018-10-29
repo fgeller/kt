@@ -202,4 +202,29 @@ func TestSystem(t *testing.T) {
 		}
 		require.JSONEq(t, expectedLines[i-1], l, fmt.Sprintf("line %d", i-1))
 	}
+	fmt.Printf(">> ✓\n")
+
+	//
+	// kt admin -deletetopic
+	//
+	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "admin", "-deletetopic", topicName)
+	fmt.Printf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
+	require.Zero(t, status)
+	require.Empty(t, stdErr)
+
+	fmt.Printf(">> ✓\n")
+
+	//
+	// kt topic
+	//
+
+	status, stdOut, stdErr = newCmd().run("./kt", "topic", "-filter", topicName)
+	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
+	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
+	require.Zero(t, status)
+	require.Empty(t, stdErr)
+	require.Empty(t, stdOut)
+
+	fmt.Printf(">> ✓\n")
 }
