@@ -179,4 +179,12 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 var adminDocString = `
 The value for -brokers can also be set via environment variables KT_BROKERS.
 The value supplied on the command line wins over the environment variable value.
-`
+
+If both -createtopic and deletetopic are supplied, -createtopic wins.
+
+The topic details should be passed via a JSON file that represents a sarama.TopicDetail struct.
+cf https://godoc.org/github.com/Shopify/sarama#TopicDetail
+
+A simple way to pass a JSON file is to use a tool like https://github.com/fgeller/jsonify and shell's process substition:
+
+kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)`
