@@ -207,7 +207,7 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
             produce        produce messages.
             topic          topic information.
             group          consumer group information and modification.
-            admin          basic cluster administration
+            admin          basic cluster administration.
 
     Use "kt [command] -help" for for information about the command.
 

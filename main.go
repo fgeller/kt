@@ -30,8 +30,8 @@ The commands are:
 	consume    consume messages.
 	produce    produce messages.
 	topic      topic information.
-	group      consumer group information and modification
-	admin      basic cluster administration
+	group      consumer group information and modification.
+	admin      basic cluster administration.
 
 Use "kt [command] -help" for for information about the command.
 
