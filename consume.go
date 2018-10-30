@@ -280,7 +280,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
-	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets.")
+	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets. kt will mark offsets if this arg is supplied.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -569,10 +569,12 @@ The default is to consume from the oldest offset on every partition for the give
 
 The following syntax is supported for each offset:
 
-  (oldest|newest)?(+|-)?(\d+)?
+  (oldest|newest|resume)?(+|-)?(\d+)?
 
  - "oldest" and "newest" refer to the oldest and newest offsets known for a
    given partition.
+
+ - "resume" can be used in combination with -group.
 
  - You can use "+" with a numeric value to skip the given number of messages
    since the oldest offset. For example, "1=+20" will skip 20 offset value since
