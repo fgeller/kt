@@ -43,7 +43,7 @@ type message struct {
 
 func (cmd *produceCmd) read(as []string) produceArgs {
 	var args produceArgs
-	flags := flag.NewFlagSet("produce", flag.ExitOnError)
+	flags := flag.NewFlagSet("produce", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
 	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
@@ -66,12 +66,13 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 		fmt.Fprintln(os.Stderr, "Usage of produce:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, produceDocString)
-		os.Exit(2)
 	}
 
-	if err := flags.Parse(as); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to parse arguments err=%#v", err)
-		flags.Usage()
+	err := flags.Parse(as)
+	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
+		os.Exit(0)
+	} else if err != nil {
+		os.Exit(2)
 	}
 
 	return args

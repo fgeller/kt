@@ -151,7 +151,7 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 
 func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	var args adminArgs
-	flags := flag.NewFlagSet("consume", flag.ExitOnError)
+	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
@@ -169,10 +169,15 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 		fmt.Fprintln(os.Stderr, "Usage of admin:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, adminDocString)
+	}
+
+	err := flags.Parse(as)
+	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
+		os.Exit(0)
+	} else if err != nil {
 		os.Exit(2)
 	}
 
-	flags.Parse(as)
 	return args
 }
 

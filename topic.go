@@ -60,7 +60,7 @@ type partition struct {
 func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	var (
 		args  topicArgs
-		flags = flag.NewFlagSet("topic", flag.ExitOnError)
+		flags = flag.NewFlagSet("topic", flag.ContinueOnError)
 	)
 
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
@@ -78,10 +78,15 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, topicDocString)
+	}
+
+	err := flags.Parse(as)
+	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
+		os.Exit(0)
+	} else if err != nil {
 		os.Exit(2)
 	}
 
-	flags.Parse(as)
 	return args
 }
 

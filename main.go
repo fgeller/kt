@@ -53,10 +53,12 @@ func parseArgs() command {
 		return &groupCmd{}
 	case "admin":
 		return &adminCmd{}
+	case "-h", "-help", "--help":
+		quitf(usageMessage)
 	default:
 		failf(usageMessage)
-		return nil
 	}
+	return nil
 }
 
 func main() {

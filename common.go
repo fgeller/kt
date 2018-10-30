@@ -79,9 +79,21 @@ func print(in <-chan printContext, pretty bool) {
 	}
 }
 
+func quitf(msg string, args ...interface{}) {
+	exitf(0, msg, args...)
+}
+
 func failf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, msg+"\n", args...)
-	os.Exit(1)
+	exitf(1, msg, args...)
+}
+
+func exitf(code int, msg string, args ...interface{}) {
+	if code == 0 {
+		fmt.Fprintf(os.Stdout, msg+"\n", args...)
+	} else {
+		fmt.Fprintf(os.Stderr, msg+"\n", args...)
+	}
+	os.Exit(code)
 }
 
 func readStdinLines(max int, out chan string) {

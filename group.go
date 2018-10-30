@@ -450,7 +450,7 @@ type groupArgs struct {
 
 func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	var args groupArgs
-	flags := flag.NewFlagSet("group", flag.ExitOnError)
+	flags := flag.NewFlagSet("group", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
@@ -470,10 +470,15 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 		fmt.Fprintln(os.Stderr, "Usage of group:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, groupDocString)
+	}
+
+	err := flags.Parse(as)
+	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
+		os.Exit(0)
+	} else if err != nil {
 		os.Exit(2)
 	}
 
-	_ = flags.Parse(as)
 	return args
 }
 

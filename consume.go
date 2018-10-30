@@ -267,7 +267,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 
 func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	var args consumeArgs
-	flags := flag.NewFlagSet("consume", flag.ExitOnError)
+	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
@@ -286,10 +286,15 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, consumeDocString)
+	}
+
+	err := flags.Parse(as)
+	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
+		os.Exit(0)
+	} else if err != nil {
 		os.Exit(2)
 	}
 
-	flags.Parse(as)
 	return args
 }
 
