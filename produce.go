@@ -513,6 +513,9 @@ The values supplied on the command line win over environment variable values.
 
 Input is read from stdin and separated by newlines.
 
+If you want to use the -partitioner keep in mind that the hashCode
+implementation is not the default for Kafka's producer anymore.
+
 To specify the key, value and partition individually pass it as a JSON object
 like the following:
 
