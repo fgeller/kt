@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"strings"
+	"time"
 
 	"github.com/Shopify/sarama"
 )
@@ -17,6 +18,7 @@ type adminCmd struct {
 	brokers    []string
 	verbose    bool
 	version    sarama.KafkaVersion
+	timeout    *time.Duration
 	tlsCA      string
 	tlsCert    string
 	tlsCertKey string
@@ -33,6 +35,7 @@ type adminArgs struct {
 	brokers    string
 	verbose    bool
 	version    string
+	timeout    string
 	tlsCA      string
 	tlsCert    string
 	tlsCertKey string
@@ -50,6 +53,12 @@ func (cmd *adminCmd) parseArgs(as []string) {
 
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
+
+	cmd.timeout = parseTimeout(os.Getenv("KT_ADMIN_TIMEOUT"))
+	if args.timeout != "" {
+		cmd.timeout = parseTimeout(args.timeout)
+	}
+
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
 	cmd.tlsCertKey = args.tlsCertKey
@@ -137,6 +146,10 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 	}
 	cfg.ClientID = "kt-admin-" + sanitizeUsername(usr.Username)
 
+	if cmd.timeout != nil {
+		cfg.Admin.Timeout = *cmd.timeout
+	}
+
 	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 	if err != nil {
 		failf("failed to setup certificates err=%v", err)
@@ -155,6 +168,7 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.timeout, "timeout", "", "Timeout for request to Kafka (default: 3s)")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")

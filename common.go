@@ -46,6 +46,19 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 	return v
 }
 
+func parseTimeout(s string) *time.Duration {
+	if s == "" {
+		return nil
+	}
+
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		failf(err.Error())
+	}
+
+	return &v
+}
+
 func logClose(name string, c io.Closer) {
 	if err := c.Close(); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
