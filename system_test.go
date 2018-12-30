@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/require"
@@ -127,6 +128,10 @@ func TestSystem(t *testing.T) {
 	require.Equal(t, req["value"], lastConsumed["value"])
 	require.Equal(t, req["key"], lastConsumed["key"])
 	require.Equal(t, req["partition"], lastConsumed["partition"])
+	require.NotEmpty(t, lastConsumed["timestamp"])
+	pt, err := time.Parse(time.RFC3339, lastConsumed["timestamp"].(string))
+	require.NoError(t, err)
+	require.True(t, pt.After(time.Now().Add(-2*time.Minute)))
 
 	fmt.Printf(">> ✓\n")
 	//
@@ -182,6 +187,10 @@ func TestSystem(t *testing.T) {
 	require.Equal(t, req["value"], lastConsumed["value"])
 	require.Equal(t, req["key"], lastConsumed["key"])
 	require.Equal(t, req["partition"], lastConsumed["partition"])
+	require.NotEmpty(t, lastConsumed["timestamp"])
+	pt, err = time.Parse(time.RFC3339, lastConsumed["timestamp"].(string))
+	require.NoError(t, err)
+	require.True(t, pt.After(time.Now().Add(-2*time.Minute)))
 
 	fmt.Printf(">> ✓\n")
 	//

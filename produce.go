@@ -413,6 +413,11 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 		}
 	}
 
+	if cmd.version.IsAtLeast(sarama.V0_10_0_0) {
+		sm.Version = 1
+		sm.Timestamp = time.Now()
+	}
+
 	return sm, nil
 }
 
