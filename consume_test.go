@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParseOffsets(t *testing.T) {
@@ -22,8 +24,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -32,8 +34,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    ",",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -42,8 +44,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "all",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -52,8 +54,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "oldest",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -62,8 +64,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "resume",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: offsetResume},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: offsetResume},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -72,8 +74,8 @@ func TestParseOffsets(t *testing.T) {
 			input: "	all ",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -82,8 +84,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "all=+0:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -92,16 +94,16 @@ func TestParseOffsets(t *testing.T) {
 			input:    "1,2,4",
 			expected: map[int32]interval{
 				1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 				2: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 				4: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -110,8 +112,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -120,8 +122,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: false, start: 1},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: 1},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -130,8 +132,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=1:",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: false, start: 1},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: 1},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -140,16 +142,16 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=4:,2=1:10,6",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: false, start: 4},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: 4},
+					end:   position{startOffset: maxOffset},
 				},
 				2: interval{
-					start: offset{relative: false, start: 1},
-					end:   offset{relative: false, start: 10},
+					start: position{startOffset: 1},
+					end:   position{startOffset: 10},
 				},
 				6: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -158,8 +160,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=-1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetNewest, diff: -1},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetNewest, diffOffset: -1},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -168,8 +170,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=-1:",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetNewest, diff: -1},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetNewest, diffOffset: -1},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -178,8 +180,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=resume-10",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: offsetResume, diff: -10},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: offsetResume, diffOffset: -10},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -188,8 +190,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=+1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 1},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -198,8 +200,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=+1:",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{relative: false, start: 1<<63 - 1},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 1},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -208,8 +210,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=+1:-1",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -1},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 1},
+					end:   position{startOffset: sarama.OffsetNewest, diffOffset: -1},
 				},
 			},
 		},
@@ -218,12 +220,12 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=+1:-1,all=1:10",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
-					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -1},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 1},
+					end:   position{startOffset: sarama.OffsetNewest, diffOffset: -1},
 				},
 				-1: interval{
-					start: offset{relative: false, start: 1, diff: 0},
-					end:   offset{relative: false, start: 10, diff: 0},
+					start: position{startOffset: 1, diffOffset: 0},
+					end:   position{startOffset: 10, diffOffset: 0},
 				},
 			},
 		},
@@ -232,8 +234,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=oldest:newest",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
-					end:   offset{relative: true, start: sarama.OffsetNewest, diff: 0},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 0},
+					end:   position{startOffset: sarama.OffsetNewest, diffOffset: 0},
 				},
 			},
 		},
@@ -242,8 +244,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "0=oldest+10:newest-10",
 			expected: map[int32]interval{
 				0: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
-					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -10},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 10},
+					end:   position{startOffset: sarama.OffsetNewest, diffOffset: -10},
 				},
 			},
 		},
@@ -252,8 +254,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "newest",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetNewest, diffOffset: 0},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
 				},
 			},
 		},
@@ -262,8 +264,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "10",
 			expected: map[int32]interval{
 				10: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 0},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
 				},
 			},
 		},
@@ -272,8 +274,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "10:20",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{start: 10},
-					end:   offset{start: 20},
+					start: position{startOffset: 10},
+					end:   position{startOffset: 20},
 				},
 			},
 		},
@@ -282,8 +284,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{start: 10},
-					end:   offset{start: 1<<63 - 1},
+					start: position{startOffset: 10},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
@@ -292,8 +294,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "all=newest:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetNewest, diffOffset: 0},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
 				},
 			},
 		},
@@ -302,8 +304,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "newest-10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetNewest, diff: -10},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetNewest, diffOffset: -10},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
 				},
 			},
 		},
@@ -312,8 +314,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "oldest+10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 10},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
 				},
 			},
 		},
@@ -322,8 +324,8 @@ func TestParseOffsets(t *testing.T) {
 			input:    "-10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetNewest, diff: -10},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetNewest, diffOffset: -10},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
 				},
 			},
 		},
@@ -332,84 +334,317 @@ func TestParseOffsets(t *testing.T) {
 			input:    "+10:",
 			expected: map[int32]interval{
 				-1: interval{
-					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
-					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
+					start: position{startOffset: sarama.OffsetOldest, diffOffset: 10},
+					end:   position{startOffset: maxOffset, diffOffset: 0},
+				},
+			},
+		},
+		{
+			testName: "start-offset-combines-with-diff-offset",
+			input:    "1000+3",
+			expected: map[int32]interval{
+				-1: interval{
+					start: position{startOffset: 1003},
+					end:   position{startOffset: maxOffset},
 				},
 			},
 		},
 		{
 			testName:    "invalid-partition",
 			input:       "bogus",
-			expectedErr: `invalid offset "bogus"`,
+			expectedErr: `invalid anchor position "bogus"`,
 		},
 		{
 			testName:    "several-colons",
 			input:       ":::",
-			expectedErr: `invalid offset "::"`,
+			expectedErr: `invalid position ":::"`,
 		},
 		{
 			testName:    "bad-relative-offset-start",
 			input:       "foo+20",
-			expectedErr: `invalid offset "foo+20"`,
+			expectedErr: `invalid anchor position "foo"`,
 		},
 		{
 			testName:    "bad-relative-offset-diff",
 			input:       "oldest+bad",
-			expectedErr: `invalid offset "oldest+bad"`,
+			expectedErr: `invalid relative position "\+bad"`,
 		},
 		{
 			testName:    "bad-relative-offset-diff-at-start",
 			input:       "+bad",
-			expectedErr: `invalid offset "+bad"`,
+			expectedErr: `invalid relative position "\+bad"`,
 		},
 		{
 			testName:    "relative-offset-too-big",
 			input:       "+9223372036854775808",
-			expectedErr: `offset "+9223372036854775808" is too large`,
+			expectedErr: `offset "\+9223372036854775808" is too large`,
 		},
 		{
 			testName:    "starting-offset-too-big",
 			input:       "9223372036854775808:newest",
-			expectedErr: `offset "9223372036854775808" is too large`,
+			expectedErr: `anchor offset "9223372036854775808" is too large`,
 		},
 		{
 			testName:    "ending-offset-too-big",
 			input:       "oldest:9223372036854775808",
-			expectedErr: `offset "9223372036854775808" is too large`,
+			expectedErr: `anchor offset "9223372036854775808" is too large`,
 		},
 		{
 			testName:    "partition-too-big",
 			input:       "2147483648=oldest",
 			expectedErr: `partition number "2147483648" is too large`,
 		},
+		{
+			testName: "time-anchor-rfc3339",
+			input:    "[2019-08-31T13:06:08.234Z]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2019-08-31T13:06:08.234Z"),
+							t1: T("2019-08-31T13:06:08.234Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-rfc3339-not-utc",
+			input:    "[2019-08-31T13:06:08.234-04:00]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2019-08-31T17:06:08.234Z"),
+							t1: T("2019-08-31T17:06:08.234Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-date",
+			input:    "[2019-08-31]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2019-08-31T00:00:00Z"),
+							t1: T("2019-09-01T00:00:00Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-month",
+			input:    "[2019-08]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2019-08-01T00:00:00Z"),
+							t1: T("2019-09-01T00:00:00Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-year",
+			input:    "[2019]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2019-01-01T00:00:00Z"),
+							t1: T("2020-01-01T00:00:00Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-minute",
+			input:    "[13:45]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2011-02-03T13:45:00Z"),
+							t1: T("2011-02-03T13:46:00Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-second",
+			input:    "[13:45:12.345]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2011-02-03T13:45:12.345Z"),
+							t1: T("2011-02-03T13:45:12.345Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-hour",
+			input:    "[4pm]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2011-02-03T16:00:00Z"),
+							t1: T("2011-02-03T17:00:00Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-range",
+			input:    "[2019-08-31T13:06:08.234Z]:[2023-02-05T12:01:02.6789Z]",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2019-08-31T13:06:08.234Z"),
+							t1: T("2019-08-31T13:06:08.234Z"),
+						},
+					},
+					end: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2023-02-05T12:01:02.6789Z"),
+							t1: T("2023-02-05T12:01:02.6789Z"),
+						},
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-with-diff-offset",
+			input:    "[4pm]-123",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2011-02-03T16:00:00Z"),
+							t1: T("2011-02-03T17:00:00Z"),
+						},
+						diffOffset: -123,
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "offset-anchor-with-negative-time-rel",
+			input:    "1234-1h3s",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startOffset: 1234,
+						diffIsTime:  true,
+						diffTime:    -(time.Hour + 3*time.Second),
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "offset-anchor-with-positive-time-rel",
+			input:    "1234+555ms",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startOffset: 1234,
+						diffIsTime:  true,
+						diffTime:    555 * time.Millisecond,
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		{
+			testName: "time-anchor-combines-with-time-rel",
+			input:    "[3pm]+5s",
+			expected: map[int32]interval{
+				-1: {
+					start: position{
+						startIsTime: true,
+						startTime: timeRange{
+							t0: T("2011-02-03T15:00:05Z"),
+							t1: T("2011-02-03T16:00:05Z"),
+						},
+					},
+					end: position{
+						startOffset: maxOffset,
+					},
+				},
+			},
+		},
+		// TODO error cases
+		// TODO local time resolution
 	}
-
+	c := qt.New(t)
+	// Choose a reference date that's not UTC, so we can ensure
+	// that the timezone-dependent logic works correctly.
+	now := T("2011-02-03T16:05:06.500Z").In(time.FixedZone("UTC-8", -8*60*60))
 	for _, d := range data {
-		t.Run(d.testName, func(t *testing.T) {
-			actual, err := parseOffsets(d.input)
+		c.Run(d.testName, func(c *qt.C) {
+			actual, err := parseOffsets(d.input, now)
 			if d.expectedErr != "" {
-				if err == nil {
-					t.Fatalf("got no error; want error %q", d.expectedErr)
-				}
-				if got, want := err.Error(), d.expectedErr; got != want {
-					t.Fatalf("got unexpected error %q want %q", got, want)
-				}
+				c.Assert(err, qt.ErrorMatches, d.expectedErr)
 				return
 			}
-			if !reflect.DeepEqual(actual, d.expected) {
-				t.Errorf(
-					`
-Expected: %+v, err=%v
-Actual:   %+v, err=%v
-Input:    %v
-	`,
-					d.expected,
-					d.expectedErr,
-					actual,
-					err,
-					d.input,
-				)
-			}
+			c.Assert(err, qt.Equals, nil)
+			c.Assert(actual, deepEquals, d.expected)
 		})
 	}
 }
@@ -424,7 +659,10 @@ func TestFindPartitionsToConsume(t *testing.T) {
 		{
 			topic: "a",
 			offsets: map[int32]interval{
-				10: {offset{false, 2, 0}, offset{false, 4, 0}},
+				10: {
+					start: position{startOffset: 2},
+					end:   position{startOffset: 4},
+				},
 			},
 			consumer: tConsumer{
 				topics:              []string{"a"},
@@ -440,7 +678,10 @@ func TestFindPartitionsToConsume(t *testing.T) {
 		{
 			topic: "a",
 			offsets: map[int32]interval{
-				-1: {offset{false, 3, 0}, offset{false, 41, 0}},
+				-1: {
+					start: position{startOffset: 3},
+					end:   position{startOffset: 41},
+				},
 			},
 			consumer: tConsumer{
 				topics:              []string{"a"},
@@ -496,7 +737,7 @@ func TestConsume(t *testing.T) {
 	target.topic = "hans"
 	target.brokers = []string{"localhost:9092"}
 	target.offsets = map[int32]interval{
-		-1: interval{start: offset{false, 1, 0}, end: offset{false, 5, 0}},
+		-1: interval{start: position{startOffset: 1}, end: position{startOffset: 5}},
 	}
 
 	go target.consume(partitions)
@@ -656,3 +897,15 @@ func TestConsumeParseArgs(t *testing.T) {
 		return
 	}
 }
+
+func T(s string) time.Time {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+// deepEquals allows comparison of the unexported fields inside the
+// value returned by parseOffsets.
+var deepEquals = qt.CmpEquals(cmp.AllowUnexported(position{}, interval{}, timeRange{}))
