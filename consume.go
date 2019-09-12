@@ -44,31 +44,76 @@ const (
 	offsetResume int64 = -3
 )
 
-// position represents an position within the Kafka stream.
-type position struct {
-	// startIsTime specifies which start field is valid.
-	// If it's true, the position is specified as a time range
-	// in startTime; otherwise it's specified as
-	// an offset in startOffset.
-	startIsTime bool
+type positionRange struct {
+	startAnchor, endAnchor anchor
+	diff                   anchorDiff
+}
 
-	// startOffset holds the starting offset of the position.
+func (r positionRange) start() position {
+	return position{
+		anchor: r.startAnchor,
+		diff:   r.diff,
+	}
+}
+
+func (r positionRange) end() position {
+	return position{
+		anchor: r.endAnchor,
+		diff:   r.diff,
+	}
+}
+
+// position represents a position within the Kafka stream.
+// It holds an anchor (an absolute position specified as a
+// time stamp or an offset) and a relative position with
+// respect to that (specified as an offset delta or a time duration).
+type position struct {
+	anchor anchor
+	diff   anchorDiff
+}
+
+// anchor represents an absolute offset in the position stream.
+type anchor struct {
+	// isTime specifies which anchor field is valid.
+	// If it's true, the anchor is specified as a time
+	// in time; otherwise it's specified as
+	// an offset in offset.
+	isTime bool
+
+	// offset holds the anchor as an absolute offset.
 	// It can be one of sarama.OffsetOldest, sarama.OffsetNewest
 	// or offsetResume to signify a relative starting position.
-	// This field is only significant when startIsTime is false.
-	startOffset int64
+	// This field is only significant when isTime is false.
+	offset int64
 
-	// startTime holds the starting time of the position.
-	// This field is only significant when startIsTime is true.
-	startTime timeRange
+	// time holds the anchor as a time.
+	// This field is only significant when isTime is true.
+	time time.Time
+}
 
+func (a0 anchor) eq(a1 anchor) bool {
+	if a0.isTime != a1.isTime {
+		return false
+	}
+	if a0.isTime {
+		return a0.time.Equal(a1.time)
+	}
+	return a0.offset == a1.offset
+}
+
+// anchorDiff represents an offset from an anchor position.
+type anchorDiff struct {
 	// diffIsTime specifies which diff field is valid.
-	// If it's true, the difference is specified as an duration
-	// in the diffTime field; otherwise it's specified as
-	// an offset in diffOffset.
-	diffIsTime bool
-	diffOffset int64
-	diffTime   time.Duration
+	// If it's true, the difference is specified as a duration
+	// in the duration field; otherwise it's specified as
+	// an offset in offset.
+	isDuration bool
+
+	// offset holds the difference as an offset delta.
+	offset int64
+
+	// time holds the difference as a duration.
+	duration time.Duration
 }
 
 // timeRange holds a time range.
@@ -93,17 +138,17 @@ type interval struct {
 }
 
 func (cmd *consumeCmd) resolveOffset(p position, partition int32) (int64, error) {
-	if p.startIsTime || p.diffIsTime {
+	if p.anchor.isTime || p.diff.isDuration {
 		return 0, fmt.Errorf("time-based positions not yet supported")
 	}
 	var startOffset int64
-	switch p.startOffset {
+	switch p.anchor.offset {
 	case sarama.OffsetNewest, sarama.OffsetOldest:
-		off, err := cmd.client.GetOffset(cmd.topic, partition, p.startOffset)
+		off, err := cmd.client.GetOffset(cmd.topic, partition, p.anchor.offset)
 		if err != nil {
 			return 0, err
 		}
-		if p.startOffset == sarama.OffsetNewest {
+		if p.anchor.offset == sarama.OffsetNewest {
 			// TODO add comment explaining this.
 			off--
 		}
@@ -115,9 +160,9 @@ func (cmd *consumeCmd) resolveOffset(p position, partition int32) (int64, error)
 		pom := cmd.getPOM(partition)
 		startOffset, _ = pom.NextOffset()
 	default:
-		startOffset = p.startOffset
+		startOffset = p.anchor.offset
 	}
-	return startOffset + p.diffOffset, nil
+	return startOffset + p.diff.offset, nil
 }
 
 type consumeArgs struct {
@@ -273,22 +318,32 @@ func parseInterval(s string, now time.Time) (interval, error) {
 			end:   lastPosition(),
 		}, nil
 	}
-	startPos, end, err := parsePosition(s, oldestPosition(), now)
+	startPos, endStr, err := parsePosition(s, oldestAnchor(), now)
 	if err != nil {
 		return interval{}, err
 	}
-	if len(end) == 0 {
-		// A single position represents the range from there until the end.
+	if len(endStr) == 0 {
+		// The interval is represented by a single position.
+
+		if startPos.startAnchor.eq(startPos.endAnchor) {
+			// The position is precisely specified, so it represents
+			// the range from there until the end.
+			return interval{
+				start: startPos.start(),
+				end:   lastPosition(),
+			}, nil
+		}
+		// The position implied a range, so the interval holds that range.
 		return interval{
-			start: startPos,
-			end:   lastPosition(),
+			start: startPos.start(),
+			end:   startPos.end(),
 		}, nil
 	}
-	if end[0] != ':' {
+	if endStr[0] != ':' {
 		return interval{}, fmt.Errorf("invalid interval %q", s)
 	}
-	end = end[1:]
-	endPos, rest, err := parsePosition(end, lastPosition(), now)
+	endStr = endStr[1:]
+	endPos, rest, err := parsePosition(endStr, lastAnchor(), now)
 	if err != nil {
 		return interval{}, err
 	}
@@ -296,8 +351,8 @@ func parseInterval(s string, now time.Time) (interval, error) {
 		return interval{}, fmt.Errorf("invalid interval %q", s)
 	}
 	return interval{
-		start: startPos,
-		end:   endPos,
+		start: startPos.start(),
+		end:   endPos.end(),
 	}, nil
 }
 
@@ -315,7 +370,7 @@ func isLower(r rune) bool {
 // If s is empty, the given default position will be used.
 // Note that a position is always terminated by a colon (the
 // interval position divider) or the end of the string.
-func parsePosition(s string, defaultPos position, now time.Time) (position, string, error) {
+func parsePosition(s string, defaultAnchor anchor, now time.Time) (positionRange, string, error) {
 	var anchorStr string
 	switch {
 	case s == "":
@@ -324,7 +379,7 @@ func parsePosition(s string, defaultPos position, now time.Time) (position, stri
 		// It looks like a timestamp.
 		i := strings.Index(s, "]")
 		if i == -1 {
-			return position{}, "", fmt.Errorf("no closing ] found in %q", s)
+			return positionRange{}, "", fmt.Errorf("no closing ] found in %q", s)
 		}
 		anchorStr, s = s[0:i+1], s[i+1:]
 	case isDigit(rune(s[0])):
@@ -346,12 +401,12 @@ func parsePosition(s string, defaultPos position, now time.Time) (position, stri
 		}
 	case s[0] == '+':
 		// No anchor and a positive relative pos: anchor at the start.
-		defaultPos = oldestPosition()
+		defaultAnchor = oldestAnchor()
 	case s[0] == '-':
 		// No anchor and a negative relative pos: anchor at the end.
-		defaultPos = newestPosition()
+		defaultAnchor = newestAnchor()
 	default:
-		return position{}, "", fmt.Errorf("invalid position %q", s)
+		return positionRange{}, "", fmt.Errorf("invalid position %q", s)
 	}
 	var relStr, rest string
 	// Look for the termination of the relative part.
@@ -360,40 +415,47 @@ func parsePosition(s string, defaultPos position, now time.Time) (position, stri
 	} else {
 		relStr, rest = s, ""
 	}
-	p, err := parseAnchorPos(anchorStr, defaultPos, now)
+	a0, a1, err := parseAnchorPos(anchorStr, defaultAnchor, now)
 	if err != nil {
-		return position{}, "", err
+		return positionRange{}, "", err
 	}
-	if err := parseRelativePosition(relStr, &p); err != nil {
-		return position{}, "", err
+	d, err := parseRelativePosition(relStr)
+	if err != nil {
+		return positionRange{}, "", err
 	}
-	if p.startIsTime == p.diffIsTime {
+	if a0.isTime == d.isDuration {
 		// We might be able to combine the offset with the diff.
-		if p.diffIsTime {
-			p.startTime = p.startTime.add(p.diffTime)
-			p.diffTime = 0
-			p.diffIsTime = false
-		} else if p.startOffset >= 0 {
-			p.startOffset += p.diffOffset
-			p.diffOffset = 0
+		if d.isDuration {
+			a0.time = a0.time.Add(d.duration)
+			a1.time = a1.time.Add(d.duration)
+			d = anchorDiff{}
+		} else if a0.offset >= 0 {
+			a0.offset += d.offset
+			a1.offset += d.offset
+			d = anchorDiff{}
 		}
 	}
-	return p, rest, nil
+	return positionRange{
+		startAnchor: a0,
+		endAnchor:   a1,
+		diff:        d,
+	}, rest, nil
 }
 
-func parseAnchorPos(s string, defaultPos position, now time.Time) (position, error) {
+// parseAnchorPos parses an anchor position and returns the range
+// of possible anchor positions (from a0 to a1).
+func parseAnchorPos(s string, defaultAnchor anchor, now time.Time) (a0, a1 anchor, err error) {
 	if s == "" {
-		return defaultPos, nil
+		return defaultAnchor, defaultAnchor, nil
 	}
 	n, err := strconv.ParseUint(s, 10, 63)
 	if err == nil {
 		// It's an explicit numeric offset.
-		return position{
-			startOffset: int64(n),
-		}, nil
+		a := anchor{offset: int64(n)}
+		return a, a, nil
 	}
 	if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
-		return position{}, fmt.Errorf("anchor offset %q is too large", s)
+		return anchor{}, anchor{}, fmt.Errorf("anchor offset %q is too large", s)
 	}
 	if s[0] == '[' {
 		// It's a timestamp.
@@ -401,47 +463,55 @@ func parseAnchorPos(s string, defaultPos position, now time.Time) (position, err
 		// with a ] character.
 		t, err := parseTime(s[1:len(s)-1], false, now)
 		if err != nil {
-			return position{}, err
+			return anchor{}, anchor{}, err
 		}
-		return position{
-			startIsTime: true,
-			startTime:   t,
-		}, nil
+		return anchor{
+				isTime: true,
+				time:   t.t0,
+			}, anchor{
+				isTime: true,
+				time:   t.t1,
+			}, nil
 	}
+	var a anchor
 	switch s {
 	case "newest":
-		return newestPosition(), nil
+		a = newestAnchor()
 	case "oldest":
-		return oldestPosition(), nil
+		a = oldestAnchor()
 	case "resume":
-		return position{startOffset: offsetResume}, nil
+		a = anchor{offset: offsetResume}
+	default:
+		return anchor{}, anchor{}, fmt.Errorf("invalid anchor position %q", s)
 	}
-	return position{}, fmt.Errorf("invalid anchor position %q", s)
+	return a, a, nil
 }
 
-// parseRelativePosition parses a relative position, "-10", "+3", "+1h" or "-3m3s"
-// into the relative part of p.
+// parseRelativePosition parses a relative position, "-10", "+3", "+1h" or "-3m3s".
 //
 // The caller has already ensured that s starts with a sign character.
-func parseRelativePosition(s string, p *position) error {
+func parseRelativePosition(s string) (anchorDiff, error) {
 	if s == "" {
-		return nil
+		return anchorDiff{}, nil
 	}
 	diff, err := strconv.ParseInt(s, 10, 64)
 	if err == nil {
-		p.diffIsTime, p.diffOffset = false, diff
-		return nil
+		return anchorDiff{
+			offset: diff,
+		}, nil
 	}
 	if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
-		return fmt.Errorf("offset %q is too large", s)
+		return anchorDiff{}, fmt.Errorf("offset %q is too large", s)
 	}
 	// It looks like a duration.
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return fmt.Errorf("invalid relative position %q", s)
+		return anchorDiff{}, fmt.Errorf("invalid relative position %q", s)
 	}
-	p.diffIsTime, p.diffTime = true, d
-	return nil
+	return anchorDiff{
+		isDuration: true,
+		duration:   d,
+	}, nil
 }
 
 // parsePartition parses a partition number, or the special
@@ -509,16 +579,47 @@ func timeWithLocation(t time.Time, loc *time.Location) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc)
 }
 
+func anchorAtOffset(off int64) anchor {
+	return anchor{
+		offset: off,
+	}
+}
+
+func anchorAtTime(t time.Time) anchor {
+	return anchor{
+		isTime: true,
+		time:   t,
+	}
+}
+
+func oldestAnchor() anchor {
+	return anchorAtOffset(sarama.OffsetOldest)
+}
+
+func newestAnchor() anchor {
+	return anchorAtOffset(sarama.OffsetNewest)
+}
+
+func lastAnchor() anchor {
+	return anchorAtOffset(maxOffset)
+}
+
 func oldestPosition() position {
-	return position{startOffset: sarama.OffsetOldest}
+	return position{
+		anchor: oldestAnchor(),
+	}
 }
 
 func newestPosition() position {
-	return position{startOffset: sarama.OffsetNewest}
+	return position{
+		anchor: newestAnchor(),
+	}
 }
 
 func lastPosition() position {
-	return position{startOffset: maxOffset}
+	return position{
+		anchor: lastAnchor(),
+	}
 }
 
 func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
