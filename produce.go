@@ -26,7 +26,7 @@ type produceArgs struct {
 	timeout     time.Duration
 	verbose     bool
 	pretty      bool
-	version     string
+	version     sarama.KafkaVersion
 	compression string
 	literal     bool
 	decodeKey   string
@@ -41,12 +41,12 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (cmd *produceCmd) read(as []string) produceArgs {
+func (cmd *produceCmd) parseFlags(as []string) produceArgs {
 	var args produceArgs
 	flags := flag.NewFlagSet("produce", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
 	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
@@ -55,7 +55,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	kafkaVersionFlagVar(flags, &args.version)
 	flags.StringVar(&args.compression, "compression", "", "Kafka message compression codec [gzip|snappy|lz4] (defaults to none)")
 	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
 	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
@@ -74,6 +74,13 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	} else if err != nil {
 		os.Exit(2)
 	}
+	if err := setFlagsFromEnv(flags, map[string]string{
+		"topic":   "KT_TOPIC",
+		"brokers": "KT_BROKERS",
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	return args
 }
@@ -84,28 +91,11 @@ func (cmd *produceCmd) failStartup(msg string) {
 }
 
 func (cmd *produceCmd) parseArgs(as []string) {
-	args := cmd.read(as)
-	envTopic := os.Getenv("KT_TOPIC")
-	if args.topic == "" {
-		if envTopic == "" {
-			cmd.failStartup("Topic name is required.")
-		} else {
-			args.topic = envTopic
-		}
-	}
+	args := cmd.parseFlags(as)
 	cmd.topic = args.topic
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
 	cmd.tlsCertKey = args.tlsCertKey
-
-	envBrokers := os.Getenv("KT_BROKERS")
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
 
 	cmd.brokers = strings.Split(args.brokers, ",")
 	for i, b := range cmd.brokers {
@@ -133,7 +123,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
 	cmd.partitioner = args.partitioner
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = args.version
 	cmd.compression = kafkaCompression(args.compression)
 	cmd.bufferSize = args.bufferSize
 }

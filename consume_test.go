@@ -680,7 +680,10 @@ func TestFindPartitionsToConsume(t *testing.T) {
 			topic:    d.topic,
 			offsets:  d.offsets,
 		}
-		actual := target.findPartitions()
+		actual, err := target.findPartitions()
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if !reflect.DeepEqual(actual, d.expected) {
 			t.Errorf(

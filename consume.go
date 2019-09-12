@@ -17,7 +17,7 @@ import (
 )
 
 type consumeCmd struct {
-	sync.Mutex
+	mu sync.Mutex
 
 	topic       string
 	brokers     []string
@@ -157,7 +157,10 @@ func (cmd *consumeCmd) resolveOffset(p position, partition int32) (int64, error)
 		if cmd.group == "" {
 			return 0, fmt.Errorf("cannot resume without -group argument")
 		}
-		pom := cmd.getPOM(partition)
+		pom, err := cmd.getPOM(partition)
+		if err != nil {
+			return 0, err
+		}
 		startOffset, _ = pom.NextOffset()
 	default:
 		startOffset = p.anchor.offset
@@ -174,32 +177,15 @@ type consumeArgs struct {
 	timeout     time.Duration
 	offsets     string
 	verbose     bool
-	version     string
+	version     sarama.KafkaVersion
 	encodeValue string
 	encodeKey   string
 	pretty      bool
 	group       string
 }
 
-func (cmd *consumeCmd) failStartup(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
-	failf("use \"kt consume -help\" for more information")
-}
-
-func (cmd *consumeCmd) parseArgs(as []string) {
-	var (
-		err  error
-		args = cmd.parseFlags(as)
-	)
-
-	envTopic := os.Getenv("KT_TOPIC")
-	if args.topic == "" {
-		if envTopic == "" {
-			cmd.failStartup("Topic name is required.")
-			return
-		}
-		args.topic = envTopic
-	}
+func (cmd *consumeCmd) parseArgs(as []string) error {
+	args := cmd.parseFlags(as)
 	cmd.topic = args.topic
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
@@ -207,40 +193,31 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = args.version
 	cmd.group = args.group
 
 	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue))
-		return
+		return fmt.Errorf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue)
 	}
 	cmd.encodeValue = args.encodeValue
 
 	if args.encodeKey != "string" && args.encodeKey != "hex" && args.encodeKey != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported encodekey argument %#v, only string, hex and base64 are supported.`, args.encodeValue))
-		return
+		return fmt.Errorf(`unsupported encodekey argument %#v, only string, hex and base64 are supported.`, args.encodeValue)
 	}
 	cmd.encodeKey = args.encodeKey
 
-	envBrokers := os.Getenv("KT_BROKERS")
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
 	cmd.brokers = strings.Split(args.brokers, ",")
 	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
 			cmd.brokers[i] = b + ":9092"
 		}
 	}
-
+	var err error
 	cmd.offsets, err = parseOffsets(args.offsets, time.Now())
 	if err != nil {
-		cmd.failStartup(fmt.Sprintf("%s", err))
+		return err
 	}
+	return nil
 }
 
 // parseOffsets parses a set of partition-offset specifiers in the following
@@ -626,7 +603,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	var args consumeArgs
 	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
@@ -634,7 +611,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	kafkaVersionFlagVar(flags, &args.version)
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets. kt will mark offsets if this arg is supplied.")
@@ -646,125 +623,148 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	}
 
 	err := flags.Parse(as)
-	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
+	if err == flag.ErrHelp {
 		os.Exit(0)
 	} else if err != nil {
+		os.Exit(2)
+	}
+
+	if err := setFlagsFromEnv(flags, map[string]string{
+		"topic":   "KT_TOPIC",
+		"brokers": "KT_BROKERS",
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 
 	return args
 }
 
-func (cmd *consumeCmd) setupClient() {
-	var (
-		err error
-		usr *user.User
-		cfg = sarama.NewConfig()
-	)
-	cfg.Version = cmd.version
-	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+func (cmd *consumeCmd) run(args []string) {
+	if err := cmd.parseArgs(args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		failf(`use "kt consume -help" for more information`)
 	}
-	cfg.ClientID = "kt-consume-" + sanitizeUsername(usr.Username)
+	if err := cmd.run1(args); err != nil {
+		failf("%v", err)
+	}
+}
+
+func (cmd *consumeCmd) run1(args []string) error {
+	if cmd.verbose {
+		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
+	}
+
+	c, err := cmd.newClient()
+	if err != nil {
+		return err
+	}
+	cmd.client = c
+	if cmd.group != "" {
+		cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client)
+		if err != nil {
+			return fmt.Errorf("cannot create offset manager: %v", err)
+		}
+	}
+
+	consumer, err := sarama.NewConsumerFromClient(cmd.client)
+	if err != nil {
+		return fmt.Errorf("cannot create kafka consumer: %v", err)
+	}
+	cmd.consumer = consumer
+	defer logClose("consumer", cmd.consumer)
+
+	partitions, err := cmd.findPartitions()
+	if err != nil {
+		return err
+	}
+	defer cmd.closePOMs()
+
+	if err := cmd.consume(partitions); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cmd *consumeCmd) newClient() (sarama.Client, error) {
+	cfg := sarama.NewConfig()
+	cfg.Version = cmd.version
+	usr, err := user.Current()
+	var username string
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read current user name: %v", err)
+		username = "anon"
+	} else {
+		username = usr.Username
+	}
+	cfg.ClientID = "kt-consume-" + sanitizeUsername(username)
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
 	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 	if err != nil {
-		failf("failed to setup certificates err=%v", err)
+		return nil, fmt.Errorf("cannot set up certificates: %v", err)
 	}
 	if tlsConfig != nil {
 		cfg.Net.TLS.Enable = true
 		cfg.Net.TLS.Config = tlsConfig
 	}
 
-	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
-		failf("failed to create client err=%v", err)
+	client, err := sarama.NewClient(cmd.brokers, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create kafka client: %v", err)
 	}
+	return client, nil
 }
 
-func (cmd *consumeCmd) run(args []string) {
-	var err error
-
-	cmd.parseArgs(args)
-
-	if cmd.verbose {
-		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
-	}
-
-	cmd.setupClient()
-	cmd.setupOffsetManager()
-
-	if cmd.consumer, err = sarama.NewConsumerFromClient(cmd.client); err != nil {
-		failf("failed to create consumer err=%v", err)
-	}
-	defer logClose("consumer", cmd.consumer)
-
-	partitions := cmd.findPartitions()
-	if len(partitions) == 0 {
-		failf("Found no partitions to consume")
-	}
-	defer cmd.closePOMs()
-
-	cmd.consume(partitions)
-}
-
-func (cmd *consumeCmd) setupOffsetManager() {
-	if cmd.group == "" {
-		return
-	}
-
-	var err error
-	if cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client); err != nil {
-		failf("failed to create offsetmanager err=%v", err)
-	}
-}
-
-func (cmd *consumeCmd) consume(partitions []int32) {
-	var (
-		wg  sync.WaitGroup
-		out = make(chan printContext)
-	)
-
+func (cmd *consumeCmd) consume(partitions []int32) error {
+	var wg sync.WaitGroup
+	out := make(chan printContext)
 	go print(out, cmd.pretty)
 
 	wg.Add(len(partitions))
 	for _, p := range partitions {
-		go func(p int32) { defer wg.Done(); cmd.consumePartition(out, p) }(p)
+		p := p
+		go func() {
+			defer wg.Done()
+			if err := cmd.consumePartition(out, p); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+		}()
 	}
 	wg.Wait()
+	return nil
 }
 
-func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) {
+func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) error {
 	var (
-		offsets interval
-		err     error
-		pcon    sarama.PartitionConsumer
-		start   int64
-		end     int64
-		ok      bool
+		err   error
+		pcon  sarama.PartitionConsumer
+		start int64
+		end   int64
 	)
 
-	if offsets, ok = cmd.offsets[partition]; !ok {
+	offsets, ok := cmd.offsets[partition]
+	if !ok {
 		offsets, ok = cmd.offsets[-1]
 	}
 
+	// TODO resolve offsets synchronously before we go into the per-partition
+	// consumers.
+
 	if start, err = cmd.resolveOffset(offsets.start, partition); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read start offset for partition %v err=%v\n", partition, err)
-		return
+		return fmt.Errorf("Failed to read start offset for partition %v: %v\n", partition, err)
 	}
 
 	if end, err = cmd.resolveOffset(offsets.end, partition); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read end offset for partition %v err=%v\n", partition, err)
-		return
+		return fmt.Errorf("Failed to read end offset for partition %v: %v\n", partition, err)
 	}
 
 	if pcon, err = cmd.consumer.ConsumePartition(cmd.topic, partition, start); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
-		return
+		return fmt.Errorf("Failed to consume partition %v: %v", partition, err)
 	}
 
-	cmd.partitionLoop(out, pcon, partition, end)
+	return cmd.partitionLoop(out, pcon, partition, end)
 }
 
 type consumedMessage struct {
@@ -809,46 +809,48 @@ func encodeBytes(data []byte, encoding string) *string {
 }
 
 func (cmd *consumeCmd) closePOMs() {
-	cmd.Lock()
+	cmd.mu.Lock()
+	defer cmd.mu.Unlock()
 	for p, pom := range cmd.poms {
 		if err := pom.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to close partition offset manager for partition %v err=%v", p, err)
+			fmt.Fprintf(os.Stderr, "warning: failed to close partition offset manager for partition %d: %v", p, err)
 		}
 	}
-	cmd.Unlock()
 }
 
-func (cmd *consumeCmd) getPOM(p int32) sarama.PartitionOffsetManager {
-	cmd.Lock()
+func (cmd *consumeCmd) getPOM(p int32) (sarama.PartitionOffsetManager, error) {
+	cmd.mu.Lock()
+	defer cmd.mu.Unlock()
 	if cmd.poms == nil {
 		cmd.poms = map[int32]sarama.PartitionOffsetManager{}
 	}
 	pom, ok := cmd.poms[p]
 	if ok {
-		cmd.Unlock()
-		return pom
+		return pom, nil
 	}
 
 	pom, err := cmd.offsetManager.ManagePartition(cmd.topic, p)
 	if err != nil {
-		cmd.Unlock()
-		failf("failed to create partition offset manager err=%v", err)
+		return nil, fmt.Errorf("cannot create partition offset manager: %v", err)
 	}
 	cmd.poms[p] = pom
-	cmd.Unlock()
-	return pom
+	return pom, nil
 }
 
-func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
+func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) error {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 	var (
 		timer   *time.Timer
 		pom     sarama.PartitionOffsetManager
-		timeout = make(<-chan time.Time)
+		timeout <-chan time.Time
 	)
 
 	if cmd.group != "" {
-		pom = cmd.getPOM(p)
+		var err error
+		pom, err = cmd.getPOM(p)
+		if err != nil {
+			return err
+		}
 	}
 
 	for {
@@ -862,15 +864,12 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 
 		select {
 		case <-timeout:
-			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s\n", p, cmd.timeout)
-			return
+			return fmt.Errorf("consuming from partition %v timed out after %s", p, cmd.timeout)
 		case err := <-pc.Errors():
-			fmt.Fprintf(os.Stderr, "partition %v consumer encountered err %s", p, err)
-			return
+			return fmt.Errorf("partition %v consumer encountered error %s", p, err)
 		case msg, ok := <-pc.Messages():
 			if !ok {
-				fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
-				return
+				return fmt.Errorf("unexpected closed messages chan")
 			}
 
 			m := newConsumedMessage(msg, cmd.encodeKey, cmd.encodeValue)
@@ -883,33 +882,31 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			}
 
 			if end > 0 && msg.Offset >= end {
-				return
+				return nil
 			}
 		}
 	}
 }
 
-func (cmd *consumeCmd) findPartitions() []int32 {
-	var (
-		all []int32
-		res []int32
-		err error
-	)
-	if all, err = cmd.consumer.Partitions(cmd.topic); err != nil {
-		failf("failed to read partitions for topic %v err=%v", cmd.topic, err)
+// findPartitions returns all the partitions that need to be consumed.
+func (cmd *consumeCmd) findPartitions() ([]int32, error) {
+	all, err := cmd.consumer.Partitions(cmd.topic)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get partitions for topic %q: %v", cmd.topic, err)
 	}
-
 	if _, hasDefault := cmd.offsets[-1]; hasDefault {
-		return all
+		return all, nil
 	}
-
+	var res []int32
 	for _, p := range all {
 		if _, ok := cmd.offsets[p]; ok {
 			res = append(res, p)
 		}
 	}
-
-	return res
+	if len(res) == 0 {
+		return nil, fmt.Errorf("found no partitions to consume")
+	}
+	return res, nil
 }
 
 var consumeDocString = `

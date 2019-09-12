@@ -24,7 +24,7 @@ type topicArgs struct {
 	replicas   bool
 	verbose    bool
 	pretty     bool
-	version    string
+	version    sarama.KafkaVersion
 }
 
 type topicCmd struct {
@@ -58,12 +58,10 @@ type partition struct {
 }
 
 func (cmd *topicCmd) parseFlags(as []string) topicArgs {
-	var (
-		args  topicArgs
-		flags = flag.NewFlagSet("topic", flag.ContinueOnError)
-	)
+	var args topicArgs
 
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags := flag.NewFlagSet("topic", flag.ContinueOnError)
+	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
@@ -73,7 +71,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	flags.StringVar(&args.filter, "filter", "", "Regex to filter topics by name.")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	kafkaVersionFlagVar(flags, &args.version)
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
 		flags.PrintDefaults()
@@ -86,25 +84,18 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	} else if err != nil {
 		os.Exit(2)
 	}
+	if err := setFlagsFromEnv(flags, map[string]string{
+		"brokers": "KT_BROKERS",
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	return args
 }
 
 func (cmd *topicCmd) parseArgs(as []string) {
-	var (
-		err error
-		re  *regexp.Regexp
-
-		args       = cmd.parseFlags(as)
-		envBrokers = os.Getenv("KT_BROKERS")
-	)
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
+	args := cmd.parseFlags(as)
 	cmd.brokers = strings.Split(args.brokers, ",")
 	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
@@ -112,7 +103,8 @@ func (cmd *topicCmd) parseArgs(as []string) {
 		}
 	}
 
-	if re, err = regexp.Compile(args.filter); err != nil {
+	re, err := regexp.Compile(args.filter)
+	if err != nil {
 		failf("invalid regex for filter err=%s", err)
 	}
 
@@ -125,7 +117,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.replicas = args.replicas
 	cmd.pretty = args.pretty
 	cmd.verbose = args.verbose
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = args.version
 }
 
 func (cmd *topicCmd) connect() {
