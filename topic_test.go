@@ -1,50 +1,42 @@
 package main
 
 import (
-	"os"
-	"reflect"
 	"testing"
+
+	qt "github.com/frankban/quicktest"
 )
 
-func TestTopicParseArgs(t *testing.T) {
-	target := &topicCmd{}
-	givenBroker := "hans:9092"
-	expectedBrokers := []string{givenBroker}
-	os.Setenv("KT_BROKERS", givenBroker)
+func TestTopicParseArgsUsesEnvVar(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 
-	target.parseArgs([]string{})
-	if !reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected brokers %v from env vars, got brokers %v.",
-			expectedBrokers,
-			target.brokers,
-		)
-		return
-	}
+	c.Setenv("KT_BROKERS", "hans:2000")
 
-	os.Setenv("KT_BROKERS", "")
-	expectedBrokers = []string{"localhost:9092"}
+	var target topicCmd
+	target.parseArgs(nil)
+	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
+}
 
-	target.parseArgs([]string{})
-	if !reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected brokers %v from env vars, got brokers %v.",
-			expectedBrokers,
-			target.brokers,
-		)
-		return
-	}
+// brokers default to localhost:9092
+func TestTopicParseArgsDefault(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 
-	os.Setenv("KT_BROKERS", "BLABB")
-	expectedBrokers = []string{givenBroker}
+	c.Setenv("KT_BROKERS", "")
 
-	target.parseArgs([]string{"-brokers", givenBroker})
-	if !reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected brokers %v from env vars, got brokers %v.",
-			expectedBrokers,
-			target.brokers,
-		)
-		return
-	}
+	var target topicCmd
+	target.parseArgs(nil)
+	c.Assert(target.brokers, qt.DeepEquals, []string{"localhost:9092"})
+}
+
+func TestTopicParseArgsFlagsOverrideEnv(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
+
+	// command line arg wins
+	c.Setenv("KT_BROKERS", "BLABB")
+
+	var target topicCmd
+	target.parseArgs([]string{"-brokers", "hans:2000"})
+	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
