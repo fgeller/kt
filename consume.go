@@ -103,7 +103,7 @@ func (a0 anchor) eq(a1 anchor) bool {
 
 // anchorDiff represents an offset from an anchor position.
 type anchorDiff struct {
-	// diffIsTime specifies which diff field is valid.
+	// isDuration specifies which diff field is valid.
 	// If it's true, the difference is specified as a duration
 	// in the duration field; otherwise it's specified as
 	// an offset in offset.
