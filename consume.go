@@ -39,49 +39,130 @@ type consumeCmd struct {
 	poms          map[int32]sarama.PartitionOffsetManager
 }
 
-var offsetResume int64 = -3
+const (
+	maxOffset    int64 = 1<<63 - 1
+	offsetResume int64 = -3
+)
 
-type offset struct {
-	relative bool
-	start    int64
-	diff     int64
+type positionRange struct {
+	startAnchor, endAnchor anchor
+	diff                   anchorDiff
 }
 
-func (cmd *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
-	if !o.relative {
-		return o.start, nil
+func (r positionRange) start() position {
+	return position{
+		anchor: r.startAnchor,
+		diff:   r.diff,
 	}
+}
 
-	var (
-		res int64
-		err error
-	)
+func (r positionRange) end() position {
+	return position{
+		anchor: r.endAnchor,
+		diff:   r.diff,
+	}
+}
 
-	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
-		if res, err = cmd.client.GetOffset(cmd.topic, partition, o.start); err != nil {
+// position represents a position within the Kafka stream.
+// It holds an anchor (an absolute position specified as a
+// time stamp or an offset) and a relative position with
+// respect to that (specified as an offset delta or a time duration).
+type position struct {
+	anchor anchor
+	diff   anchorDiff
+}
+
+// anchor represents an absolute offset in the position stream.
+type anchor struct {
+	// isTime specifies which anchor field is valid.
+	// If it's true, the anchor is specified as a time
+	// in time; otherwise it's specified as
+	// an offset in offset.
+	isTime bool
+
+	// offset holds the anchor as an absolute offset.
+	// It can be one of sarama.OffsetOldest, sarama.OffsetNewest
+	// or offsetResume to signify a relative starting position.
+	// This field is only significant when isTime is false.
+	offset int64
+
+	// time holds the anchor as a time.
+	// This field is only significant when isTime is true.
+	time time.Time
+}
+
+func (a0 anchor) eq(a1 anchor) bool {
+	if a0.isTime != a1.isTime {
+		return false
+	}
+	if a0.isTime {
+		return a0.time.Equal(a1.time)
+	}
+	return a0.offset == a1.offset
+}
+
+// anchorDiff represents an offset from an anchor position.
+type anchorDiff struct {
+	// isDuration specifies which diff field is valid.
+	// If it's true, the difference is specified as a duration
+	// in the duration field; otherwise it's specified as
+	// an offset in offset.
+	isDuration bool
+
+	// offset holds the difference as an offset delta.
+	offset int64
+
+	// time holds the difference as a duration.
+	duration time.Duration
+}
+
+// timeRange holds a time range.
+// This represents the precision specified in a timestamp
+// (for example, when a time is specified as a date,
+// the time range will include the whole of that day).
+// TODO is this exclusive or inclusive?
+type timeRange struct {
+	t0, t1 time.Time
+}
+
+func (r timeRange) add(d time.Duration) timeRange {
+	return timeRange{
+		t0: r.t0.Add(d),
+		t1: r.t1.Add(d),
+	}
+}
+
+type interval struct {
+	start position
+	end   position
+}
+
+func (cmd *consumeCmd) resolveOffset(p position, partition int32) (int64, error) {
+	if p.anchor.isTime || p.diff.isDuration {
+		return 0, fmt.Errorf("time-based positions not yet supported")
+	}
+	var startOffset int64
+	switch p.anchor.offset {
+	case sarama.OffsetNewest, sarama.OffsetOldest:
+		off, err := cmd.client.GetOffset(cmd.topic, partition, p.anchor.offset)
+		if err != nil {
 			return 0, err
 		}
-
-		if o.start == sarama.OffsetNewest {
-			res = res - 1
+		if p.anchor.offset == sarama.OffsetNewest {
+			// TODO add comment explaining this.
+			off--
 		}
-
-		return res + o.diff, nil
-	} else if o.start == offsetResume {
+		startOffset = off
+	case offsetResume:
 		if cmd.group == "" {
 			return 0, fmt.Errorf("cannot resume without -group argument")
 		}
 		pom := cmd.getPOM(partition)
-		next, _ := pom.NextOffset()
-		return next, nil
+		startOffset, _ = pom.NextOffset()
+	default:
+		startOffset = p.anchor.offset
 	}
-
-	return o.start + o.diff, nil
-}
-
-type interval struct {
-	start offset
-	end   offset
+	return startOffset + p.diff.offset, nil
 }
 
 type consumeArgs struct {
@@ -156,7 +237,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 		}
 	}
 
-	cmd.offsets, err = parseOffsets(args.offsets)
+	cmd.offsets, err = parseOffsets(args.offsets, time.Now())
 	if err != nil {
 		cmd.failStartup(fmt.Sprintf("%s", err))
 	}
@@ -164,30 +245,35 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 
 // parseOffsets parses a set of partition-offset specifiers in the following
 // syntax. The grammar uses the BNF-like syntax defined in https://golang.org/ref/spec.
+// Timestamps relative to the current day are resolved using now as the current time.
 //
-//	offsets := [ partitionInterval { "," partitionInterval } ]
+//	offsets = [ partitionInterval { "," partitionInterval } ]
 //
-//	partitionInterval :=
+//	partitionInterval =
 //		partition "=" interval |
 //		partition |
 //		interval
 //
-//	partition := "all" | number
+//	partition = "all" | number
 //
-//	interval := [ offset ] [ ":" [ offset ] ]
+//	interval = [ position ] [ ":" [ position ] ]
 //
-//	offset :=
-//		number |
-//		namedRelativeOffset |
-//		numericRelativeOffset |
-//		namedRelativeOffset numericRelativeOffset
+//	position =
+//		relativePosition |
+//		anchorPosition [ relativePosition ]
 //
-//	namedRelativeOffset := "newest" | "oldest" | "resume"
+//	anchorPosition = number | "newest" | "oldest" | "resume" | "[" { /^]/ } "]"
 //
-//	numericRelativeOffset := "+" number | "-" number
+//	relativePosition = ( "+" | "-" ) (number | duration )
 //
-//	number := {"0"| "1"| "2"| "3"| "4"| "5"| "6"| "7"| "8"| "9"}
-func parseOffsets(str string) (map[int32]interval, error) {
+//	duration := durationPart { durationPart }
+//
+//	durationPart =  number [ "." { digit } ] ( "h" | "m" | "s" | "ms" | "ns" )
+//
+//	number = digit { digit }
+//
+//	digit = "0"| "1"| "2"| "3"| "4"| "5"| "6"| "7"| "8"| "9"
+func parseOffsets(str string, now time.Time) (map[int32]interval, error) {
 	result := map[int32]interval{}
 	for _, partitionInfo := range strings.Split(str, ",") {
 		partitionInfo = strings.TrimSpace(partitionInfo)
@@ -198,8 +284,8 @@ func parseOffsets(str string) (map[int32]interval, error) {
 		p, err := parsePartition(partitionInfo)
 		if err == nil {
 			result[p] = interval{
-				start: oldestOffset(),
-				end:   lastOffset(),
+				start: oldestPosition(),
+				end:   lastPosition(),
 			}
 			continue
 		}
@@ -215,7 +301,7 @@ func parseOffsets(str string) (map[int32]interval, error) {
 			// No explicit partition, so implicitly use "all".
 			p = -1
 		}
-		intv, err := parseInterval(intervalStr)
+		intv, err := parseInterval(intervalStr, now)
 		if err != nil {
 			return nil, err
 		}
@@ -224,111 +310,208 @@ func parseOffsets(str string) (map[int32]interval, error) {
 	return result, nil
 }
 
-// parseRelativeOffset parses a relative offset, such as "oldest", "newest-30", or "+20".
-func parseRelativeOffset(s string) (offset, error) {
-	o, ok := parseNamedRelativeOffset(s)
-	if ok {
-		return o, nil
-	}
-	i := strings.IndexAny(s, "+-")
-	if i == -1 {
-		return offset{}, fmt.Errorf("invalid offset %q", s)
-	}
-	switch {
-	case i > 0:
-		// The + or - isn't at the start, so the relative offset must start
-		// with a named relative offset.
-		o, ok = parseNamedRelativeOffset(s[0:i])
-		if !ok {
-			return offset{}, fmt.Errorf("invalid offset %q", s)
-		}
-	case s[i] == '+':
-		// Offset +99 implies oldest+99.
-		o = oldestOffset()
-	default:
-		// Offset -99 implies newest-99.
-		o = newestOffset()
-	}
-	// Note: we include the leading sign when converting to int
-	// so the diff ends up with the correct sign.
-	diff, err := strconv.ParseInt(s[i:], 10, 64)
-	if err != nil {
-		if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
-			return offset{}, fmt.Errorf("offset %q is too large", s)
-		}
-		return offset{}, fmt.Errorf("invalid offset %q", s)
-	}
-	o.diff = int64(diff)
-	return o, nil
-}
-
-func parseNamedRelativeOffset(s string) (offset, bool) {
-	switch s {
-	case "newest":
-		return newestOffset(), true
-	case "oldest":
-		return oldestOffset(), true
-	case "resume":
-		return offset{relative: true, start: offsetResume}, true
-	default:
-		return offset{}, false
-	}
-}
-
-func parseInterval(s string) (interval, error) {
+func parseInterval(s string, now time.Time) (interval, error) {
 	if s == "" {
 		// An empty string implies all messages.
 		return interval{
-			start: oldestOffset(),
-			end:   lastOffset(),
+			start: oldestPosition(),
+			end:   lastPosition(),
 		}, nil
 	}
-	var start, end string
-	i := strings.Index(s, ":")
-	if i == -1 {
-		// No colon, so the whole string specifies the start offset.
-		start = s
-	} else {
-		// We've got a colon, so there are explicitly specified
-		// start and end offsets.
-		start = s[0:i]
-		end = s[i+1:]
-	}
-	startOff, err := parseIntervalPart(start, oldestOffset())
+	startPos, endStr, err := parsePosition(s, oldestAnchor(), now)
 	if err != nil {
 		return interval{}, err
 	}
-	endOff, err := parseIntervalPart(end, lastOffset())
+	if len(endStr) == 0 {
+		// The interval is represented by a single position.
+
+		if startPos.startAnchor.eq(startPos.endAnchor) {
+			// The position is precisely specified, so it represents
+			// the range from there until the end.
+			return interval{
+				start: startPos.start(),
+				end:   lastPosition(),
+			}, nil
+		}
+		// The position implied a range, so the interval holds that range.
+		return interval{
+			start: startPos.start(),
+			end:   startPos.end(),
+		}, nil
+	}
+	if endStr[0] != ':' {
+		return interval{}, fmt.Errorf("invalid interval %q", s)
+	}
+	endStr = endStr[1:]
+	endPos, rest, err := parsePosition(endStr, lastAnchor(), now)
 	if err != nil {
 		return interval{}, err
+	}
+	if rest != "" {
+		return interval{}, fmt.Errorf("invalid interval %q", s)
 	}
 	return interval{
-		start: startOff,
-		end:   endOff,
+		start: startPos.start(),
+		end:   endPos.end(),
 	}, nil
 }
 
-// parseIntervalPart parses one half of an interval pair.
-// If s is empty, the given default offset will be used.
-func parseIntervalPart(s string, defaultOffset offset) (offset, error) {
+func isDigit(r rune) bool {
+	return '0' <= r && r <= '9'
+}
+
+func isLower(r rune) bool {
+	return 'a' <= r && r <= 'z'
+}
+
+// parsePosition parses one half of an interval pair
+// and returns that offset and any characters remaining in s.
+//
+// If s is empty, the given default position will be used.
+// Note that a position is always terminated by a colon (the
+// interval position divider) or the end of the string.
+func parsePosition(s string, defaultAnchor anchor, now time.Time) (positionRange, string, error) {
+	var anchorStr string
+	switch {
+	case s == "":
+		// It's empty - we'll get the default position.
+	case s[0] == '[':
+		// It looks like a timestamp.
+		i := strings.Index(s, "]")
+		if i == -1 {
+			return positionRange{}, "", fmt.Errorf("no closing ] found in %q", s)
+		}
+		anchorStr, s = s[0:i+1], s[i+1:]
+	case isDigit(rune(s[0])):
+		// It looks like an absolute offset anchor; find first non-digit following it.
+		i := strings.IndexFunc(s, func(r rune) bool { return !isDigit(r) })
+		if i > 0 {
+			anchorStr, s = s[0:i], s[i:]
+		} else {
+			anchorStr, s = s, ""
+		}
+	case isLower(rune(s[0])):
+		// It looks like one of the special anchor position names, such as "oldest";
+		// find first non-letter following it.
+		i := strings.IndexFunc(s, func(r rune) bool { return !isLower(r) })
+		if i > 0 {
+			anchorStr, s = s[0:i], s[i:]
+		} else {
+			anchorStr, s = s, ""
+		}
+	case s[0] == '+':
+		// No anchor and a positive relative pos: anchor at the start.
+		defaultAnchor = oldestAnchor()
+	case s[0] == '-':
+		// No anchor and a negative relative pos: anchor at the end.
+		defaultAnchor = newestAnchor()
+	default:
+		return positionRange{}, "", fmt.Errorf("invalid position %q", s)
+	}
+	var relStr, rest string
+	// Look for the termination of the relative part.
+	if i := strings.Index(s, ":"); i >= 0 {
+		relStr, rest = s[0:i], s[i:]
+	} else {
+		relStr, rest = s, ""
+	}
+	a0, a1, err := parseAnchorPos(anchorStr, defaultAnchor, now)
+	if err != nil {
+		return positionRange{}, "", err
+	}
+	d, err := parseRelativePosition(relStr)
+	if err != nil {
+		return positionRange{}, "", err
+	}
+	if a0.isTime == d.isDuration {
+		// We might be able to combine the offset with the diff.
+		if d.isDuration {
+			a0.time = a0.time.Add(d.duration)
+			a1.time = a1.time.Add(d.duration)
+			d = anchorDiff{}
+		} else if a0.offset >= 0 {
+			a0.offset += d.offset
+			a1.offset += d.offset
+			d = anchorDiff{}
+		}
+	}
+	return positionRange{
+		startAnchor: a0,
+		endAnchor:   a1,
+		diff:        d,
+	}, rest, nil
+}
+
+// parseAnchorPos parses an anchor position and returns the range
+// of possible anchor positions (from a0 to a1).
+func parseAnchorPos(s string, defaultAnchor anchor, now time.Time) (a0, a1 anchor, err error) {
 	if s == "" {
-		return defaultOffset, nil
+		return defaultAnchor, defaultAnchor, nil
 	}
 	n, err := strconv.ParseUint(s, 10, 63)
 	if err == nil {
 		// It's an explicit numeric offset.
-		return offset{
-			start: int64(n),
+		a := anchor{offset: int64(n)}
+		return a, a, nil
+	}
+	if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
+		return anchor{}, anchor{}, fmt.Errorf("anchor offset %q is too large", s)
+	}
+	if s[0] == '[' {
+		// It's a timestamp.
+		// Note: parsePosition has already ensured that the string ends
+		// with a ] character.
+		t, err := parseTime(s[1:len(s)-1], false, now)
+		if err != nil {
+			return anchor{}, anchor{}, err
+		}
+		return anchor{
+				isTime: true,
+				time:   t.t0,
+			}, anchor{
+				isTime: true,
+				time:   t.t1,
+			}, nil
+	}
+	var a anchor
+	switch s {
+	case "newest":
+		a = newestAnchor()
+	case "oldest":
+		a = oldestAnchor()
+	case "resume":
+		a = anchor{offset: offsetResume}
+	default:
+		return anchor{}, anchor{}, fmt.Errorf("invalid anchor position %q", s)
+	}
+	return a, a, nil
+}
+
+// parseRelativePosition parses a relative position, "-10", "+3", "+1h" or "-3m3s".
+//
+// The caller has already ensured that s starts with a sign character.
+func parseRelativePosition(s string) (anchorDiff, error) {
+	if s == "" {
+		return anchorDiff{}, nil
+	}
+	diff, err := strconv.ParseInt(s, 10, 64)
+	if err == nil {
+		return anchorDiff{
+			offset: diff,
 		}, nil
 	}
 	if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
-		return offset{}, fmt.Errorf("offset %q is too large", s)
+		return anchorDiff{}, fmt.Errorf("offset %q is too large", s)
 	}
-	o, err := parseRelativeOffset(s)
+	// It looks like a duration.
+	d, err := time.ParseDuration(s)
 	if err != nil {
-		return offset{}, err
+		return anchorDiff{}, fmt.Errorf("invalid relative position %q", s)
 	}
-	return o, nil
+	return anchorDiff{
+		isDuration: true,
+		duration:   d,
+	}, nil
 }
 
 // parsePartition parses a partition number, or the special
@@ -347,16 +530,96 @@ func parsePartition(s string) (int32, error) {
 	return int32(p), nil
 }
 
-func oldestOffset() offset {
-	return offset{relative: true, start: sarama.OffsetOldest}
+// parseTime parses s in one of a range of possible formats, and returns
+// the range of time intervals that it represents.
+//
+// Any missing information in s will be filled in by using information from now.
+// If local is true, times without explicit time zones will be interpreted
+// relative to now.Location().
+func parseTime(s string, local bool, now time.Time) (timeRange, error) {
+	var r timeRange
+	var err error
+	if r.t0, err = time.Parse(time.RFC3339, s); err == nil {
+		r.t1 = r.t0
+		// RFC3339 always contains an explicit time zone, so we don't need
+		// to convert to local time.
+		return r, nil
+	} else if r.t0, err = time.Parse("2006-01-02", s); err == nil {
+		// A whole day.
+		r.t1 = r.t0.AddDate(0, 0, 1)
+	} else if r.t0, err = time.Parse("2006-01", s); err == nil {
+		// A whole month.
+		r.t1 = r.t0.AddDate(0, 1, 0)
+	} else if r.t0, err = time.Parse("2006", s); err == nil && r.t0.Year() > 2000 {
+		// A whole year.
+		r.t1 = r.t0.AddDate(1, 0, 0)
+	} else if r.t0, err = time.Parse("15:04", s); err == nil {
+		// A minute in the current day. There's an argument that we should choose the closest day
+		// that contains the given time (e.g. if the time is 23:30 and the input is 01:20, perhaps
+		// we should choose tomorrow morning rather than the morning of the current day).
+		r.t0 = time.Date(now.Year(), now.Month(), now.Day(), r.t0.Hour(), r.t0.Minute(), 0, 0, time.UTC)
+		r.t1 = r.t0.Add(time.Minute)
+	} else if r.t0, err = time.Parse("15:04:05", s); err == nil {
+		// An exact moment in the current day.
+		r.t0 = time.Date(now.Year(), now.Month(), now.Day(), r.t0.Hour(), r.t0.Minute(), r.t0.Second(), r.t0.Nanosecond(), time.UTC)
+		r.t1 = r.t0
+	} else if r.t0, err = time.Parse("3pm", s); err == nil {
+		// An hour in the current day.
+		r.t0 = time.Date(now.Year(), now.Month(), now.Day(), r.t0.Hour(), 0, 0, 0, time.UTC)
+		r.t1 = r.t0.Add(time.Hour)
+	}
+	if local {
+		r.t0 = timeWithLocation(r.t0, now.Location())
+		r.t1 = timeWithLocation(r.t1, now.Location())
+	}
+	return r, nil
 }
 
-func newestOffset() offset {
-	return offset{relative: true, start: sarama.OffsetNewest}
+func timeWithLocation(t time.Time, loc *time.Location) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc)
 }
 
-func lastOffset() offset {
-	return offset{relative: false, start: 1<<63 - 1}
+func anchorAtOffset(off int64) anchor {
+	return anchor{
+		offset: off,
+	}
+}
+
+func anchorAtTime(t time.Time) anchor {
+	return anchor{
+		isTime: true,
+		time:   t,
+	}
+}
+
+func oldestAnchor() anchor {
+	return anchorAtOffset(sarama.OffsetOldest)
+}
+
+func newestAnchor() anchor {
+	return anchorAtOffset(sarama.OffsetNewest)
+}
+
+func lastAnchor() anchor {
+	return anchorAtOffset(maxOffset)
+}
+
+func oldestPosition() position {
+	return position{
+		anchor: oldestAnchor(),
+	}
+}
+
+func newestPosition() position {
+	return position{
+		anchor: newestAnchor(),
+	}
+}
+
+func lastPosition() position {
+	return position{
+		anchor: lastAnchor(),
+	}
 }
 
 func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
@@ -657,36 +920,113 @@ Offsets can be specified as a comma-separated list of intervals:
 
   [[partition=start:end],...]
 
+For example:
+
+	3=100:300,5=43:67
+
+would consume from offset 100 to offset 300 inclusive in partition 3,
+and from 43 to 67 in partition 5.
+
+If the second part of an interval is omitted, there is no upper bound to the interval unless an imprecise timestamp is used (see below).
+
 The default is to consume from the oldest offset on every partition for the given topic.
 
  - partition is the numeric identifier for a partition. You can use "all" to
    specify a default interval for all partitions.
 
- - start is the included offset where consumption should start.
+ - start is the included offset or time where consumption should start.
 
- - end is the included offset where consumption should end.
+ - end is the included offset or time where consumption should end.
 
-The following syntax is supported for each offset:
+An offset may be specified as:
 
-  (oldest|newest|resume)?(+|-)?(\d+)?
+- an absolute position as a decimal number (for example "400")
 
- - "oldest" and "newest" refer to the oldest and newest offsets known for a
-   given partition.
+- "oldest", meaning the start of the available messages for the partition.
 
- - "resume" can be used in combination with -group.
+- "newest", meaning the newest available message in the partition.
 
- - You can use "+" with a numeric value to skip the given number of messages
-   since the oldest offset. For example, "1=+20" will skip 20 offset value since
-   the oldest offset for partition 1.
+- "resume" meaning the most recently consumed message for the
+   consumer group (can only be used in combination with -group).
 
- - You can use "-" with a numeric value to refer to only the given number of
-   messages before the newest offset. For example, "1=-10" will refer to the
-   last 10 offset values before the newest offset for partition 1.
+- a timestamp enclosed in square brackets (see below).
 
- - Relative offsets are based on numeric values and will not take skipped
-   offsets (e.g. due to compaction) into account.
+A timestamp specifies the offset of the next message found
+after the specified time. It may be specified as:
 
- - Given only a numeric value, it is interpreted as an absolute offset value.
+- an RFC3339 time, for example "[2019-09-12T14:49:12Z]")
+- an ISO8601 date, for example "[2019-09-12]"
+- a month, for example "[2019-09]"
+- a year, for example "[2019]"
+- a minute within the current day, for example "[14:49]"
+- a second within the current day, for example "[14:49:12]"
+- an hour within the current day, in 12h format, for example "[2pm]".
+
+When a timestamp is specified with seconds precision, a timestamp
+represents an exact moment; otherwise it represents the implied
+precision of the timestamp (a year represents the whole of that year;
+a month represents the whole month, etc).
+
+The UTC time zone will be used unless the -local flag is provided.
+
+When a non-precise timestamp is used as the start of an offset
+range, the earliest time in the range is used; when it's used as
+the end of a range, the latest time is used. So, for example:
+
+	all=[2019]:[2020]
+
+asks for all partitions from the start of 2019 to the very end of 2020.
+If there is only one offset expression with no colon, the implied range
+is used, so for example:
+
+	all=[2019-09-12]
+
+will ask for all messages on September 12th 2019.
+To ask for all messages starting at a non-precise timestamp,
+you can use an empty expression as the second part of the range.
+For example:
+
+	all=[2019-09-12]:
+
+will ask for all messages from the start of 2019-09-12 up until the current time.
+
+An absolute offset may also be combined with a relative offset with "+" or "-".
+For example:
+
+	all=newest-1000:
+
+will request the latest thousand messages.
+
+	all=oldest+1000:oldest+2000
+
+will request the second thousand messages stored.
+The absolute offset may be omitted; it defaults to "newest"
+for "-" and "oldest" for "+", so the previous two examples
+may be abbreviated to the following:
+
+	all=-1000
+	all=+1000:+2000
+
+Relative offsets are based on numeric values and will not take skipped
+offsets (e.g. due to compaction) into account.
+
+A relative offset may also be specified as duration, meaning all messages
+within that time period. The syntax is that accepted by Go's time.ParseDuration
+function, for example:
+
+	3.5s - three and a half seconds
+	1s400ms - 1.4 seconds
+
+So, for example:
+
+	all=1000-5m:1000+5m
+
+will ask for all messages in the 10 minute interval around the message
+with offset 1000.
+
+Note that if a message with that offset doesn't exist (because of compaction,
+for example), the first message found after that offset will be used for the
+timestamp.
 
 More examples:
 
