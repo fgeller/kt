@@ -18,7 +18,7 @@ type adminCmd struct {
 	brokers    []string
 	verbose    bool
 	version    sarama.KafkaVersion
-	timeout    *time.Duration
+	timeout    time.Duration
 	tlsCA      string
 	tlsCert    string
 	tlsCertKey string
@@ -34,8 +34,8 @@ type adminCmd struct {
 type adminArgs struct {
 	brokers    string
 	verbose    bool
-	version    string
-	timeout    string
+	version    sarama.KafkaVersion
+	timeout    time.Duration
 	tlsCA      string
 	tlsCert    string
 	tlsCertKey string
@@ -46,31 +46,17 @@ type adminArgs struct {
 	deleteTopic     string
 }
 
-func (cmd *adminCmd) parseArgs(as []string) {
-	var (
-		args = cmd.parseFlags(as)
-	)
+func (cmd *adminCmd) parseArgs(as []string) error {
+	args := cmd.parseFlags(as)
 
 	cmd.verbose = args.verbose
-	cmd.version = kafkaVersion(args.version)
-
-	cmd.timeout = parseTimeout(os.Getenv("KT_ADMIN_TIMEOUT"))
-	if args.timeout != "" {
-		cmd.timeout = parseTimeout(args.timeout)
-	}
+	cmd.timeout = args.timeout
+	cmd.version = args.version
 
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
 	cmd.tlsCertKey = args.tlsCertKey
 
-	envBrokers := os.Getenv("KT_BROKERS")
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
 	cmd.brokers = strings.Split(args.brokers, ",")
 	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
@@ -85,38 +71,54 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	if cmd.createTopic != "" {
 		buf, err := ioutil.ReadFile(args.topicDetailPath)
 		if err != nil {
-			failf("failed to read topic detail err=%v", err)
+			return err
 		}
 
 		var detail sarama.TopicDetail
 		if err = json.Unmarshal(buf, &detail); err != nil {
-			failf("failed to unmarshal topic detail err=%v", err)
+			return fmt.Errorf("cannot unmarshal topic detail : %v", err)
 		}
 		cmd.topicDetail = &detail
 	}
+	return nil
 }
 
 func (cmd *adminCmd) run(args []string) {
+	if err := cmd.run1(args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+}
+
+func (cmd *adminCmd) run1(args []string) error {
 	var err error
 
-	cmd.parseArgs(args)
+	if err := cmd.parseArgs(args); err != nil {
+		return err
+	}
 
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
 	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cmd.saramaConfig()); err != nil {
-		failf("failed to create cluster admin err=%v", err)
+		return fmt.Errorf("cannot create cluster admin: %v", err)
 	}
 
-	if cmd.createTopic != "" {
-		cmd.runCreateTopic()
-
-	} else if cmd.deleteTopic != "" {
-		cmd.runDeleteTopic()
-	} else {
-		failf("need to supply at least one sub-command of: createtopic, deletetopic")
+	switch {
+	case cmd.createTopic != "":
+		err := cmd.admin.CreateTopic(cmd.createTopic, cmd.topicDetail, cmd.validateOnly)
+		if err != nil {
+			return fmt.Errorf("cannot create topic: %v", err)
+		}
+	case cmd.deleteTopic != "":
+		err := cmd.admin.DeleteTopic(cmd.deleteTopic)
+		if err != nil {
+			return fmt.Errorf("cannot delete topic: %v", err)
+		}
+	default:
+		return fmt.Errorf("need to supply at least one sub-command of: createtopic, deletetopic")
 	}
+	return nil
 }
 
 func (cmd *adminCmd) runCreateTopic() {
@@ -146,9 +148,7 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 	}
 	cfg.ClientID = "kt-admin-" + sanitizeUsername(usr.Username)
 
-	if cmd.timeout != nil {
-		cfg.Admin.Timeout = *cmd.timeout
-	}
+	cfg.Admin.Timeout = cmd.timeout
 
 	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 	if err != nil {
@@ -165,10 +165,10 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	var args adminArgs
 	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.timeout, "timeout", "", "Timeout for request to Kafka (default: 3s)")
+	kafkaVersionFlagVar(flags, &args.version)
+	flags.DurationVar(&args.timeout, "timeout", 3*time.Second, "Timeout for request to Kafka")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
@@ -189,6 +189,14 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
 		os.Exit(0)
 	} else if err != nil {
+		os.Exit(2)
+	}
+
+	if err := setFlagsFromEnv(flags, map[string]string{
+		"timeout": "KT_ADMIN_TIMEOUT",
+		"brokers": "KT_BROKERS",
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 

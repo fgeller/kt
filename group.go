@@ -347,16 +347,7 @@ func (cmd *groupCmd) failStartup(msg string) {
 }
 
 func (cmd *groupCmd) parseArgs(as []string) {
-	var (
-		err  error
-		args = cmd.parseFlags(as)
-	)
-
-	envTopic := os.Getenv("KT_TOPIC")
-	if args.topic == "" {
-		args.topic = envTopic
-	}
-
+	args := cmd.parseFlags(as)
 	cmd.topic = args.topic
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
@@ -365,7 +356,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = args.version
 
 	switch args.partitions {
 	case "", "all":
@@ -385,6 +376,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, args.partitions)
 	}
 
+	var err error
 	if cmd.filterGroups, err = regexp.Compile(args.filterGroups); err != nil {
 		failf("groups filter regexp invalid err=%v", err)
 	}
@@ -415,14 +407,6 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		}
 	}
 
-	envBrokers := os.Getenv("KT_BROKERS")
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
 	cmd.brokers = strings.Split(args.brokers, ",")
 	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
@@ -444,7 +428,7 @@ type groupArgs struct {
 	reset        string
 	verbose      bool
 	pretty       bool
-	version      string
+	version      sarama.KafkaVersion
 	offsets      bool
 }
 
@@ -452,7 +436,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	var args groupArgs
 	flags := flag.NewFlagSet("group", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
@@ -462,7 +446,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	kafkaVersionFlagVar(flags, &args.version)
 	flags.StringVar(&args.partitions, "partitions", allPartitionsHuman, "comma separated list of partitions to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
 
@@ -476,6 +460,14 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
 		os.Exit(0)
 	} else if err != nil {
+		os.Exit(2)
+	}
+
+	if err := setFlagsFromEnv(flags, map[string]string{
+		"topic":   "KT_TOPIC",
+		"brokers": "KT_BROKERS",
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 

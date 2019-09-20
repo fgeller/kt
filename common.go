@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -33,17 +34,33 @@ func listenForInterrupt(q chan struct{}) {
 	close(q)
 }
 
-func kafkaVersion(s string) sarama.KafkaVersion {
-	if s == "" {
-		return sarama.V2_0_0_0
-	}
+var defaultKafkaVersion = sarama.V2_0_0_0
 
-	v, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
+func kafkaVersionFlagVar(fs *flag.FlagSet, vp *sarama.KafkaVersion) {
+	*vp = sarama.V2_0_0_0
+	fs.Var(kafkaVersionFlag{
+		v: vp,
+	}, "version", "Kafka protocol version")
+}
+
+type kafkaVersionFlag struct {
+	v *sarama.KafkaVersion
+}
+
+func (v kafkaVersionFlag) String() string {
+	if v.v == nil {
+		return ""
+	}
+	return v.v.String()
+}
+
+func (v kafkaVersionFlag) Set(s string) error {
+	vers, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
 	if err != nil {
-		failf(err.Error())
+		return fmt.Errorf("invalid kafka version %q: %v", s, err)
 	}
-
-	return v
+	*v.v = vers
+	return nil
 }
 
 func parseTimeout(s string) *time.Duration {
@@ -183,8 +200,7 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 	}
 
 	if certPath == "" || caPath == "" || keyPath == "" {
-		err := fmt.Errorf("certificate, CA and key path are required - got cert=%#v ca=%#v key=%#v", certPath, caPath, keyPath)
-		return nil, err
+		return nil, fmt.Errorf("certificate, CA and key path are required - got cert=%#v ca=%#v key=%#v", certPath, caPath, keyPath)
 	}
 
 	caString, err := ioutil.ReadFile(caPath)
@@ -195,7 +211,7 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 	caPool := x509.NewCertPool()
 	ok := caPool.AppendCertsFromPEM(caString)
 	if !ok {
-		failf("unable to add ca at %s to certificate pool", caPath)
+		return nil, fmt.Errorf("unable to add cert at %s to certificate pool", caPath)
 	}
 
 	clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
@@ -209,4 +225,33 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 	}
 	bundle.BuildNameToCertificate()
 	return bundle, nil
+}
+
+// setFlagsFromEnv sets unset flags in fs from environment
+// variables as specified by the flags map, which maps
+// from flag name to the environment variable for that name.
+//
+// If a flag f is part of fs but has not been explicitly set on the
+// command line, and flags[f] exists, then it will
+// be set from os.Getenv(flags[f]).
+func setFlagsFromEnv(fs *flag.FlagSet, flags map[string]string) error {
+	set := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) {
+		set[f.Name] = true
+	})
+	for name, env := range flags {
+		f := fs.Lookup(name)
+		if f == nil {
+			panic(fmt.Errorf("flag %q ($%s) not found", f, env))
+		}
+		if set[name] {
+			continue
+		}
+		if v := os.Getenv(env); v != "" {
+			if err := f.Value.Set(v); err != nil {
+				return fmt.Errorf("cannot parse $%s as -%s flag value: %v", env, name, err)
+			}
+		}
+	}
+	return nil
 }
