@@ -295,41 +295,35 @@ func (cmd *produceCmd) close() {
 
 func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
 	defer func() { close(out) }()
-	for {
-		select {
-		case l, ok := <-in:
-			if !ok {
-				return
-			}
-			var msg message
+	for l := range in {
+		var msg message
 
-			switch {
-			case cmd.literal:
-				msg.Value = &l
-				msg.Partition = &cmd.partition
-			default:
-				if err := json.Unmarshal([]byte(l), &msg); err != nil {
-					if cmd.verbose {
-						fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
-					}
-					var v *string = &l
-					if len(l) == 0 {
-						v = nil
-					}
-					msg = message{Key: nil, Value: v}
+		switch {
+		case cmd.literal:
+			msg.Value = &l
+			msg.Partition = &cmd.partition
+		default:
+			if err := json.Unmarshal([]byte(l), &msg); err != nil {
+				if cmd.verbose {
+					fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
 				}
+				var v *string = &l
+				if len(l) == 0 {
+					v = nil
+				}
+				msg = message{Key: nil, Value: v}
 			}
-
-			var part int32 = 0
-			if msg.Key != nil && cmd.partitioner == "hashCode" {
-				part = hashCodePartition(*msg.Key, partitionCount)
-			}
-			if msg.Partition == nil {
-				msg.Partition = &part
-			}
-
-			out <- msg
 		}
+
+		var part int32 = 0
+		if msg.Key != nil && cmd.partitioner == "hashCode" {
+			part = hashCodePartition(*msg.Key, partitionCount)
+		}
+		if msg.Partition == nil {
+			msg.Partition = &part
+		}
+
+		out <- msg
 	}
 }
 
@@ -474,16 +468,10 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 }
 
 func (cmd *produceCmd) produce(in chan []message, out chan printContext) {
-	for {
-		select {
-		case b, ok := <-in:
-			if !ok {
-				return
-			}
-			if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
-				fmt.Fprintln(os.Stderr, err.Error()) // TODO: failf
-				return
-			}
+	for b := range in {
+		if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error()) // TODO: failf
+			return
 		}
 	}
 }

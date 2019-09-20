@@ -98,12 +98,12 @@ func (cmd *consumeCmd) parseArgs(as []string) error {
 	cmd.group = args.group
 
 	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
-		return fmt.Errorf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue)
+		return fmt.Errorf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported`, args.encodeValue)
 	}
 	cmd.encodeValue = args.encodeValue
 
 	if args.encodeKey != "string" && args.encodeKey != "hex" && args.encodeKey != "base64" {
-		return fmt.Errorf(`unsupported encodekey argument %#v, only string, hex and base64 are supported.`, args.encodeValue)
+		return fmt.Errorf(`unsupported encodekey argument %#v, only string, hex and base64 are supported`, args.encodeValue)
 	}
 	cmd.encodeKey = args.encodeKey
 
@@ -268,22 +268,22 @@ func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) 
 
 	offsets, ok := cmd.offsets[partition]
 	if !ok {
-		offsets, ok = cmd.offsets[-1]
+		offsets = cmd.offsets[-1]
 	}
 
 	// TODO resolve offsets synchronously before we go into the per-partition
 	// consumers.
 
 	if start, err = cmd.resolveOffset(offsets.start, partition); err != nil {
-		return fmt.Errorf("Failed to read start offset for partition %v: %v\n", partition, err)
+		return fmt.Errorf("failed to read start offset for partition %v: %v", partition, err)
 	}
 
 	if end, err = cmd.resolveOffset(offsets.end, partition); err != nil {
-		return fmt.Errorf("Failed to read end offset for partition %v: %v\n", partition, err)
+		return fmt.Errorf("failed to read end offset for partition %v: %v", partition, err)
 	}
 
 	if pcon, err = cmd.consumer.ConsumePartition(cmd.topic, partition, start); err != nil {
-		return fmt.Errorf("Failed to consume partition %v: %v", partition, err)
+		return fmt.Errorf("failed to consume partition %v: %v", partition, err)
 	}
 
 	return cmd.partitionLoop(out, pcon, partition, end)

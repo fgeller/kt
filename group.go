@@ -278,7 +278,7 @@ func (cmd *groupCmd) findGroupsOnBroker(broker *sarama.Broker, results chan find
 		resp *sarama.ListGroupsResponse
 	)
 	if err = cmd.connect(broker); err != nil {
-		errs <- fmt.Errorf("failed to connect to broker %#v err=%s\n", broker.Addr(), err)
+		errs <- fmt.Errorf("failed to connect to broker %#v err=%s", broker.Addr(), err)
 	}
 
 	if resp, err = broker.ListGroups(&sarama.ListGroupsRequest{}); err != nil {

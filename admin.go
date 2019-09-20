@@ -121,20 +121,6 @@ func (cmd *adminCmd) run1(args []string) error {
 	return nil
 }
 
-func (cmd *adminCmd) runCreateTopic() {
-	err := cmd.admin.CreateTopic(cmd.createTopic, cmd.topicDetail, cmd.validateOnly)
-	if err != nil {
-		failf("failed to create topic err=%v", err)
-	}
-}
-
-func (cmd *adminCmd) runDeleteTopic() {
-	err := cmd.admin.DeleteTopic(cmd.deleteTopic)
-	if err != nil {
-		failf("failed to delete topic err=%v", err)
-	}
-}
-
 func (cmd *adminCmd) saramaConfig() *sarama.Config {
 	var (
 		err error

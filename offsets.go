@@ -95,13 +95,6 @@ type timeRange struct {
 	t0, t1 time.Time
 }
 
-func (r timeRange) add(d time.Duration) timeRange {
-	return timeRange{
-		t0: r.t0.Add(d),
-		t1: r.t1.Add(d),
-	}
-}
-
 type interval struct {
 	start position
 	end   position
