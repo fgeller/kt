@@ -1,13 +1,11 @@
 package main
 
 import (
-	"os"
-	"reflect"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
-	"github.com/stretchr/testify/require"
+	qt "github.com/frankban/quicktest"
 )
 
 func TestHashCode(t *testing.T) {
@@ -64,119 +62,91 @@ func TestHashCodePartition(t *testing.T) {
 		key        string
 		partitions int32
 		expected   int32
-	}{
-		{
-			key:        "",
-			partitions: 0,
-			expected:   -1,
-		},
-		{
-			key:        "",
-			partitions: 1,
-			expected:   0,
-		},
-		{
-			key:        "super-duper-key",
-			partitions: 1,
-			expected:   0,
-		},
-		{
-			key:        "",
-			partitions: 1,
-			expected:   0,
-		},
-		{
-			key:        "",
-			partitions: 2,
-			expected:   0,
-		},
-		{
-			key:        "a",
-			partitions: 2,
-			expected:   1,
-		},
-		{
-			key:        "b",
-			partitions: 2,
-			expected:   0,
-		},
-		{
-			key:        "random",
-			partitions: 2,
-			expected:   1,
-		},
-		{
-			key:        "random",
-			partitions: 5,
-			expected:   0,
-		},
-	}
-
+	}{{
+		key:        "",
+		partitions: 0,
+		expected:   -1,
+	}, {
+		key:        "",
+		partitions: 1,
+		expected:   0,
+	}, {
+		key:        "super-duper-key",
+		partitions: 1,
+		expected:   0,
+	}, {
+		key:        "",
+		partitions: 1,
+		expected:   0,
+	}, {
+		key:        "",
+		partitions: 2,
+		expected:   0,
+	}, {
+		key:        "a",
+		partitions: 2,
+		expected:   1,
+	}, {
+		key:        "b",
+		partitions: 2,
+		expected:   0,
+	}, {
+		key:        "random",
+		partitions: 2,
+		expected:   1,
+	}, {
+		key:        "random",
+		partitions: 5,
+		expected:   0,
+	}}
+	c := qt.New(t)
 	for _, d := range data {
-		actual := hashCodePartition(d.key, d.partitions)
-		if actual != d.expected {
-			t.Errorf("expected %v but found %v for key %#v and %v partitions\n", d.expected, actual, d.key, d.partitions)
-		}
+		testName := fmt.Sprintf("%q-%d", d.key, d.partitions)
+		c.Run(testName, func(c *qt.C) {
+			c.Assert(hashCodePartition(d.key, d.partitions), qt.Equals, d.expected)
+		})
 	}
 }
 
-func TestProduceParseArgs(t *testing.T) {
-	expectedTopic := "test-topic"
-	givenBroker := "hans:9092"
-	expectedBrokers := []string{givenBroker}
-	target := &produceCmd{}
+func TestProduceParseArgsUsesEnvVar(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 
-	os.Setenv("KT_TOPIC", expectedTopic)
-	os.Setenv("KT_BROKERS", givenBroker)
+	c.Setenv("KT_TOPIC", "test-topic")
+	c.Setenv("KT_BROKERS", "hans:2000")
 
-	target.parseArgs([]string{})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-			expectedTopic,
-			expectedBrokers,
-			target.topic,
-			target.brokers,
-		)
-		return
-	}
+	var target produceCmd
+	target.parseArgs(nil)
+	c.Assert(target.topic, qt.Equals, "test-topic")
+	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
+}
 
-	// default brokers to localhost:9092
-	os.Setenv("KT_TOPIC", "")
-	os.Setenv("KT_BROKERS", "")
-	expectedBrokers = []string{"localhost:9092"}
+// brokers default to localhost:9092
+func TestProduceParseArgsDefault(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 
-	target.parseArgs([]string{"-topic", expectedTopic})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-			expectedTopic,
-			expectedBrokers,
-			target.topic,
-			target.brokers,
-		)
-		return
-	}
+	c.Setenv("KT_TOPIC", "")
+	c.Setenv("KT_BROKERS", "")
+
+	var target produceCmd
+	target.parseArgs([]string{"-topic", "test-topic"})
+	c.Assert(target.topic, qt.Equals, "test-topic")
+	c.Assert(target.brokers, qt.DeepEquals, []string{"localhost:9092"})
+}
+
+func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 
 	// command line arg wins
-	os.Setenv("KT_TOPIC", "BLUBB")
-	os.Setenv("KT_BROKERS", "BLABB")
-	expectedBrokers = []string{givenBroker}
+	c.Setenv("KT_TOPIC", "BLUBB")
+	c.Setenv("KT_BROKERS", "BLABB")
 
-	target.parseArgs([]string{"-topic", expectedTopic, "-brokers", givenBroker})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
-			expectedTopic,
-			expectedBrokers,
-			target.topic,
-			target.brokers,
-		)
-		return
-	}
+	var target produceCmd
+	target.parseArgs([]string{"-topic", "test-topic", "-brokers", "hans:2000"})
+	c.Assert(target.topic, qt.Equals, "test-topic")
+	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
 func newMessage(key, value string, partition int32) message {
@@ -198,89 +168,86 @@ func newMessage(key, value string, partition int32) message {
 }
 
 func TestMakeSaramaMessage(t *testing.T) {
+	c := qt.New(t)
 	target := &produceCmd{decodeKey: "string", decodeValue: "string"}
 	key, value := "key", "value"
 	msg := message{Key: &key, Value: &value}
 	actual, err := target.makeSaramaMessage(msg)
-	require.Nil(t, err)
-	require.Equal(t, []byte(key), actual.Key)
-	require.Equal(t, []byte(value), actual.Value)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(string(actual.Key), qt.Equals, key)
+	c.Assert(string(actual.Value), qt.Equals, value)
 
 	target.decodeKey, target.decodeValue = "hex", "hex"
 	key, value = "41", "42"
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
-	require.Nil(t, err)
-	require.Equal(t, []byte("A"), actual.Key)
-	require.Equal(t, []byte("B"), actual.Value)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(string(actual.Key), qt.Equals, "A")
+	c.Assert(string(actual.Value), qt.Equals, "B")
 
 	target.decodeKey, target.decodeValue = "base64", "base64"
 	key, value = "aGFucw==", "cGV0ZXI="
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
-	require.Nil(t, err)
-	require.Equal(t, []byte("hans"), actual.Key)
-	require.Equal(t, []byte("peter"), actual.Value)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(string(actual.Key), qt.Equals, "hans")
+	c.Assert(string(actual.Value), qt.Equals, "peter")
 }
 
 func TestDeserializeLines(t *testing.T) {
-	target := &produceCmd{}
-	target.partitioner = "hashCode"
 	data := []struct {
 		in             string
 		literal        bool
 		partition      int32
 		partitionCount int32
 		expected       message
-	}{
-		{
-			in:             "",
-			literal:        false,
-			partitionCount: 1,
-			expected:       newMessage("", "", 0),
-		},
-		{
-			in:             `{"key":"hans","value":"123"}`,
-			literal:        false,
-			partitionCount: 4,
-			expected:       newMessage("hans", "123", hashCodePartition("hans", 4)),
-		},
-		{
-			in:             `{"key":"hans","value":"123","partition":1}`,
-			literal:        false,
-			partitionCount: 3,
-			expected:       newMessage("hans", "123", 1),
-		},
-		{
-			in:             `{"other":"json","values":"avail"}`,
-			literal:        true,
-			partition:      2,
-			partitionCount: 4,
-			expected:       newMessage("", `{"other":"json","values":"avail"}`, 2),
-		},
-		{
-			in:             `so lange schon`,
-			literal:        false,
-			partitionCount: 3,
-			expected:       newMessage("", "so lange schon", 0),
-		},
-	}
+	}{{
+		in:             "",
+		literal:        false,
+		partitionCount: 1,
+		expected:       newMessage("", "", 0),
+	}, {
+		in:             `{"key":"hans","value":"123"}`,
+		literal:        false,
+		partitionCount: 4,
+		expected:       newMessage("hans", "123", hashCodePartition("hans", 4)),
+	}, {
+		in:             `{"key":"hans","value":"123","partition":1}`,
+		literal:        false,
+		partitionCount: 3,
+		expected:       newMessage("hans", "123", 1),
+	}, {
+		in:             `{"other":"json","values":"avail"}`,
+		literal:        true,
+		partition:      2,
+		partitionCount: 4,
+		expected:       newMessage("", `{"other":"json","values":"avail"}`, 2),
+	}, {
+		in:             `so lange schon`,
+		literal:        false,
+		partitionCount: 3,
+		expected:       newMessage("", "so lange schon", 0),
+	}}
 
-	for _, d := range data {
-		in := make(chan string, 1)
-		out := make(chan message)
-		target.literal = d.literal
-		target.partition = d.partition
-		go target.deserializeLines(in, out, d.partitionCount)
-		in <- d.in
-
-		select {
-		case <-time.After(50 * time.Millisecond):
-			t.Errorf("did not receive output in time")
-		case actual := <-out:
-			if !(reflect.DeepEqual(d.expected, actual)) {
-				t.Errorf(spew.Sprintf("\nexpected %#v\nactual   %#v", d.expected, actual))
+	c := qt.New(t)
+	for i, d := range data {
+		c.Run(fmt.Sprint(i), func(c *qt.C) {
+			target := &produceCmd{
+				partitioner: "hashCode",
+				literal:     d.literal,
+				partition:   d.partition,
 			}
-		}
+			in := make(chan string, 1)
+			out := make(chan message)
+			go target.deserializeLines(in, out, d.partitionCount)
+			in <- d.in
+
+			select {
+			case <-time.After(time.Second):
+				t.Errorf("did not receive output in time")
+			case actual := <-out:
+				c.Check(actual, deepEquals, d.expected)
+			}
+		})
 	}
 }
