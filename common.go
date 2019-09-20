@@ -28,7 +28,7 @@ var (
 
 func listenForInterrupt(q chan struct{}) {
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Kill, os.Interrupt)
+	signal.Notify(signals, os.Interrupt)
 	sig := <-signals
 	fmt.Fprintf(os.Stderr, "received signal %s\n", sig)
 	close(q)
@@ -37,7 +37,7 @@ func listenForInterrupt(q chan struct{}) {
 var defaultKafkaVersion = sarama.V2_0_0_0
 
 func kafkaVersionFlagVar(fs *flag.FlagSet, vp *sarama.KafkaVersion) {
-	*vp = sarama.V2_0_0_0
+	*vp = defaultKafkaVersion
 	fs.Var(kafkaVersionFlag{
 		v: vp,
 	}, "version", "Kafka protocol version")
@@ -61,19 +61,6 @@ func (v kafkaVersionFlag) Set(s string) error {
 	}
 	*v.v = vers
 	return nil
-}
-
-func parseTimeout(s string) *time.Duration {
-	if s == "" {
-		return nil
-	}
-
-	v, err := time.ParseDuration(s)
-	if err != nil {
-		failf(err.Error())
-	}
-
-	return &v
 }
 
 func logClose(name string, c io.Closer) {
