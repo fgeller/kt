@@ -42,6 +42,12 @@ type position struct {
 	diff   anchorDiff
 }
 
+// resolved reports whether the position has been
+// fully resolved to an absolute offset.
+func (p position) resolved() bool {
+	return !p.anchor.isTime && p.anchor.offset >= 0 && !p.diff.isDuration && p.diff.offset == 0
+}
+
 // anchor represents an absolute offset in the position stream.
 type anchor struct {
 	// isTime specifies which anchor field is valid.

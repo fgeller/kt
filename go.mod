@@ -1,4 +1,4 @@
-module github.com/fgeller/kt
+module github.com/heetch/hkt
 
 require (
 	github.com/Shopify/sarama v1.19.0
@@ -10,6 +10,7 @@ require (
 	github.com/frankban/quicktest v1.4.1
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
 	github.com/google/go-cmp v0.3.0
+	github.com/kr/pretty v0.1.0
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20180503174638-e2704e165165 // indirect
 	github.com/rogpeppe/go-internal v1.4.0
