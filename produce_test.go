@@ -169,7 +169,19 @@ func newMessage(key, value string, partition int32) message {
 
 func TestMakeSaramaMessage(t *testing.T) {
 	c := qt.New(t)
-	target := &produceCmd{decodeKey: "string", decodeValue: "string"}
+	mustDecoderForType := func(typ string) func(string) ([]byte, error) {
+		dec, err := decoderForType(typ)
+		c.Assert(err, qt.Equals, nil)
+		return dec
+	}
+	stringDecoder := mustDecoderForType("string")
+	hexDecoder := mustDecoderForType("hex")
+	base64Decoder := mustDecoderForType("base64")
+
+	target := &produceCmd{
+		decodeKey:   stringDecoder,
+		decodeValue: stringDecoder,
+	}
 	key, value := "key", "value"
 	msg := message{Key: &key, Value: &value}
 	actual, err := target.makeSaramaMessage(msg)
@@ -177,7 +189,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 	c.Assert(string(actual.Key), qt.Equals, key)
 	c.Assert(string(actual.Value), qt.Equals, value)
 
-	target.decodeKey, target.decodeValue = "hex", "hex"
+	target.decodeKey, target.decodeValue = hexDecoder, hexDecoder
 	key, value = "41", "42"
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
@@ -185,7 +197,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 	c.Assert(string(actual.Key), qt.Equals, "A")
 	c.Assert(string(actual.Value), qt.Equals, "B")
 
-	target.decodeKey, target.decodeValue = "base64", "base64"
+	target.decodeKey, target.decodeValue = base64Decoder, base64Decoder
 	key, value = "aGFucw==", "cGV0ZXI="
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)

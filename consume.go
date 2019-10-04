@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -26,8 +24,8 @@ type consumeCmd struct {
 	timeout     time.Duration
 	verbose     bool
 	version     sarama.KafkaVersion
-	encodeValue string
-	encodeKey   string
+	encodeValue func([]byte) *string
+	encodeKey   func([]byte) *string
 	pretty      bool
 	follow      bool
 	group       string
@@ -71,23 +69,21 @@ func (cmd *consumeCmd) parseArgs(as []string) error {
 	cmd.version = args.version
 	cmd.group = args.group
 
-	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
-		return fmt.Errorf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported`, args.encodeValue)
+	var err error
+	cmd.encodeValue, err = encoderForType(args.encodeValue)
+	if err != nil {
+		return fmt.Errorf("bad -encodevalue argument: %v", err)
 	}
-	cmd.encodeValue = args.encodeValue
-
-	if args.encodeKey != "string" && args.encodeKey != "hex" && args.encodeKey != "base64" {
-		return fmt.Errorf(`unsupported encodekey argument %#v, only string, hex and base64 are supported`, args.encodeValue)
+	cmd.encodeKey, err = encoderForType(args.encodeKey)
+	if err != nil {
+		return fmt.Errorf("bad -encodekey argument: %v", err)
 	}
-	cmd.encodeKey = args.encodeKey
-
 	cmd.brokers = strings.Split(args.brokers, ",")
 	for i, b := range cmd.brokers {
 		if !strings.Contains(b, ":") {
 			cmd.brokers[i] = b + ":9092"
 		}
 	}
-	var err error
 	cmd.offsets, err = parseOffsets(args.offsets, time.Now())
 	if err != nil {
 		return err
@@ -250,37 +246,17 @@ type consumedMessage struct {
 	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
-func newConsumedMessage(m *sarama.ConsumerMessage, encodeKey, encodeValue string) consumedMessage {
+func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) consumedMessage {
 	result := consumedMessage{
 		Partition: m.Partition,
 		Offset:    m.Offset,
-		Key:       encodeBytes(m.Key, encodeKey),
-		Value:     encodeBytes(m.Value, encodeValue),
+		Key:       cmd.encodeKey(m.Key),
+		Value:     cmd.encodeValue(m.Value),
 	}
-
 	if !m.Timestamp.IsZero() {
 		result.Timestamp = &m.Timestamp
 	}
-
 	return result
-}
-
-func encodeBytes(data []byte, encoding string) *string {
-	if data == nil {
-		return nil
-	}
-
-	var str string
-	switch encoding {
-	case "hex":
-		str = hex.EncodeToString(data)
-	case "base64":
-		str = base64.StdEncoding.EncodeToString(data)
-	default:
-		str = string(data)
-	}
-
-	return &str
 }
 
 func (cmd *consumeCmd) closePOMs() {
@@ -347,7 +323,7 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 				return fmt.Errorf("unexpected closed messages chan")
 			}
 
-			m := newConsumedMessage(msg, cmd.encodeKey, cmd.encodeValue)
+			m := cmd.newConsumedMessage(msg)
 			ctx := printContext{output: m, done: make(chan struct{})}
 			out <- ctx
 			<-ctx.done
