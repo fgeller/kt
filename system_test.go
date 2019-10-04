@@ -1,287 +1,119 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
-	"sort"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/Shopify/sarama"
-	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp"
+	"github.com/rogpeppe/go-internal/testscript"
 )
 
-type cmd struct {
-	in string
+// TestMain allows the test binary to call the top level main
+// function so that it can be invoked by the testscript tests.
+func TestMain(m *testing.M) {
+	os.Exit(testscript.RunMain(m, map[string]func() int{
+		"kt": func() int {
+			main()
+			// TODO make main return exit code.
+			return 0
+		},
+	}))
 }
 
-func newCmd() *cmd                  { return &cmd{} }
-func (c *cmd) stdIn(in string) *cmd { c.in = in; return c }
-func (c *cmd) run(name string, args ...string) (int, string, string) {
-	cmd := exec.Command(name, args...)
-
-	var stdOut, stdErr bytes.Buffer
-	cmd.Stdout = &stdOut
-	cmd.Stderr = &stdErr
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, "KT_BROKERS=localhost:9092")
-
-	if len(c.in) > 0 {
-		cmd.Stdin = strings.NewReader(c.in)
-	}
-
-	_ = cmd.Run()
-	status := cmd.ProcessState.Sys().(syscall.WaitStatus)
-
-	strOut := stdOut.String()
-	strErr := stdErr.String()
-
-	return status.ExitStatus(), strOut, strErr
-
-}
-
-func build(t *testing.T) {
-	c := qt.New(t)
-
-	status, _, _ := newCmd().run("make", "build")
-	c.Assert(status, qt.Equals, 0)
-
-	status, _, _ = newCmd().run("ls", "kt")
-	c.Assert(status, qt.Equals, 0)
-}
+const testBrokerAddr = "localhost:9092"
 
 func TestSystem(t *testing.T) {
-	c := qt.New(t)
-	build(t)
-
+	// Run all the scripts in testdata/*.txt which do end-to-end testing
+	// of the top level command.
 	//
-	// kt admin -createtopic
+	// We make some environment variables available the scripts,
+	// including a random topic name so that the scripts can produce
+	// to a topic without fear of clashes, the current time of day
+	// so that the scripts can compare timestamp values against it,
+	// and the address of the local Kafka broker.
 	//
-	topicName := fmt.Sprintf("kt-test-%v", randomString(6))
-	topicDetail := &sarama.TopicDetail{
-		NumPartitions:     1,
-		ReplicationFactor: 1,
-	}
-	buf, err := json.Marshal(topicDetail)
-	c.Assert(err, qt.Equals, nil)
-	fnTopicDetail := fmt.Sprintf("topic-detail-%v.json", randomString(6))
-	err = ioutil.WriteFile(fnTopicDetail, buf, 0666)
-	c.Assert(err, qt.Equals, nil)
-	defer os.RemoveAll(fnTopicDetail)
-
-	status, stdOut, stdErr := newCmd().stdIn(string(buf)).run("./kt", "admin", "-createtopic", topicName, "-topicdetail", fnTopicDetail)
-	c.Logf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Equals, "")
-
-	c.Logf(">> ✓\n")
-	//
-	// kt produce
-	//
-
-	req := map[string]interface{}{
-		"value":     fmt.Sprintf("hello, %s", randomString(6)),
-		"key":       "boom",
-		"partition": float64(0),
-	}
-	buf, err = json.Marshal(req)
-	c.Assert(err, qt.Equals, nil)
-	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "produce", "-topic", topicName)
-	c.Logf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Equals, "")
-
-	var produceMessage map[string]int
-	err = json.Unmarshal([]byte(stdOut), &produceMessage)
-	c.Assert(err, qt.Equals, nil)
-	c.Assert(produceMessage["count"], qt.Equals, 1)
-	c.Assert(produceMessage["partition"], qt.Equals, 0)
-	c.Assert(produceMessage["startOffset"], qt.Equals, 0)
-
-	c.Logf(">> ✓\n")
-	//
-	// kt consume
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", topicName, "-timeout", "500ms", "-group", "hans")
-	c.Logf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-
-	lines := splitLines(stdOut)
-	c.Assert(lines, qt.Not(qt.HasLen), 0)
-
-	var lastConsumed map[string]interface{}
-	err = json.Unmarshal([]byte(lines[len(lines)-1]), &lastConsumed)
-	c.Assert(err, qt.Equals, nil, qt.Commentf("stdout: %q", stdOut))
-	c.Assert(lastConsumed["value"], qt.Equals, req["value"])
-	c.Assert(lastConsumed["key"], qt.Equals, req["key"])
-	c.Assert(lastConsumed["partition"], qt.Equals, req["partition"])
-	c.Assert(lastConsumed["timestamp"], qt.Matches, ".+")
-
-	pt, err := time.Parse(time.RFC3339, lastConsumed["timestamp"].(string))
-	c.Assert(err, qt.Equals, nil)
-	if want := time.Now().Add(-2 * time.Minute); pt.Before(want) {
-		c.Fatalf("timestamp is too early; got %v want after %v", pt, want)
-	}
-
-	c.Logf(">> ✓\n")
-	//
-	// kt group
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName)
-	c.Logf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Contains, fmt.Sprintf(`found partitions=[0] for topic=%v`, topicName))
-	c.Assert(stdOut, qt.Contains, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, topicName))
-
-	c.Logf(">> ✓\n")
-	//
-	// kt produce
-	//
-
-	req = map[string]interface{}{
-		"value":     fmt.Sprintf("hello, %s", randomString(6)),
-		"key":       "boom",
-		"partition": float64(0),
-	}
-	buf, err = json.Marshal(req)
-	c.Assert(err, qt.Equals, nil)
-	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "produce", "-topic", topicName)
-	c.Logf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Equals, "")
-
-	err = json.Unmarshal([]byte(stdOut), &produceMessage)
-	c.Assert(err, qt.Equals, nil)
-	c.Assert(produceMessage["count"], qt.Equals, 1)
-	c.Assert(produceMessage["partition"], qt.Equals, 0)
-	c.Assert(produceMessage["startOffset"], qt.Equals, 1)
-
-	c.Logf(">> ✓\n")
-	//
-	// kt consume
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "consume", "-topic", topicName, "-offsets", "all=resume", "-timeout", "500ms", "-group", "hans")
-	c.Logf(">> system test kt consume -topic %v -offsets all=resume stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt consume -topic %v -offsets all=resume stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-
-	lines = splitLines(stdOut)
-	c.Assert(lines, qt.HasLen, 1)
-
-	err = json.Unmarshal([]byte(lines[len(lines)-1]), &lastConsumed)
-	c.Assert(err, qt.Equals, nil)
-
-	c.Assert(lastConsumed["value"], qt.Equals, req["value"])
-	c.Assert(lastConsumed["key"], qt.Equals, req["key"])
-	c.Assert(lastConsumed["partition"], qt.Equals, req["partition"])
-	c.Assert(lastConsumed["timestamp"], qt.Matches, ".+")
-
-	pt, err = time.Parse(time.RFC3339, lastConsumed["timestamp"].(string))
-	c.Assert(err, qt.Equals, nil)
-	if want := time.Now().Add(-2 * time.Minute); pt.Before(want) {
-		c.Fatalf("timestamp is too early; got %v want after %v", pt, want)
-	}
-
-	c.Logf(">> ✓\n")
-	//
-	// kt group reset
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName, "-partitions", "0", "-group", "hans", "-reset", "0")
-	c.Logf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-
-	lines = splitLines(stdOut)
-	c.Assert(lines, qt.Not(qt.HasLen), 0)
-
-	var groupReset map[string]interface{}
-	err = json.Unmarshal([]byte(lines[len(lines)-1]), &groupReset)
-	c.Assert(err, qt.Equals, nil)
-
-	c.Assert(groupReset["name"], qt.Equals, "hans")
-	c.Assert(groupReset["topic"], qt.Equals, topicName)
-	c.Assert(groupReset["offsets"], qt.HasLen, 1)
-	offsets := groupReset["offsets"].([]interface{})[0].(map[string]interface{})
-	c.Assert(offsets["partition"], qt.Equals, 0.0)
-	c.Assert(offsets["offset"], qt.Equals, 0.0)
-
-	c.Logf(">> ✓\n")
-	//
-	// kt group
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "group", "-topic", topicName)
-	c.Logf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Contains, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
-	c.Assert(stdOut, qt.Contains, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":0,"lag":2}]}`, topicName))
-
-	c.Logf(">> ✓\n")
-	//
-	// kt topic
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "topic", "-filter", topicName)
-	c.Logf(">> system test kt topic stdout:\n%s\n", stdOut)
-	c.Logf(">> system test kt topic stderr:\n%s\n", stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Equals, "")
-
-	lines = splitLines(stdOut)
-	c.Assert(lines, qt.Not(qt.HasLen), 0)
-
-	expectedLines := []string{
-		fmt.Sprintf(`{"name":"%v"}`, topicName),
-	}
-	sort.Strings(lines)
-	sort.Strings(expectedLines)
-
-	for i, l := range lines {
-		c.Assert(l, qt.Equals, expectedLines[i])
-	}
-	c.Logf(">> ✓\n")
-
-	//
-	// kt admin -deletetopic
-	//
-	status, stdOut, stdErr = newCmd().stdIn(string(buf)).run("./kt", "admin", "-deletetopic", topicName)
-	c.Logf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
-	c.Logf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Equals, "")
-
-	c.Logf(">> ✓\n")
-
-	//
-	// kt topic
-	//
-
-	status, stdOut, stdErr = newCmd().run("./kt", "topic", "-filter", topicName)
-	c.Logf(">> system test kt topic stdout:\n%s\n", stdOut)
-	c.Logf(">> system test kt topic stderr:\n%s\n", stdErr)
-	c.Assert(status, qt.Equals, 0)
-	c.Assert(stdErr, qt.Equals, "")
-	c.Assert(stdOut, qt.Equals, "")
-
-	c.Logf(">> ✓\n")
+	// It makes a command available that does JSON comparison
+	// (see the cmpenvjson docs).
+	topic := randomString(6)
+	testscript.Run(t, testscript.Params{
+		Dir: "testdata",
+		Cmds: map[string]func(ts *testscript.TestScript, neg bool, args []string){
+			"cmpenvjson": cmpenvjson,
+		},
+		Setup: func(e *testscript.Env) error {
+			e.Vars = append(e.Vars,
+				"topic="+topic,
+				"KT_BROKERS="+testBrokerAddr,
+				"now="+time.Now().Format(time.RFC3339),
+			)
+			e.Defer(func() {
+				if err := deleteTopic(topic); err != nil {
+					t.Errorf("cannot delete topic %q from local Kafka: %v", topic, err)
+				}
+			})
+			return nil
+		},
+	})
 }
 
-func splitLines(s string) []string {
-	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+// cmpenvjson implements the cmpenvjson testscript command.
+// Usage:
+//	cmpenvjson file1 file2|object
+// It succeeds if file1 has the same JSON contents
+// as file2 after environment variables are substituted in file2.
+// File2 can be a literal JSON object instead of a filename.
+func cmpenvjson(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("cmpjson does not support !")
+	}
+	if len(args) != 2 {
+		ts.Fatalf("usage: cmpjson file file")
+	}
+
+	got := ts.ReadFile(args[0])
+	var want string
+	if strings.HasPrefix(args[1], "{") {
+		want = args[1]
+	} else {
+		want = ts.ReadFile(args[1])
+	}
+	want = os.Expand(want, ts.Getenv)
+	var gotv, wantv interface{}
+	ts.Check(json.Unmarshal([]byte(got), &gotv))
+	ts.Check(json.Unmarshal([]byte(want), &wantv))
+	if diff := cmp.Diff(gotv, wantv, cmp.Comparer(func(s1, s2 string) bool {
+		if s1 == s2 {
+			return true
+		}
+		t1, err1 := time.Parse(time.RFC3339, s1)
+		t2, err2 := time.Parse(time.RFC3339, s2)
+		if err1 != nil || err2 != nil {
+			return false
+		}
+		d := t1.Sub(t2)
+		if d < 0 {
+			d = -d
+		}
+		return d < 5*time.Second
+	})); diff != "" {
+		ts.Fatalf("files differ:\n%s\n", diff)
+	}
+}
+
+func deleteTopic(topic string) error {
+	cfg := sarama.NewConfig()
+	cfg.Version = defaultKafkaVersion
+	admin, err := sarama.NewClusterAdmin([]string{testBrokerAddr}, cfg)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+	if err := admin.DeleteTopic(topic); err != nil && err != sarama.ErrUnknownTopicOrPartition {
+		return err
+	}
+	return nil
 }
