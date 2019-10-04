@@ -11,7 +11,7 @@ cmpenvjson stdout '{"count": 1, "partition": 0, "startOffset": 0}'
 # 2
 kt consume -f -topic $topic -timeout 500ms
 stderr 'consuming from partition 0 timed out after 500ms'
-cmpenvjson stdout '{"value": "hello 1", "key": "boom", "partition": 0, "offset": 0, "timestamp": "$now"}'
+cmpenvjson stdout '{"value": "hello 1", "key": "boom", "partition": 0, "offset": 0, "time": "$now"}'
 
 # 4
 stdin 4-produce/stdin.json

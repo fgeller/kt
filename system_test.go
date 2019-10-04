@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/rogpeppe/go-internal/testscript"
 )
+
+var updateFlag = flag.Bool("update", false, "update testscript scripts to correspond with actual output")
 
 // TestMain allows the test binary to call the top level main
 // function so that it can be invoked by the testscript tests.
@@ -38,17 +41,17 @@ func TestSystem(t *testing.T) {
 	//
 	// It makes a command available that does JSON comparison
 	// (see the cmpenvjson docs).
-	topic := randomString(6)
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata",
 		Cmds: map[string]func(ts *testscript.TestScript, neg bool, args []string){
 			"cmpenvjson": cmpenvjson,
 		},
 		Setup: func(e *testscript.Env) error {
+			topic := randomString(6)
 			e.Vars = append(e.Vars,
 				"topic="+topic,
 				"KT_BROKERS="+testBrokerAddr,
-				"now="+time.Now().Format(time.RFC3339),
+				"now="+time.Now().UTC().Format(time.RFC3339),
 			)
 			e.Defer(func() {
 				if err := deleteTopic(topic); err != nil {
@@ -57,6 +60,7 @@ func TestSystem(t *testing.T) {
 			})
 			return nil
 		},
+		UpdateScripts: *updateFlag,
 	})
 }
 

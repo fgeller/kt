@@ -279,3 +279,10 @@ func encoderForType(typ string) (func([]byte) *string, error) {
 		return &s
 	}, nil
 }
+
+func min(x, y int64) int64 {
+	if x < y {
+		return x
+	}
+	return y
+}

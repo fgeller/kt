@@ -8,11 +8,12 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-// resolveOffsets resolves the given per-partition intervals to absolute intervals.
-func (cmd *consumeCmd) resolveOffsets(ctx context.Context, offsets map[int32]interval) (map[int32]resolvedInterval, error) {
+// resolveOffsets resolves the given per-partition intervals to absolute intervals;
+// it also returns the limit offset for each partition.
+func (cmd *consumeCmd) resolveOffsets(ctx context.Context, offsets map[int32]interval) (resolved map[int32]resolvedInterval, limits map[int32]int64, err error) {
 	r, err := cmd.newResolver()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return r.resolveOffsets(ctx, offsets)
 }
@@ -80,16 +81,17 @@ type offsetQuery struct {
 	offsetQuery map[int32]map[offsetRequest]bool
 }
 
-func (r *resolver) resolveOffsets(ctx context.Context, offsets map[int32]interval) (map[int32]resolvedInterval, error) {
+func (r *resolver) resolveOffsets(ctx context.Context, offsets map[int32]interval) (resolved map[int32]resolvedInterval, limits map[int32]int64, err error) {
 	allOffsets := make(map[int32]*interval)
 	for p, intv := range offsets {
 		intv := intv
 		allOffsets[p] = &intv
 		if p != -1 && !r.partitionExists(p) {
-			return nil, fmt.Errorf("partition %v does not exist", p)
+			return nil, nil, fmt.Errorf("partition %v does not exist", p)
 		}
 	}
-	resolved := make(map[int32]resolvedInterval)
+	resolved = make(map[int32]resolvedInterval)
+	limits = make(map[int32]int64)
 	// Some offsets can't be resolved in one query (for example, a
 	// offset like "latest-1h" will first need to resolve "latest"
 	// to the latest offset for the partition, then find the
@@ -120,15 +122,19 @@ func (r *resolver) resolveOffsets(ctx context.Context, offsets map[int32]interva
 			if p == -1 {
 				continue
 			}
-			partitionMax, haveMax := lastPosition(), true
+			limit, haveLimit := resolvePosition(p, newestPosition(), &r.info, q)
+			if haveLimit {
+				limits[p] = limit.anchor.offset
+			}
+			partitionMax, ok0 := lastPosition(), true
 			if r.truncate {
 				// Find out where the partition ends so we can constrain the interval.
-				partitionMax, haveMax = resolvePosition(p, newestPosition(), &r.info, q)
+				partitionMax, ok0 = limit, haveLimit
 			}
 			start, ok1 := resolvePosition(p, intv.start, &r.info, q)
 			end, ok2 := resolvePosition(p, intv.end, &r.info, q)
 			intv.start, intv.end = start, end
-			if ok1 && ok2 && haveMax {
+			if ok0 && ok1 && ok2 {
 				// The interval has been fully resolved,
 				// so remove it from allOffsets and add
 				// it to resolved.
@@ -142,10 +148,10 @@ func (r *resolver) resolveOffsets(ctx context.Context, offsets map[int32]interva
 			}
 		}
 		if err := r.runQuery(ctx, q, &r.info); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return resolved, nil
+	return resolved, limits, nil
 }
 
 // expandAllIntervalsSpec expands the "all partitions" entry in offsets if present,
@@ -229,13 +235,6 @@ func (r *resolver) expandAllIntervalsSpec(offsets map[int32]*interval, q *offset
 		intv := *intv
 		offsets[partition] = &intv
 	}
-}
-
-func min(x, y int64) int64 {
-	if x < y {
-		return x
-	}
-	return y
 }
 
 func (r *resolver) partitionExists(p int32) bool {
