@@ -89,18 +89,10 @@ func (cmd *groupCmd) run(args []string) {
 	}
 	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
 
-	out := make(chan printContext)
-	go print(out, cmd.pretty)
-
+	out := newPrinter(cmd.pretty)
 	if !cmd.offsets {
-		for i, grp := range groups {
-			ctx := printContext{output: group{Name: grp}, done: make(chan struct{})}
-			out <- ctx
-			<-ctx.done
-
-			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "%v/%v\n", i+1, len(groups))
-			}
+		for _, grp := range groups {
+			out.print(group{Name: grp})
 		}
 		return
 	}
@@ -115,20 +107,21 @@ func (cmd *groupCmd) run(args []string) {
 		topicPartitions[topic] = parts
 	}
 
-	wg := &sync.WaitGroup{}
-	wg.Add(len(groups) * len(topics))
+	var wg sync.WaitGroup
 	for _, grp := range groups {
 		for top, parts := range topicPartitions {
-			go func(grp, topic string, partitions []int32) {
-				cmd.printGroupTopicOffset(out, grp, topic, partitions)
+			grp, top, parts := grp, top, parts
+			wg.Add(1)
+			go func() {
+				cmd.printGroupTopicOffset(out, grp, top, parts)
 				wg.Done()
-			}(grp, top, parts)
+			}()
 		}
 	}
 	wg.Wait()
 }
 
-func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string, parts []int32) {
+func (cmd *groupCmd) printGroupTopicOffset(out *printer, grp, top string, parts []int32) {
 	target := group{Name: grp, Topic: top, Offsets: make([]groupOffset, 0, len(parts))}
 	results := make(chan groupOffset)
 	done := make(chan struct{})
@@ -154,9 +147,7 @@ awaitGroupOffsets:
 		sort.Slice(target.Offsets, func(i, j int) bool {
 			return target.Offsets[j].Partition > target.Offsets[i].Partition
 		})
-		ctx := printContext{output: target, done: make(chan struct{})}
-		out <- ctx
-		<-ctx.done
+		out.print(target)
 	}
 }
 

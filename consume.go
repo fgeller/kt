@@ -193,10 +193,8 @@ func (cmd *consumeCmd) newClient() (sarama.Client, error) {
 }
 
 func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval) error {
+	out := newPrinter(cmd.pretty)
 	var wg sync.WaitGroup
-	out := make(chan printContext)
-	go print(out, cmd.pretty)
-
 	wg.Add(len(partitions))
 	for p, interval := range partitions {
 		p, interval := p, interval
@@ -211,7 +209,7 @@ func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval) error {
 	return nil
 }
 
-func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32, interval resolvedInterval) error {
+func (cmd *consumeCmd) consumePartition(out *printer, partition int32, interval resolvedInterval) error {
 	if interval.start >= interval.end {
 		return nil
 	}
@@ -243,7 +241,7 @@ func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) consumedMes
 	return result
 }
 
-func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) error {
+func (cmd *consumeCmd) partitionLoop(out *printer, pc sarama.PartitionConsumer, p int32, end int64) error {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 	var (
 		timer   *time.Timer
@@ -268,12 +266,7 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			if !ok {
 				return fmt.Errorf("unexpected closed messages chan")
 			}
-
-			m := cmd.newConsumedMessage(msg)
-			ctx := printContext{output: m, done: make(chan struct{})}
-			out <- ctx
-			<-ctx.done
-
+			out.print(cmd.newConsumedMessage(msg))
 			if end > 0 && msg.Offset >= end-1 {
 				return nil
 			}

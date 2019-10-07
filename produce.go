@@ -248,12 +248,11 @@ func (cmd *produceCmd) run(as []string) {
 	lines := make(chan string)
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
-	out := make(chan printContext)
-	q := make(chan struct{})
 
 	go readStdinLines(cmd.bufferSize, stdin)
-	go print(out, cmd.pretty)
+	out := newPrinter(cmd.pretty)
 
+	q := make(chan struct{})
 	go listenForInterrupt(q)
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
@@ -371,7 +370,7 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	return sm, nil
 }
 
-func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message, out chan printContext) error {
+func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message, out *printer) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
@@ -399,10 +398,7 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 			return fmt.Errorf("failed to read producer response err=%s", err)
 		}
 		for p, o := range offsets {
-			result := map[string]interface{}{"partition": p, "startOffset": o.start, "count": o.count}
-			ctx := printContext{output: result, done: make(chan struct{})}
-			out <- ctx
-			<-ctx.done
+			out.print(map[string]interface{}{"partition": p, "startOffset": o.start, "count": o.count})
 		}
 	}
 	return nil
@@ -427,7 +423,7 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func (cmd *produceCmd) produce(in chan []message, out chan printContext) {
+func (cmd *produceCmd) produce(in chan []message, out *printer) {
 	for b := range in {
 		if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
 			fmt.Fprintln(os.Stderr, err.Error()) // TODO: failf

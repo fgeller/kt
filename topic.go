@@ -152,12 +152,6 @@ func (cmd *topicCmd) connect() {
 }
 
 func (cmd *topicCmd) run(as []string) {
-	var (
-		err error
-		all []string
-		out = make(chan printContext)
-	)
-
 	cmd.parseArgs(as)
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -166,7 +160,8 @@ func (cmd *topicCmd) run(as []string) {
 	cmd.connect()
 	defer cmd.client.Close()
 
-	if all, err = cmd.client.Topics(); err != nil {
+	all, err := cmd.client.Topics()
+	if err != nil {
 		failf("failed to read topics err=%v", err)
 	}
 
@@ -177,33 +172,22 @@ func (cmd *topicCmd) run(as []string) {
 		}
 	}
 
-	go print(out, cmd.pretty)
-
+	out := newPrinter(cmd.pretty)
 	var wg sync.WaitGroup
-	for _, tn := range topics {
+	for _, topicName := range topics {
+		topicName := topicName
 		wg.Add(1)
-		go func(top string) {
-			cmd.print(top, out)
-			wg.Done()
-		}(tn)
+		go func() {
+			defer wg.Done()
+			topic, err := cmd.readTopic(topicName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to read info for topic %s. err=%v\n", topicName, err)
+				return
+			}
+			out.print(topic)
+		}()
 	}
 	wg.Wait()
-}
-
-func (cmd *topicCmd) print(name string, out chan printContext) {
-	var (
-		top topic
-		err error
-	)
-
-	if top, err = cmd.readTopic(name); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read info for topic %s. err=%v\n", name, err)
-		return
-	}
-
-	ctx := printContext{output: top, done: make(chan struct{})}
-	out <- ctx
-	<-ctx.done
 }
 
 func (cmd *topicCmd) readTopic(name string) (topic, error) {
