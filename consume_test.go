@@ -643,15 +643,14 @@ func TestConsume(t *testing.T) {
 		},
 		calls: calls,
 	}
-	partitions := []int32{1, 2}
 	target := consumeCmd{consumer: consumer}
 	target.topic = "hans"
 	target.brokers = []string{"localhost:9092"}
-	target.offsets = map[int32]interval{
-		-1: interval{start: positionAtOffset(1), end: positionAtOffset(5)},
-	}
 
-	go target.consume(partitions)
+	go target.consume(map[int32]resolvedInterval{
+		1: {1, 5},
+		2: {1, 5},
+	})
 	defer close(closer)
 
 	var actual []tConsumePartition

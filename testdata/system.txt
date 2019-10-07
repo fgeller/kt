@@ -9,7 +9,7 @@ kt produce -topic $topic
 cmpenvjson stdout '{"count": 1, "partition": 0, "startOffset": 0}'
 
 # 2
-kt consume -topic $topic -timeout 500ms -group hans
+kt consume -f -topic $topic -timeout 500ms -group hans
 stderr 'consuming from partition 0 timed out after 500ms'
 cmpenvjson stdout '{"value": "hello 1", "key": "boom", "partition": 0, "offset": 0, "timestamp": "$now"}'
 

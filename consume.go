@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"flag"
@@ -16,8 +17,6 @@ import (
 )
 
 type consumeCmd struct {
-	mu sync.Mutex
-
 	topic       string
 	brokers     []string
 	tlsCA       string
@@ -30,43 +29,16 @@ type consumeCmd struct {
 	encodeValue string
 	encodeKey   string
 	pretty      bool
+	follow      bool
 	group       string
 
 	client        sarama.Client
 	consumer      sarama.Consumer
 	offsetManager sarama.OffsetManager
-	poms          map[int32]sarama.PartitionOffsetManager
-}
 
-func (cmd *consumeCmd) resolveOffset(p position, partition int32) (int64, error) {
-	if p.anchor.isTime || p.diff.isDuration {
-		return 0, fmt.Errorf("time-based positions not yet supported")
-	}
-	var startOffset int64
-	switch p.anchor.offset {
-	case sarama.OffsetNewest, sarama.OffsetOldest:
-		off, err := cmd.client.GetOffset(cmd.topic, partition, p.anchor.offset)
-		if err != nil {
-			return 0, err
-		}
-		if p.anchor.offset == sarama.OffsetNewest {
-			// TODO add comment explaining this.
-			off--
-		}
-		startOffset = off
-	case offsetResume:
-		if cmd.group == "" {
-			return 0, fmt.Errorf("cannot resume without -group argument")
-		}
-		pom, err := cmd.getPOM(partition)
-		if err != nil {
-			return 0, err
-		}
-		startOffset, _ = pom.NextOffset()
-	default:
-		startOffset = p.anchor.offset
-	}
-	return startOffset + p.diff.offset, nil
+	// mu guards the poms map.
+	mu   sync.Mutex
+	poms map[int32]sarama.PartitionOffsetManager
 }
 
 type consumeArgs struct {
@@ -82,6 +54,7 @@ type consumeArgs struct {
 	encodeValue string
 	encodeKey   string
 	pretty      bool
+	follow      bool
 	group       string
 }
 
@@ -94,6 +67,7 @@ func (cmd *consumeCmd) parseArgs(as []string) error {
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
+	cmd.follow = args.follow
 	cmd.version = args.version
 	cmd.group = args.group
 
@@ -133,6 +107,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
+	flags.BoolVar(&args.follow, "f", false, "Follow topic by waiting new messages (default is to stop at end of topic)")
 	kafkaVersionFlagVar(flags, &args.version)
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
@@ -188,21 +163,19 @@ func (cmd *consumeCmd) run1(args []string) error {
 			return fmt.Errorf("cannot create offset manager: %v", err)
 		}
 	}
-
 	consumer, err := sarama.NewConsumerFromClient(cmd.client)
 	if err != nil {
 		return fmt.Errorf("cannot create kafka consumer: %v", err)
 	}
 	cmd.consumer = consumer
 	defer logClose("consumer", cmd.consumer)
-
-	partitions, err := cmd.findPartitions()
+	resolvedOffsets, err := cmd.resolveOffsets(context.TODO(), cmd.offsets)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot resolve offsets: %v", err)
 	}
 	defer cmd.closePOMs()
 
-	if err := cmd.consume(partitions); err != nil {
+	if err := cmd.consume(resolvedOffsets); err != nil {
 		return err
 	}
 	return nil
@@ -239,17 +212,17 @@ func (cmd *consumeCmd) newClient() (sarama.Client, error) {
 	return client, nil
 }
 
-func (cmd *consumeCmd) consume(partitions []int32) error {
+func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval) error {
 	var wg sync.WaitGroup
 	out := make(chan printContext)
 	go print(out, cmd.pretty)
 
 	wg.Add(len(partitions))
-	for _, p := range partitions {
-		p := p
+	for p, interval := range partitions {
+		p, interval := p, interval
 		go func() {
 			defer wg.Done()
-			if err := cmd.consumePartition(out, p); err != nil {
+			if err := cmd.consumePartition(out, p, interval); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			}
 		}()
@@ -258,35 +231,15 @@ func (cmd *consumeCmd) consume(partitions []int32) error {
 	return nil
 }
 
-func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) error {
-	var (
-		err   error
-		pcon  sarama.PartitionConsumer
-		start int64
-		end   int64
-	)
-
-	offsets, ok := cmd.offsets[partition]
-	if !ok {
-		offsets = cmd.offsets[-1]
+func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32, interval resolvedInterval) error {
+	if interval.start >= interval.end {
+		return nil
 	}
-
-	// TODO resolve offsets synchronously before we go into the per-partition
-	// consumers.
-
-	if start, err = cmd.resolveOffset(offsets.start, partition); err != nil {
-		return fmt.Errorf("failed to read start offset for partition %v: %v", partition, err)
-	}
-
-	if end, err = cmd.resolveOffset(offsets.end, partition); err != nil {
-		return fmt.Errorf("failed to read end offset for partition %v: %v", partition, err)
-	}
-
-	if pcon, err = cmd.consumer.ConsumePartition(cmd.topic, partition, start); err != nil {
+	pcon, err := cmd.consumer.ConsumePartition(cmd.topic, partition, interval.start)
+	if err != nil {
 		return fmt.Errorf("failed to consume partition %v: %v", partition, err)
 	}
-
-	return cmd.partitionLoop(out, pcon, partition, end)
+	return cmd.partitionLoop(out, pcon, partition, interval.end)
 }
 
 type consumedMessage struct {
@@ -403,7 +356,7 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 				pom.MarkOffset(msg.Offset+1, "")
 			}
 
-			if end > 0 && msg.Offset >= end {
+			if end > 0 && msg.Offset >= end-1 {
 				return nil
 			}
 		}
