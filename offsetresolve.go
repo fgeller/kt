@@ -34,7 +34,6 @@ func (cmd *consumeCmd) newResolver() (*resolver, error) {
 		allPartitions: allPartitions,
 		info: offsetInfo{
 			offsets: make(map[int32]map[offsetRequest]int64),
-			resumes: make(map[int32]int64),
 			times:   make(map[int32]map[int64]time.Time),
 		},
 	}, nil
@@ -67,7 +66,7 @@ type resolvedInterval struct {
 
 type offsetRequest struct {
 	// timeOrOff holds the number of milliseconds since Jan 1st 1970 of the
-	// offset to request, or one of offsetResume, sarama.OldestOffset, sarama.NewestOffset
+	// offset to request, or one of sarama.OldestOffset or sarama.NewestOffset
 	// if it's not a time-based request.
 	//
 	// Note that this is in the same form expected by the ListOffset Kakfa API.
@@ -79,7 +78,6 @@ type offsetRequest struct {
 type offsetQuery struct {
 	timeQuery   map[int32]map[int64]bool
 	offsetQuery map[int32]map[offsetRequest]bool
-	resumeQuery map[int32]bool
 }
 
 func (r *resolver) resolveOffsets(ctx context.Context, offsets map[int32]interval) (map[int32]resolvedInterval, error) {
@@ -116,7 +114,6 @@ func (r *resolver) resolveOffsets(ctx context.Context, offsets map[int32]interva
 		q := &offsetQuery{
 			timeQuery:   make(map[int32]map[int64]bool),
 			offsetQuery: make(map[int32]map[offsetRequest]bool),
-			resumeQuery: make(map[int32]bool),
 		}
 		r.expandAllIntervalsSpec(allOffsets, q)
 		for p, intv := range allOffsets {
@@ -168,9 +165,8 @@ func (r *resolver) expandAllIntervalsSpec(offsets map[int32]*interval, q *offset
 	// oldest or newest timestamp across all partitions so that the
 	// interval end time is the same across all partitions.
 	updateTimestamp := func(t *time.Time, partition int32, p position) bool {
-		if p.anchor.offset >= 0 || !p.diff.isDuration || p.anchor.offset == offsetResume {
+		if p.anchor.offset >= 0 || !p.diff.isDuration {
 			// We can work out the "all" offset for each partition independently.
-			// Lacking a better idea, we leave resume as per-partition.
 			return true
 		}
 		off, ok := r.info.getOffset(partition, symbolicOffsetRequest(p.anchor.offset), q)
@@ -334,26 +330,12 @@ type offsetInfo struct {
 	// may result in a reference to the last available offset.
 	offsets map[int32]map[offsetRequest]int64
 
-	// resumes maps from partition to the resume offset for that partition.
-	// This is kept separately from offsets because it's updated by
-	// a different goroutine so we can avoid a mutex.
-	resumes map[int32]int64
-
 	// offsetTimes maps from partition to offset to the timestamp for that offset in that partition.
 	times map[int32]map[int64]time.Time
 }
 
 // getOffset returns the offset for a given time or symbolic offset.
 func (info *offsetInfo) getOffset(p int32, req offsetRequest, q *offsetQuery) (int64, bool) {
-	if req.timeOrOff == offsetResume {
-		// Resume offset queries are resolved with a different kind of API request,
-		// so they go into a different field in the query.
-		if off, ok := info.resumes[p]; ok {
-			return off, true
-		}
-		q.resumeQuery[p] = true
-		return 0, false
-	}
 	if off, ok := info.offsets[p][req]; ok {
 		return off, true
 	}
@@ -365,17 +347,10 @@ func (info *offsetInfo) getOffset(p int32, req offsetRequest, q *offsetQuery) (i
 }
 
 func (info *offsetInfo) setOffset(p int32, req offsetRequest, off int64) {
-	if req.timeOrOff == offsetResume {
-		panic("setOffset called with resume offset")
-	}
 	if info.offsets[p] == nil {
 		info.offsets[p] = make(map[offsetRequest]int64)
 	}
 	info.offsets[p][req] = off
-}
-
-func (info *offsetInfo) setResumeOffset(p int32, off int64) {
-	info.resumes[p] = off
 }
 
 func (info *offsetInfo) getTime(p int32, off int64, q *offsetQuery) (time.Time, bool) {

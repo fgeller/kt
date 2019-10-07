@@ -9,14 +9,9 @@ kt produce -topic $topic
 cmpenvjson stdout '{"count": 1, "partition": 0, "startOffset": 0}'
 
 # 2
-kt consume -f -topic $topic -timeout 500ms -group hans
+kt consume -f -topic $topic -timeout 500ms
 stderr 'consuming from partition 0 timed out after 500ms'
 cmpenvjson stdout '{"value": "hello 1", "key": "boom", "partition": 0, "offset": 0, "timestamp": "$now"}'
-
-# 3
-kt group -topic $topic
-stderr 'found partitions=\[0] for topic='$topic
-cmpenvjson stdout '{"name":"hans","topic":"$topic","offsets":[{"partition":0,"offset":1,"lag":0}]}'
 
 # 4
 stdin 4-produce/stdin.json
@@ -25,31 +20,16 @@ kt produce -topic $topic
 cmpenvjson stdout '{"count": 1, "partition": 0, "startOffset": 1}'
 
 # 5
-kt consume -topic $topic -offsets all=resume -timeout 500ms -group hans
-stderr 'consuming from partition 0 timed out after 500ms'
-cmpenvjson stdout '{"value": "hello 2", "key": "boom", "partition": 0, "offset": 1, "timestamp": "$now"}'
-
-# 6
-kt group -topic $topic -partitions 0 -group hans -reset 0
-cmpenv stderr 6-group/stderr
-cmpenvjson stdout '{"name":"hans","topic":"$topic","offsets":[{"partition":0,"offset":0,"lag":2}]}'
-
-# 7
-kt group -topic $topic
-cmpenv stderr 7-group/stderr
-cmpenvjson stdout '{"name":"hans","topic":"$topic","offsets":[{"partition":0,"offset":0,"lag":2}]}'
-
-# 8
 kt topic -filter $topic
 ! stderr .
 cmpenvjson stdout '{"name":"$topic"}'
 
-# 9
+# 6
 kt admin -deletetopic $topic
 ! stderr .
 ! stdout .
 
-# 10
+# 7
 kt topic -filter $topic
 ! stderr .
 ! stdout .
@@ -60,12 +40,3 @@ kt topic -filter $topic
 {"value": "hello 1", "key": "boom", "partition": 0}
 -- 4-produce/stdin.json --
 {"value": "hello 2", "key": "boom", "partition": 0}
--- 6-group/stderr --
-found 1 brokers
-found 1 groups
-found 1 topics
--- 7-group/stderr --
-found 1 brokers
-found 1 groups
-found 1 topics
-found partitions=[0] for topic=$topic
