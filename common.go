@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -241,4 +243,41 @@ func setFlagsFromEnv(fs *flag.FlagSet, flags map[string]string) error {
 		}
 	}
 	return nil
+}
+
+func decoderForType(typ string) (func(s string) ([]byte, error), error) {
+	switch typ {
+	case "hex":
+		return hex.DecodeString, nil
+	case "base64":
+		return base64.StdEncoding.DecodeString, nil
+	case "string":
+		return func(s string) ([]byte, error) {
+			return []byte(s), nil
+		}, nil
+	}
+	return nil, fmt.Errorf(`unsupported decoder %#v, only string, hex and base64 are supported.`, typ)
+}
+
+func encoderForType(typ string) (func([]byte) *string, error) {
+	var enc func([]byte) string
+	switch typ {
+	case "hex":
+		enc = hex.EncodeToString
+	case "base64":
+		enc = base64.StdEncoding.EncodeToString
+	case "string":
+		enc = func(data []byte) string {
+			return string(data)
+		}
+	default:
+		return nil, fmt.Errorf(`unsupported decoder %#v, only string, hex and base64 are supported.`, typ)
+	}
+	return func(data []byte) *string {
+		if data == nil {
+			return nil
+		}
+		s := enc(data)
+		return &s
+	}, nil
 }

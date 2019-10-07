@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -103,18 +101,15 @@ func (cmd *produceCmd) parseArgs(as []string) {
 			cmd.brokers[i] = b + ":9092"
 		}
 	}
-
-	if args.decodeValue != "string" && args.decodeValue != "hex" && args.decodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
-		return
+	var err error
+	cmd.decodeValue, err = decoderForType(args.decodeValue)
+	if err != nil {
+		cmd.failStartup(fmt.Sprintf("bad -decodevalue argument: %v", err))
 	}
-	cmd.decodeValue = args.decodeValue
-
-	if args.decodeKey != "string" && args.decodeKey != "hex" && args.decodeKey != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
-		return
+	cmd.decodeKey, err = decoderForType(args.decodeValue)
+	if err != nil {
+		cmd.failStartup(fmt.Sprintf("bad -decodekey argument: %v", err))
 	}
-	cmd.decodeKey = args.decodeKey
 
 	cmd.batch = args.batch
 	cmd.timeout = args.timeout
@@ -145,17 +140,11 @@ func kafkaCompression(codecName string) sarama.CompressionCodec {
 }
 
 func (cmd *produceCmd) findLeaders() {
-	var (
-		usr *user.User
-		err error
-		res *sarama.MetadataResponse
-		req = sarama.MetadataRequest{Topics: []string{cmd.topic}}
-		cfg = sarama.NewConfig()
-	)
-
+	cfg := sarama.NewConfig()
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
 	cfg.Version = cmd.version
-	if usr, err = user.Current(); err != nil {
+	usr, err := user.Current()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-produce-" + sanitizeUsername(usr.Username)
@@ -183,7 +172,8 @@ loop:
 			continue loop
 		}
 
-		if res, err = broker.GetMetadata(&req); err != nil {
+		res, err := broker.GetMetadata(&sarama.MetadataRequest{Topics: []string{cmd.topic}})
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get metadata from %#v. err=%v\n", addr, err)
 			continue loop
 		}
@@ -239,8 +229,8 @@ type produceCmd struct {
 	version     sarama.KafkaVersion
 	compression sarama.CompressionCodec
 	partitioner string
-	decodeKey   string
-	decodeValue string
+	decodeKey   func(string) ([]byte, error)
+	decodeValue func(string) ([]byte, error)
 	bufferSize  int
 
 	leaders map[int32]*sarama.Broker
@@ -294,15 +284,14 @@ func (cmd *produceCmd) close() {
 }
 
 func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
-	defer func() { close(out) }()
+	defer close(out)
 	for l := range in {
 		var msg message
 
-		switch {
-		case cmd.literal:
+		if cmd.literal {
 			msg.Value = &l
 			msg.Partition = &cmd.partition
-		default:
+		} else {
 			if err := json.Unmarshal([]byte(l), &msg); err != nil {
 				if cmd.verbose {
 					fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
@@ -327,31 +316,29 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 	}
 }
 
-func (cmd *produceCmd) batchRecords(in chan message, out chan []message) {
-	defer func() { close(out) }()
+func (cmd *produceCmd) batchRecords(in chan message, out chan<- []message) {
+	defer close(out)
 
-	messages := []message{}
+	var messages []message
 	send := func() {
-		out <- messages
-		messages = []message{}
+		if len(messages) > 0 {
+			out <- messages
+			messages = nil
+		}
 	}
-
+	defer send()
 	for {
 		select {
 		case m, ok := <-in:
 			if !ok {
-				send()
 				return
 			}
-
 			messages = append(messages, m)
-			if len(messages) > 0 && len(messages) >= cmd.batch {
+			if len(messages) >= cmd.batch {
 				send()
 			}
 		case <-time.After(cmd.timeout):
-			if len(messages) > 0 {
-				send()
-			}
+			send()
 		}
 	}
 }
@@ -362,46 +349,25 @@ type partitionProduceResult struct {
 }
 
 func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
-	var (
-		err error
-		sm  = &sarama.Message{Codec: cmd.compression}
-	)
-
+	sm := &sarama.Message{Codec: cmd.compression}
 	if msg.Key != nil {
-		switch cmd.decodeKey {
-		case "hex":
-			if sm.Key, err = hex.DecodeString(*msg.Key); err != nil {
-				return sm, fmt.Errorf("failed to decode key as hex string, err=%v", err)
-			}
-		case "base64":
-			if sm.Key, err = base64.StdEncoding.DecodeString(*msg.Key); err != nil {
-				return sm, fmt.Errorf("failed to decode key as base64 string, err=%v", err)
-			}
-		default: // string
-			sm.Key = []byte(*msg.Key)
+		key, err := cmd.decodeKey(*msg.Key)
+		if err != nil {
+			return nil, fmt.Errorf("cannot decode key: %v", err)
 		}
+		sm.Key = key
 	}
-
 	if msg.Value != nil {
-		switch cmd.decodeValue {
-		case "hex":
-			if sm.Value, err = hex.DecodeString(*msg.Value); err != nil {
-				return sm, fmt.Errorf("failed to decode value as hex string, err=%v", err)
-			}
-		case "base64":
-			if sm.Value, err = base64.StdEncoding.DecodeString(*msg.Value); err != nil {
-				return sm, fmt.Errorf("failed to decode value as base64 string, err=%v", err)
-			}
-		default: // string
-			sm.Value = []byte(*msg.Value)
+		value, err := cmd.decodeValue(*msg.Value)
+		if err != nil {
+			return nil, fmt.Errorf("cannot decode value: %v", err)
 		}
+		sm.Value = value
 	}
-
 	if cmd.version.IsAtLeast(sarama.V0_10_0_0) {
 		sm.Version = 1
 		sm.Timestamp = time.Now()
 	}
-
 	return sm, nil
 }
 
@@ -417,26 +383,21 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 			req = &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 10000}
 			requests[broker] = req
 		}
-
 		sm, err := cmd.makeSaramaMessage(msg)
 		if err != nil {
 			return err
 		}
 		req.AddMessage(cmd.topic, *msg.Partition, sm)
 	}
-
 	for broker, req := range requests {
 		resp, err := broker.Produce(req)
 		if err != nil {
 			return fmt.Errorf("failed to send request to broker %#v. err=%s", broker, err)
 		}
-
 		offsets, err := readPartitionOffsetResults(resp)
 		if err != nil {
-
 			return fmt.Errorf("failed to read producer response err=%s", err)
 		}
-
 		for p, o := range offsets {
 			result := map[string]interface{}{"partition": p, "startOffset": o.start, "count": o.count}
 			ctx := printContext{output: result, done: make(chan struct{})}
@@ -444,7 +405,6 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 			<-ctx.done
 		}
 	}
-
 	return nil
 }
 
@@ -477,7 +437,7 @@ func (cmd *produceCmd) produce(in chan []message, out chan printContext) {
 }
 
 func (cmd *produceCmd) readInput(q chan struct{}, stdin chan string, out chan string) {
-	defer func() { close(out) }()
+	defer close(out)
 	for {
 		select {
 		case l, ok := <-stdin:
