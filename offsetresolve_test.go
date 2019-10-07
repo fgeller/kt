@@ -14,7 +14,7 @@ import (
 var epoch = mustParseTime("2010-01-02T12:00:00+02:00")
 
 var resolveTestData = `
-0 100r20 12:00 +2s +3s 13:00 +2s
+0 100 12:00 +2s +3s 13:00 +2s
 1 50 09:00 10:00
 
 all=0:newest
@@ -42,7 +42,6 @@ all=:newest
 type resolveTestGroup struct {
 	times   map[int32][]time.Time
 	offsets map[int32]int64
-	resumes map[int32]int64
 
 	tests []resolveTest
 }
@@ -65,7 +64,7 @@ func TestParseResolveTests(t *testing.T) {
 	c := qt.New(t)
 	// Sanity-check the parseResolveGroup code.
 	gs := parseResolveTests(c, `
-0 100r20 +0 +2s +3s +59m55s +2s
+0 100 +0 +2s +3s +59m55s +2s
 1 50 2001-10-23T01:03:00Z +1h
 
 all=0:newest
@@ -94,7 +93,6 @@ all=0:
 				mustParseTime("2001-10-23T02:03:00Z"),
 			},
 		},
-		resumes: map[int32]int64{0: 20},
 		offsets: map[int32]int64{0: 100, 1: 50},
 		tests: []resolveTest{{
 			offsets: "all=0:newest",
@@ -116,7 +114,6 @@ func parseResolveGroup(c *qt.C, block string) resolveTestGroup {
 	g := resolveTestGroup{
 		times:   make(map[int32][]time.Time),
 		offsets: make(map[int32]int64),
-		resumes: make(map[int32]int64),
 	}
 	scan := bufio.NewScanner(strings.NewReader(block))
 	for {
@@ -132,15 +129,9 @@ func parseResolveGroup(c *qt.C, block string) resolveTestGroup {
 		}
 		partition, err := strconv.Atoi(pfields[0])
 		c.Assert(err, qt.Equals, nil)
-		offs := strings.Split(pfields[1], "r")
-		startOffset, err := strconv.ParseInt(offs[0], 10, 64)
+		startOffset, err := strconv.ParseInt(pfields[1], 10, 64)
 		c.Assert(err, qt.Equals, nil)
 		g.offsets[int32(partition)] = startOffset
-		if len(offs) > 1 {
-			resumeOffset, err := strconv.ParseInt(offs[1], 10, 64)
-			c.Assert(err, qt.Equals, nil)
-			g.resumes[int32(partition)] = resumeOffset
-		}
 		msgs := pfields[2:]
 		times := make([]time.Time, len(msgs))
 		t := epoch

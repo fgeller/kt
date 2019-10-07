@@ -9,10 +9,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-const (
-	maxOffset    int64 = 1<<63 - 1
-	offsetResume int64 = -3
-)
+const maxOffset int64 = 1<<63 - 1
 
 type positionRange struct {
 	startAnchor, endAnchor anchor
@@ -57,8 +54,8 @@ type anchor struct {
 	isTime bool
 
 	// offset holds the anchor as an absolute offset.
-	// It can be one of sarama.OffsetOldest, sarama.OffsetNewest
-	// or offsetResume to signify a relative starting position.
+	// It can be sarama.OffsetOldest or sarama.OffsetNewest
+	// to signify a relative starting position.
 	// This field is only significant when isTime is false.
 	offset int64
 
@@ -125,7 +122,7 @@ type interval struct {
 //		relativePosition |
 //		anchorPosition [ relativePosition ]
 //
-//	anchorPosition = number | "newest" | "oldest" | "resume" | "[" { /^]/ } "]"
+//	anchorPosition = number | "newest" | "oldest" | "[" { /^]/ } "]"
 //
 //	relativePosition = ( "+" | "-" ) (number | duration )
 //
@@ -342,8 +339,6 @@ func parseAnchorPos(s string, defaultAnchor anchor, now time.Time) (a0, a1 ancho
 		a = newestAnchor()
 	case "oldest":
 		a = oldestAnchor()
-	case "resume":
-		a = anchor{offset: offsetResume}
 	default:
 		return anchor{}, anchor{}, fmt.Errorf("invalid anchor position %q", s)
 	}

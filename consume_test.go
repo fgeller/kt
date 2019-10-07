@@ -53,15 +53,6 @@ func TestParseOffsets(t *testing.T) {
 			},
 		},
 	}, {
-		testName: "resume",
-		input:    "resume",
-		expected: map[int32]interval{
-			-1: interval{
-				start: positionAtOffset(offsetResume),
-				end:   positionAtOffset(maxOffset),
-			},
-		},
-	}, {
 		testName: "all-with-space",
 		input: "	all ",
 		expected: map[int32]interval{
@@ -160,18 +151,6 @@ func TestParseOffsets(t *testing.T) {
 				start: position{
 					anchor: anchorAtOffset(sarama.OffsetNewest),
 					diff:   anchorDiff{offset: -1},
-				},
-				end: positionAtOffset(maxOffset),
-			},
-		},
-	}, {
-		testName: "resume-relative",
-		input:    "0=resume-10",
-		expected: map[int32]interval{
-			0: interval{
-				start: position{
-					anchor: anchorAtOffset(offsetResume),
-					diff:   anchorDiff{offset: -10},
 				},
 				end: positionAtOffset(maxOffset),
 			},

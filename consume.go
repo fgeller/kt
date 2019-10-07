@@ -28,15 +28,9 @@ type consumeCmd struct {
 	encodeKey   func([]byte) *string
 	pretty      bool
 	follow      bool
-	group       string
 
-	client        sarama.Client
-	consumer      sarama.Consumer
-	offsetManager sarama.OffsetManager
-
-	// mu guards the poms map.
-	mu   sync.Mutex
-	poms map[int32]sarama.PartitionOffsetManager
+	client   sarama.Client
+	consumer sarama.Consumer
 }
 
 type consumeArgs struct {
@@ -53,7 +47,6 @@ type consumeArgs struct {
 	encodeKey   string
 	pretty      bool
 	follow      bool
-	group       string
 }
 
 func (cmd *consumeCmd) parseArgs(as []string) error {
@@ -67,7 +60,6 @@ func (cmd *consumeCmd) parseArgs(as []string) error {
 	cmd.pretty = args.pretty
 	cmd.follow = args.follow
 	cmd.version = args.version
-	cmd.group = args.group
 
 	var err error
 	cmd.encodeValue, err = encoderForType(args.encodeValue)
@@ -107,7 +99,6 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	kafkaVersionFlagVar(flags, &args.version)
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
-	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets. kt will mark offsets if this arg is supplied.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -153,12 +144,6 @@ func (cmd *consumeCmd) run1(args []string) error {
 		return err
 	}
 	cmd.client = c
-	if cmd.group != "" {
-		cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.group, cmd.client)
-		if err != nil {
-			return fmt.Errorf("cannot create offset manager: %v", err)
-		}
-	}
 	consumer, err := sarama.NewConsumerFromClient(cmd.client)
 	if err != nil {
 		return fmt.Errorf("cannot create kafka consumer: %v", err)
@@ -169,7 +154,6 @@ func (cmd *consumeCmd) run1(args []string) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve offsets: %v", err)
 	}
-	defer cmd.closePOMs()
 
 	if err := cmd.consume(resolvedOffsets); err != nil {
 		return err
@@ -259,50 +243,12 @@ func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) consumedMes
 	return result
 }
 
-func (cmd *consumeCmd) closePOMs() {
-	cmd.mu.Lock()
-	defer cmd.mu.Unlock()
-	for p, pom := range cmd.poms {
-		if err := pom.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to close partition offset manager for partition %d: %v", p, err)
-		}
-	}
-}
-
-func (cmd *consumeCmd) getPOM(p int32) (sarama.PartitionOffsetManager, error) {
-	cmd.mu.Lock()
-	defer cmd.mu.Unlock()
-	if cmd.poms == nil {
-		cmd.poms = map[int32]sarama.PartitionOffsetManager{}
-	}
-	pom, ok := cmd.poms[p]
-	if ok {
-		return pom, nil
-	}
-
-	pom, err := cmd.offsetManager.ManagePartition(cmd.topic, p)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create partition offset manager: %v", err)
-	}
-	cmd.poms[p] = pom
-	return pom, nil
-}
-
 func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) error {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 	var (
 		timer   *time.Timer
-		pom     sarama.PartitionOffsetManager
 		timeout <-chan time.Time
 	)
-
-	if cmd.group != "" {
-		var err error
-		pom, err = cmd.getPOM(p)
-		if err != nil {
-			return err
-		}
-	}
 
 	for {
 		if cmd.timeout > 0 {
@@ -327,10 +273,6 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			ctx := printContext{output: m, done: make(chan struct{})}
 			out <- ctx
 			<-ctx.done
-
-			if cmd.group != "" {
-				pom.MarkOffset(msg.Offset+1, "")
-			}
 
 			if end > 0 && msg.Offset >= end-1 {
 				return nil
@@ -393,9 +335,6 @@ An offset may be specified as:
 - "oldest", meaning the start of the available messages for the partition.
 
 - "newest", meaning the newest available message in the partition.
-
-- "resume" meaning the most recently consumed message for the
-   consumer group (can only be used in combination with -group).
 
 - a timestamp enclosed in square brackets (see below).
 

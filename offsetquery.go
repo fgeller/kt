@@ -25,9 +25,6 @@ func (r *offsetQueryer) runQuery(ctx context.Context, q *offsetQuery, info *offs
 	egroup.Go(func() error {
 		return r.getOffsets(ctx, q.offsetQuery, info)
 	})
-	egroup.Go(func() error {
-		return r.getResumes(ctx, q.resumeQuery, info)
-	})
 	if err := egroup.Wait(); err != nil {
 		return err
 	}
@@ -100,20 +97,7 @@ func (r *offsetQueryer) getTimes(ctx context.Context, q map[int32]map[int64]bool
 	return egroup.Wait()
 }
 
-func (r *offsetQueryer) getResumes(ctx context.Context, q map[int32]bool, info *offsetInfo) error {
-	if len(q) == 0 {
-		return nil
-	}
-	return fmt.Errorf("not yet implemented")
-	//	for p := range q {
-	//		// get partition manager for partition
-	//		info.setResumeOffset(pom.NextOffset())
-	//	}
-	//	return nil
-}
-
 // getOffsets gets offsets for all the requests in q and stores the results by calling info.setOffset.
-// Note that this does not resolve resume offset requests, which are handled by getResumes.
 func (r *offsetQueryer) getOffsets(ctx context.Context, q map[int32]map[offsetRequest]bool, info *offsetInfo) error {
 	type result struct {
 		askFor map[int32]offsetRequest
@@ -153,9 +137,6 @@ func (r *offsetQueryer) getOffsets(ctx context.Context, q map[int32]map[offsetRe
 			}
 			if len(offqs) == 0 {
 				delete(q, p)
-			}
-			if offq.timeOrOff == offsetResume {
-				panic("getOffsets called with offsetResume query")
 			}
 			b, err := r.client.Leader(r.topic, p)
 			if err != nil {
