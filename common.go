@@ -16,7 +16,7 @@ import (
 	"os/signal"
 	"regexp"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 	"unicode/utf16"
 
@@ -71,31 +71,29 @@ func logClose(name string, c io.Closer) {
 	}
 }
 
-type printContext struct {
-	output interface{}
-	done   chan struct{}
+type printer struct {
+	mu      sync.Mutex
+	marshal func(interface{}) ([]byte, error)
 }
 
-func print(in <-chan printContext, pretty bool) {
-	var (
-		buf     []byte
-		err     error
-		marshal = json.Marshal
-	)
-
-	if pretty && terminal.IsTerminal(int(syscall.Stdout)) {
+func newPrinter(pretty bool) *printer {
+	marshal := json.Marshal
+	if pretty && terminal.IsTerminal(1) {
 		marshal = func(i interface{}) ([]byte, error) { return json.MarshalIndent(i, "", "  ") }
 	}
-
-	for {
-		ctx := <-in
-		if buf, err = marshal(ctx.output); err != nil {
-			failf("failed to marshal output %#v, err=%v", ctx.output, err)
-		}
-
-		fmt.Println(string(buf))
-		close(ctx.done)
+	return &printer{
+		marshal: marshal,
 	}
+}
+
+func (p *printer) print(val interface{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	buf, err := p.marshal(val)
+	if err != nil {
+		failf("failed to marshal output %#v, err=%v", val, err)
+	}
+	fmt.Println(string(buf))
 }
 
 func quitf(msg string, args ...interface{}) {
