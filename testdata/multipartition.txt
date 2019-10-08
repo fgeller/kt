@@ -1,0 +1,31 @@
+kt admin -createtopic $topic -topicdetail topic-detail.json
+
+stdin produce-stdin.json
+kt produce -topic $topic
+
+kt consume -topic $topic
+cmp stdout consume-stdout.json
+
+-- topic-detail.json --
+{"NumPartitions": 5, "ReplicationFactor": 1}
+
+-- produce-stdin.json --
+{"partition":0,"key":"k1","value":"v1","time":"2019-10-08T01:01:01Z"}
+{"partition":1,"key":"k2","value":"v2","time":"2019-10-08T01:01:02Z"}
+{"partition":0,"key":"k3","value":"v3","time":"2019-10-08T01:01:03Z"}
+{"partition":1,"key":"k4","value":"v4","time":"2019-10-08T01:01:04Z"}
+{"partition":1,"key":"k5","value":"v5","time":"2019-10-08T01:01:05Z"}
+{"partition":2,"key":"k6","value":"v6","time":"2019-10-08T01:01:06Z"}
+{"partition":3,"key":"k7","value":"v7","time":"2019-10-08T01:01:07Z"}
+{"partition":3,"key":"k8","value":"v8","time":"2019-10-08T01:01:08Z"}
+{"partition":3,"key":"k9","value":"v9","time":"2019-10-08T01:01:09Z"}
+-- consume-stdout.json --
+{"partition":0,"offset":0,"key":"k1","value":"v1","time":"2019-10-08T01:01:01Z"}
+{"partition":1,"offset":0,"key":"k2","value":"v2","time":"2019-10-08T01:01:02Z"}
+{"partition":0,"offset":1,"key":"k3","value":"v3","time":"2019-10-08T01:01:03Z"}
+{"partition":1,"offset":1,"key":"k4","value":"v4","time":"2019-10-08T01:01:04Z"}
+{"partition":1,"offset":2,"key":"k5","value":"v5","time":"2019-10-08T01:01:05Z"}
+{"partition":2,"offset":0,"key":"k6","value":"v6","time":"2019-10-08T01:01:06Z"}
+{"partition":3,"offset":0,"key":"k7","value":"v7","time":"2019-10-08T01:01:07Z"}
+{"partition":3,"offset":1,"key":"k8","value":"v8","time":"2019-10-08T01:01:08Z"}
+{"partition":3,"offset":2,"key":"k9","value":"v9","time":"2019-10-08T01:01:09Z"}

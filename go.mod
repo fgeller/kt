@@ -13,7 +13,7 @@ require (
 	github.com/kr/pretty v0.1.0
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20180503174638-e2704e165165 // indirect
-	github.com/rogpeppe/go-internal v1.4.0
+	github.com/rogpeppe/go-internal v1.5.0
 	golang.org/x/crypto v0.0.0-20181001203147-e3636079e1a4
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/sys v0.0.0-20181005133103-4497e2df6f9e // indirect

@@ -27,16 +27,17 @@ type produceArgs struct {
 	version     sarama.KafkaVersion
 	compression string
 	literal     bool
+	partitioner string
 	decodeKey   string
 	decodeValue string
-	partitioner string
 	bufferSize  int
 }
 
-type message struct {
-	Key       *string `json:"key"`
-	Value     *string `json:"value"`
-	Partition *int32  `json:"partition"`
+type producerMessage struct {
+	Value     *string    `json:"value"`
+	Key       *string    `json:"key"`
+	Partition *int32     `json:"partition"`
+	Timestamp *time.Time `json:"time"`
 }
 
 func (cmd *produceCmd) parseFlags(as []string) produceArgs {
@@ -246,8 +247,8 @@ func (cmd *produceCmd) run(as []string) {
 	cmd.findLeaders()
 	stdin := make(chan string)
 	lines := make(chan string)
-	messages := make(chan message)
-	batchedMessages := make(chan []message)
+	messages := make(chan producerMessage)
+	batchedMessages := make(chan []producerMessage)
 
 	go readStdinLines(cmd.bufferSize, stdin)
 	out := newPrinter(cmd.pretty)
@@ -282,10 +283,10 @@ func (cmd *produceCmd) close() {
 	}
 }
 
-func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partitionCount int32) {
+func (cmd *produceCmd) deserializeLines(in chan string, out chan producerMessage, partitionCount int32) {
 	defer close(out)
 	for l := range in {
-		var msg message
+		var msg producerMessage
 
 		if cmd.literal {
 			msg.Value = &l
@@ -299,7 +300,7 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 				if len(l) == 0 {
 					v = nil
 				}
-				msg = message{Key: nil, Value: v}
+				msg = producerMessage{Key: nil, Value: v}
 			}
 		}
 
@@ -315,10 +316,10 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 	}
 }
 
-func (cmd *produceCmd) batchRecords(in chan message, out chan<- []message) {
+func (cmd *produceCmd) batchRecords(in chan producerMessage, out chan<- []producerMessage) {
 	defer close(out)
 
-	var messages []message
+	var messages []producerMessage
 	send := func() {
 		if len(messages) > 0 {
 			out <- messages
@@ -347,7 +348,7 @@ type partitionProduceResult struct {
 	count int64
 }
 
-func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
+func (cmd *produceCmd) makeSaramaMessage(msg producerMessage) (*sarama.Message, error) {
 	sm := &sarama.Message{Codec: cmd.compression}
 	if msg.Key != nil {
 		key, err := cmd.decodeKey(*msg.Key)
@@ -365,12 +366,16 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	}
 	if cmd.version.IsAtLeast(sarama.V0_10_0_0) {
 		sm.Version = 1
-		sm.Timestamp = time.Now()
+		if msg.Timestamp != nil {
+			sm.Timestamp = *msg.Timestamp
+		} else {
+			sm.Timestamp = time.Now()
+		}
 	}
 	return sm, nil
 }
 
-func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message, out *printer) error {
+func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []producerMessage, out *printer) error {
 	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
 	for _, msg := range batch {
 		broker, ok := leaders[*msg.Partition]
@@ -423,7 +428,7 @@ func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partiti
 	return offsets, nil
 }
 
-func (cmd *produceCmd) produce(in chan []message, out *printer) {
+func (cmd *produceCmd) produce(in chan []producerMessage, out *printer) {
 	for b := range in {
 		if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
 			fmt.Fprintln(os.Stderr, err.Error()) // TODO: failf

@@ -149,7 +149,7 @@ func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
 	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
-func newMessage(key, value string, partition int32) message {
+func newMessage(key, value string, partition int32) producerMessage {
 	var k *string
 	if key != "" {
 		k = &key
@@ -160,7 +160,7 @@ func newMessage(key, value string, partition int32) message {
 		v = &value
 	}
 
-	return message{
+	return producerMessage{
 		Key:       k,
 		Value:     v,
 		Partition: &partition,
@@ -183,7 +183,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 		decodeValue: stringDecoder,
 	}
 	key, value := "key", "value"
-	msg := message{Key: &key, Value: &value}
+	msg := producerMessage{Key: &key, Value: &value}
 	actual, err := target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
 	c.Assert(string(actual.Key), qt.Equals, key)
@@ -191,7 +191,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 
 	target.decodeKey, target.decodeValue = hexDecoder, hexDecoder
 	key, value = "41", "42"
-	msg = message{Key: &key, Value: &value}
+	msg = producerMessage{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
 	c.Assert(string(actual.Key), qt.Equals, "A")
@@ -199,7 +199,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 
 	target.decodeKey, target.decodeValue = base64Decoder, base64Decoder
 	key, value = "aGFucw==", "cGV0ZXI="
-	msg = message{Key: &key, Value: &value}
+	msg = producerMessage{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
 	c.Assert(string(actual.Key), qt.Equals, "hans")
@@ -212,7 +212,7 @@ func TestDeserializeLines(t *testing.T) {
 		literal        bool
 		partition      int32
 		partitionCount int32
-		expected       message
+		expected       producerMessage
 	}{{
 		in:             "",
 		literal:        false,
@@ -250,7 +250,7 @@ func TestDeserializeLines(t *testing.T) {
 				partition:   d.partition,
 			}
 			in := make(chan string, 1)
-			out := make(chan message)
+			out := make(chan producerMessage)
 			go target.deserializeLines(in, out, d.partitionCount)
 			in <- d.in
 

@@ -549,65 +549,112 @@ func TestParseOffsets(t *testing.T) {
 	}
 }
 
-func TestFindPartitionsToConsume(t *testing.T) {
-	data := []struct {
-		testName string
-		topic    string
-		offsets  map[int32]interval
-		consumer tConsumer
-		expected []int32
-	}{{
-		testName: "one-partition",
-		topic:    "a",
-		offsets: map[int32]interval{
-			10: {
-				start: positionAtOffset(2),
-				end:   positionAtOffset(4),
-			},
-		},
-		consumer: tConsumer{
-			topics:              []string{"a"},
-			topicsErr:           nil,
-			partitions:          map[string][]int32{"a": {0, 10}},
-			partitionsErr:       map[string]error{"a": nil},
-			consumePartition:    map[tConsumePartition]tPartitionConsumer{},
-			consumePartitionErr: map[tConsumePartition]error{},
-			closeErr:            nil,
-		},
-		expected: []int32{10},
-	}, {
-		testName: "all-partitions",
-		topic:    "a",
-		offsets: map[int32]interval{
-			-1: {
-				start: positionAtOffset(3),
-				end:   positionAtOffset(41),
-			},
-		},
-		consumer: tConsumer{
-			topics:              []string{"a"},
-			topicsErr:           nil,
-			partitions:          map[string][]int32{"a": {0, 10}},
-			partitionsErr:       map[string]error{"a": nil},
-			consumePartition:    map[tConsumePartition]tPartitionConsumer{},
-			consumePartitionErr: map[tConsumePartition]error{},
-			closeErr:            nil,
-		},
-		expected: []int32{0, 10},
-	}}
-	c := qt.New(t)
-	for _, d := range data {
-		c.Run(d.testName, func(c *qt.C) {
-			target := &consumeCmd{
-				consumer: d.consumer,
-				topic:    d.topic,
-				offsets:  d.offsets,
+func BenchmarkMerge(b *testing.B) {
+	c := qt.New(b)
+	const npart = 1000
+	nmsgs := b.N / npart
+	cs := make([]<-chan *sarama.ConsumerMessage, npart)
+	epoch := time.Date(2019, 10, 7, 12, 0, 0, 0, time.UTC)
+	for i := range cs {
+		c := make(chan *sarama.ConsumerMessage, 10)
+		cs[i] = c
+		go func() {
+			defer close(c)
+			t := epoch
+			for i := 0; i < nmsgs; i++ {
+				c <- &sarama.ConsumerMessage{
+					Timestamp: t,
+				}
+				t = t.Add(time.Second)
 			}
-			actual, err := target.findPartitions()
-			c.Assert(err, qt.Equals, nil)
-			c.Assert(actual, qt.DeepEquals, d.expected)
-		})
+		}()
 	}
+	b.ResetTimer()
+	total := 0
+	for range mergeConsumers(cs...) {
+		total++
+	}
+	c.Assert(total, qt.Equals, npart*nmsgs)
+}
+
+func BenchmarkNoMerge(b *testing.B) {
+	const npart = 1000
+	nmsgs := b.N / npart
+	epoch := time.Date(2019, 10, 7, 12, 0, 0, 0, time.UTC)
+	c := make(chan *sarama.ConsumerMessage, 10)
+	for i := 0; i < npart; i++ {
+		go func() {
+			t := epoch
+			for i := 0; i < nmsgs; i++ {
+				c <- &sarama.ConsumerMessage{
+					Timestamp: t,
+				}
+				t = t.Add(time.Second)
+			}
+		}()
+	}
+	b.ResetTimer()
+	for i := 0; i < npart*nmsgs; i++ {
+		<-c
+	}
+}
+
+func TestMerge(t *testing.T) {
+	c := qt.New(t)
+	epoch := time.Date(2019, 10, 7, 12, 0, 0, 0, time.UTC)
+	M := func(timestamp int) *sarama.ConsumerMessage {
+		return &sarama.ConsumerMessage{
+			Timestamp: epoch.Add(time.Duration(timestamp) * time.Hour),
+		}
+	}
+	partitionMsgs := map[int32][]*sarama.ConsumerMessage{
+		0: {M(0), M(2), M(3), M(10)},
+		1: {M(1), M(4), M(5), M(6)},
+		2: {M(7), M(8), M(9)},
+		3: {M(11), M(12)},
+		4: {},
+	}
+	var wantMsgs []*sarama.ConsumerMessage
+	for p, msgs := range partitionMsgs {
+		for i, m := range msgs {
+			m.Partition = p
+			m.Offset = int64(i)
+		}
+		wantMsgs = append(wantMsgs, msgs...)
+	}
+	sort.Slice(wantMsgs, func(i, j int) bool {
+		return wantMsgs[i].Timestamp.Before(wantMsgs[j].Timestamp)
+	})
+	// Start a consumer
+	chans := make([]<-chan *sarama.ConsumerMessage, 0, len(wantMsgs))
+	for _, msgs := range partitionMsgs {
+		msgs := msgs
+		c := make(chan *sarama.ConsumerMessage)
+		go func() {
+			defer close(c)
+			for _, m := range msgs {
+				c <- m
+				time.Sleep(time.Millisecond)
+			}
+		}()
+		chans = append(chans, c)
+	}
+	resultc := mergeConsumers(chans...)
+	var gotMsgs []*sarama.ConsumerMessage
+loop:
+	for {
+		select {
+		case m, ok := <-resultc:
+			if !ok {
+				break loop
+			}
+			gotMsgs = append(gotMsgs, m)
+		case <-time.After(5 * time.Second):
+			c.Fatal("timed out waiting for messages")
+		}
+	}
+	c.Assert(gotMsgs, qt.HasLen, len(wantMsgs))
+	c.Assert(gotMsgs, qt.DeepEquals, wantMsgs)
 }
 
 func TestConsume(t *testing.T) {
@@ -629,6 +676,9 @@ func TestConsume(t *testing.T) {
 	go target.consume(map[int32]resolvedInterval{
 		1: {1, 5},
 		2: {1, 5},
+	}, map[int32]int64{
+		1: 1,
+		2: 1,
 	})
 	defer close(closer)
 
@@ -785,7 +835,7 @@ var deepEquals = qt.CmpEquals(cmp.AllowUnexported(
 	position{},
 	anchor{},
 	anchorDiff{},
-	message{},
+	producerMessage{},
 ))
 
 func positionAtOffset(off int64) position {

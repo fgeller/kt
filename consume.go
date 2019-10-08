@@ -150,12 +150,11 @@ func (cmd *consumeCmd) run1(args []string) error {
 	}
 	cmd.consumer = consumer
 	defer logClose("consumer", cmd.consumer)
-	resolvedOffsets, err := cmd.resolveOffsets(context.TODO(), cmd.offsets)
+	resolvedOffsets, limits, err := cmd.resolveOffsets(context.TODO(), cmd.offsets)
 	if err != nil {
 		return fmt.Errorf("cannot resolve offsets: %v", err)
 	}
-
-	if err := cmd.consume(resolvedOffsets); err != nil {
+	if err := cmd.consume(resolvedOffsets, limits); err != nil {
 		return err
 	}
 	return nil
@@ -192,32 +191,100 @@ func (cmd *consumeCmd) newClient() (sarama.Client, error) {
 	return client, nil
 }
 
-func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval) error {
+func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval, limits map[int32]int64) error {
+	// Make a slice of consume partitions so we can easily divide it up for merging.
+	// We merge messages up to the partition limits; beyond the limits
+	// we produce messages in order.
+	consumerChans := make([]<-chan *sarama.ConsumerMessage, 0, len(partitions))
 	out := newPrinter(cmd.pretty)
 	var wg sync.WaitGroup
 	wg.Add(len(partitions))
 	for p, interval := range partitions {
 		p, interval := p, interval
+		if interval.end > limits[p] {
+			interval.end = limits[p]
+		}
+		outc := make(chan *sarama.ConsumerMessage)
 		go func() {
 			defer wg.Done()
-			if err := cmd.consumePartition(out, p, interval); err != nil {
+			defer close(outc)
+			if err := cmd.consumePartition(outc, p, interval); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+		}()
+		consumerChans = append(consumerChans, outc)
+	}
+	allMsgs := mergeConsumers(consumerChans...)
+	for m := range allMsgs {
+		out.print(cmd.newConsumedMessage(m))
+	}
+	wg.Wait()
+	// We've got to the end of all partitions; now print messages
+	// as soon as they arrive.
+	outc := make(chan *sarama.ConsumerMessage)
+	for p, interval := range partitions {
+		p, interval := p, interval
+		if interval.end <= limits[p] {
+			// We've already consumed all the required messages, so
+			// no need to consume this partition any more.
+			continue
+		}
+		wg.Add(1)
+		interval.start = limits[p]
+		go func() {
+			defer wg.Done()
+			if err := cmd.consumePartition(outc, p, interval); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			}
 		}()
 	}
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(outc)
+	}()
+	for m := range outc {
+		out.print(cmd.newConsumedMessage(m))
+	}
 	return nil
 }
 
-func (cmd *consumeCmd) consumePartition(out *printer, partition int32, interval resolvedInterval) error {
+func (cmd *consumeCmd) consumePartition(out chan<- *sarama.ConsumerMessage, partition int32, interval resolvedInterval) error {
 	if interval.start >= interval.end {
 		return nil
 	}
-	pcon, err := cmd.consumer.ConsumePartition(cmd.topic, partition, interval.start)
+	pc, err := cmd.consumer.ConsumePartition(cmd.topic, partition, interval.start)
 	if err != nil {
 		return fmt.Errorf("failed to consume partition %v: %v", partition, err)
 	}
-	return cmd.partitionLoop(out, pcon, partition, interval.end)
+	defer logClose(fmt.Sprintf("partition consumer %v", partition), pc)
+	var timer *time.Timer
+	var timeout <-chan time.Time
+	if cmd.timeout > 0 {
+		timer = time.NewTimer(cmd.timeout)
+		timeout = timer.C
+	}
+	for {
+		if timer != nil {
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(cmd.timeout)
+		}
+		select {
+		case <-timeout:
+			return fmt.Errorf("consuming from partition %v timed out after %s", partition, cmd.timeout)
+		case err := <-pc.Errors():
+			return fmt.Errorf("partition %v consumer encountered error %s", partition, err)
+		case msg, ok := <-pc.Messages():
+			if !ok {
+				return fmt.Errorf("unexpected closed messages chan")
+			}
+			out <- msg
+			if interval.end > 0 && msg.Offset >= interval.end-1 {
+				return nil
+			}
+		}
+	}
 }
 
 type consumedMessage struct {
@@ -225,7 +292,7 @@ type consumedMessage struct {
 	Offset    int64      `json:"offset"`
 	Key       *string    `json:"key"`
 	Value     *string    `json:"value"`
-	Timestamp *time.Time `json:"timestamp,omitempty"`
+	Time      *time.Time `json:"time,omitempty"`
 }
 
 func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) consumedMessage {
@@ -236,63 +303,87 @@ func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) consumedMes
 		Value:     cmd.encodeValue(m.Value),
 	}
 	if !m.Timestamp.IsZero() {
-		result.Timestamp = &m.Timestamp
+		t := m.Timestamp.UTC()
+		result.Time = &t
 	}
 	return result
 }
 
-func (cmd *consumeCmd) partitionLoop(out *printer, pc sarama.PartitionConsumer, p int32, end int64) error {
-	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
-	var (
-		timer   *time.Timer
-		timeout <-chan time.Time
-	)
-
-	for {
-		if cmd.timeout > 0 {
-			if timer != nil {
-				timer.Stop()
-			}
-			timer = time.NewTimer(cmd.timeout)
-			timeout = timer.C
-		}
-
-		select {
-		case <-timeout:
-			return fmt.Errorf("consuming from partition %v timed out after %s", p, cmd.timeout)
-		case err := <-pc.Errors():
-			return fmt.Errorf("partition %v consumer encountered error %s", p, err)
-		case msg, ok := <-pc.Messages():
-			if !ok {
-				return fmt.Errorf("unexpected closed messages chan")
-			}
-			out.print(cmd.newConsumedMessage(msg))
-			if end > 0 && msg.Offset >= end-1 {
-				return nil
-			}
-		}
+// mergeConsumers merges all the given channels in timestamp order
+// until all existing messages have been received; it then produces
+// messages as soon as they're received.
+func mergeConsumers(chans ...<-chan *sarama.ConsumerMessage) <-chan *sarama.ConsumerMessage {
+	switch len(chans) {
+	case 0:
+		// Shouldn't happen but be defensive.
+		c := make(chan *sarama.ConsumerMessage)
+		close(c)
+		return c
+	case 1:
+		return chans[0]
+	case 2:
+		c0, c1 := chans[0], chans[1]
+		out := make(chan *sarama.ConsumerMessage, 1)
+		go mergeMessages([2]<-chan *sarama.ConsumerMessage{c0, c1}, out)
+		return out
+	default:
+		n := len(chans) / 2
+		return mergeConsumers(
+			mergeConsumers(chans[0:n]...),
+			mergeConsumers(chans[n:]...),
+		)
 	}
 }
 
-// findPartitions returns all the partitions that need to be consumed.
-func (cmd *consumeCmd) findPartitions() ([]int32, error) {
-	all, err := cmd.consumer.Partitions(cmd.topic)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get partitions for topic %q: %v", cmd.topic, err)
+// merge merges two message channels in timestamp order,
+// writing the result to out, which is closed when both
+// input channels are closed.
+func mergeMessages(cs [2]<-chan *sarama.ConsumerMessage, out chan<- *sarama.ConsumerMessage) {
+	defer close(out)
+
+	var msgs [2]*sarama.ConsumerMessage
+	// get returns a message from cs[i], reading
+	// from the channel if a message isn't already available.
+	// If the channel is closed, it sets it to nil.
+	get := func(i int) *sarama.ConsumerMessage {
+		if msgs[i] != nil {
+			return msgs[i]
+		}
+		m, ok := <-cs[i]
+		msgs[i] = m
+		if !ok {
+			cs[i] = nil
+		}
+		return m
 	}
-	if _, hasDefault := cmd.offsets[-1]; hasDefault {
-		return all, nil
-	}
-	var res []int32
-	for _, p := range all {
-		if _, ok := cmd.offsets[p]; ok {
-			res = append(res, p)
+	for cs[0] != nil && cs[1] != nil {
+		if m0, m1 := get(0), get(1); m0 != nil && m1 != nil {
+			if m0.Timestamp.Before(m1.Timestamp) {
+				out <- m0
+				msgs[0] = nil
+			} else {
+				out <- m1
+				msgs[1] = nil
+			}
 		}
 	}
-	if len(res) == 0 {
-		return nil, fmt.Errorf("found no partitions to consume")
+	// One or both of the channels has been closed.
+	var c <-chan *sarama.ConsumerMessage
+	for i := range cs {
+		if msgs[i] != nil {
+			// There's a message remaining in the other channel; send it.
+			out <- msgs[i]
+		}
+		if cs[i] != nil {
+			c = cs[i]
+		}
 	}
-	return res, nil
+	if c != nil {
+		// Read the rest of the messages from the remaining unclosed channel.
+		for m := range c {
+			out <- m
+		}
+	}
 }
 
 var consumeDocString = `
