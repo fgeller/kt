@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"os/user"
 	"regexp"
 	"strings"
 	"sync"
@@ -37,6 +38,73 @@ func listenForInterrupt(q chan struct{}) {
 }
 
 var defaultKafkaVersion = sarama.V2_0_0_0
+
+type commonFlags struct {
+	verbose    bool
+	brokers    []string
+	version    sarama.KafkaVersion
+	tlsCA      string
+	tlsCert    string
+	tlsCertKey string
+}
+
+func (f *commonFlags) addFlags(flags *flag.FlagSet) {
+	f.brokers = []string{"localhost:9092"}
+	f.version = defaultKafkaVersion
+	flags.Var(listFlag{&f.brokers}, "brokers", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.Var(kafkaVersionFlag{v: &f.version}, "version", "Kafka protocol version")
+	flags.StringVar(&f.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
+	flags.StringVar(&f.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
+	flags.StringVar(&f.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
+	flags.BoolVar(&f.verbose, "verbose", false, "More verbose logging to stderr.")
+}
+
+func (f *commonFlags) saramaConfig(name string) (*sarama.Config, error) {
+	cfg := sarama.NewConfig()
+	cfg.Version = f.version
+	usr, err := user.Current()
+	var username string
+	if err != nil {
+		warningf("failed to read current user name: %v", err)
+		username = "anon"
+	} else {
+		username = usr.Username
+	}
+	cfg.ClientID = "kt-" + name + "-" + sanitizeUsername(username)
+
+	tlsConfig, err := setUpCerts(f.tlsCert, f.tlsCA, f.tlsCertKey)
+	if err != nil {
+		return nil, fmt.Errorf("cannot set up certificates: %v", err)
+	}
+	if tlsConfig != nil {
+		cfg.Net.TLS.Enable = true
+		cfg.Net.TLS.Config = tlsConfig
+	}
+	if f.verbose {
+		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
+	}
+	return cfg, nil
+}
+
+type listFlag struct {
+	v *[]string
+}
+
+func (v listFlag) String() string {
+	if v.v == nil {
+		return ""
+	}
+	return strings.Join(*v.v, ",")
+}
+
+func (v listFlag) Set(s string) error {
+	if s == "" {
+		*v.v = nil
+	} else {
+		*v.v = strings.Split(s, ",")
+	}
+	return nil
+}
 
 func kafkaVersionFlagVar(fs *flag.FlagSet, vp *sarama.KafkaVersion) {
 	*vp = defaultKafkaVersion
@@ -67,7 +135,7 @@ func (v kafkaVersionFlag) Set(s string) error {
 
 func logClose(name string, c io.Closer) {
 	if err := c.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
+		warningf("failed to close %#v: %v", name, err)
 	}
 }
 
@@ -91,26 +159,13 @@ func (p *printer) print(val interface{}) {
 	defer p.mu.Unlock()
 	buf, err := p.marshal(val)
 	if err != nil {
-		failf("failed to marshal output %#v, err=%v", val, err)
+		warningf("failed to marshal output %#v,: %v", val, err)
 	}
 	fmt.Println(string(buf))
 }
 
-func quitf(msg string, args ...interface{}) {
-	exitf(0, msg, args...)
-}
-
-func failf(msg string, args ...interface{}) {
-	exitf(1, msg, args...)
-}
-
-func exitf(code int, msg string, args ...interface{}) {
-	if code == 0 {
-		fmt.Fprintf(os.Stdout, msg+"\n", args...)
-	} else {
-		fmt.Fprintf(os.Stderr, msg+"\n", args...)
-	}
-	os.Exit(code)
+func warningf(f string, a ...interface{}) {
+	fmt.Fprintf(os.Stderr, "hkt: warning: %s\n", fmt.Sprintf(f, a...))
 }
 
 func readStdinLines(max int, out chan string) {
@@ -122,7 +177,7 @@ func readStdinLines(max int, out chan string) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "scanning input failed err=%v\n", err)
+		warningf("scanning input failed: %v", err)
 	}
 	close(out)
 }
@@ -179,9 +234,9 @@ func randomString(length int) string {
 	return fmt.Sprintf("%x", buf)[:length]
 }
 
-// setupCerts takes the paths to a tls certificate, CA, and certificate key in
+// setUpCerts takes the paths to a tls certificate, CA, and certificate key in
 // a PEM format and returns a constructed tls.Config object.
-func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
+func setUpCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 	if certPath == "" && caPath == "" && keyPath == "" {
 		return nil, nil
 	}
@@ -229,7 +284,7 @@ func setFlagsFromEnv(fs *flag.FlagSet, flags map[string]string) error {
 	for name, env := range flags {
 		f := fs.Lookup(name)
 		if f == nil {
-			panic(fmt.Errorf("flag %q ($%s) not found", f, env))
+			panic(fmt.Errorf("flag %q ($%s) not found", name, env))
 		}
 		if set[name] {
 			continue

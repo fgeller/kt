@@ -5,41 +5,21 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"regexp"
-	"strings"
-	"sync"
 
 	"github.com/Shopify/sarama"
+	"golang.org/x/sync/errgroup"
 )
 
-type topicArgs struct {
-	brokers    string
-	tlsCA      string
-	tlsCert    string
-	tlsCertKey string
-	filter     string
-	partitions bool
-	leaders    bool
-	replicas   bool
-	verbose    bool
-	pretty     bool
-	version    sarama.KafkaVersion
-}
-
 type topicCmd struct {
-	brokers    []string
-	tlsCA      string
-	tlsCert    string
-	tlsCertKey string
-	filter     *regexp.Regexp
+	commonFlags
 	partitions bool
 	leaders    bool
 	replicas   bool
-	verbose    bool
 	pretty     bool
-	version    sarama.KafkaVersion
+	filterStr  string
 
+	filter *regexp.Regexp
 	client sarama.Client
 }
 
@@ -57,112 +37,44 @@ type partition struct {
 	ISRs         []int32 `json:"isrs,omitempty"`
 }
 
-func (cmd *topicCmd) parseFlags(as []string) topicArgs {
-	var args topicArgs
-
-	flags := flag.NewFlagSet("topic", flag.ContinueOnError)
-	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
-	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
-	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
-	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
-	flags.StringVar(&args.filter, "filter", "", "Regex to filter topics by name.")
-	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	kafkaVersionFlagVar(flags, &args.version)
+func (cmd *topicCmd) addFlags(flags *flag.FlagSet) {
+	cmd.commonFlags.addFlags(flags)
+	flags.BoolVar(&cmd.partitions, "partitions", false, "Include information per partition.")
+	flags.BoolVar(&cmd.leaders, "leaders", false, "Include leader information per partition.")
+	flags.BoolVar(&cmd.replicas, "replicas", false, "Include replica ids per partition.")
+	flags.StringVar(&cmd.filterStr, "filter", "", "Regex to filter topics by name.")
+	flags.BoolVar(&cmd.pretty, "pretty", true, "Control output pretty printing.")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, topicDocString)
 	}
+}
 
-	err := flags.Parse(as)
-	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
-		os.Exit(0)
-	} else if err != nil {
-		os.Exit(2)
-	}
-	if err := setFlagsFromEnv(flags, map[string]string{
+func (cmd *topicCmd) environFlags() map[string]string {
+	return map[string]string{
 		"brokers": "KT_BROKERS",
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
 	}
-
-	return args
 }
 
-func (cmd *topicCmd) parseArgs(as []string) {
-	args := cmd.parseFlags(as)
-	cmd.brokers = strings.Split(args.brokers, ",")
-	for i, b := range cmd.brokers {
-		if !strings.Contains(b, ":") {
-			cmd.brokers[i] = b + ":9092"
-		}
-	}
-
-	re, err := regexp.Compile(args.filter)
+func (cmd *topicCmd) run(as []string) error {
+	var err error
+	cmd.filter, err = regexp.Compile(cmd.filterStr)
 	if err != nil {
-		failf("invalid regex for filter err=%s", err)
+		return fmt.Errorf("invalid regex for filter: %v", err)
 	}
-
-	cmd.tlsCA = args.tlsCA
-	cmd.tlsCert = args.tlsCert
-	cmd.tlsCertKey = args.tlsCertKey
-	cmd.filter = re
-	cmd.partitions = args.partitions
-	cmd.leaders = args.leaders
-	cmd.replicas = args.replicas
-	cmd.pretty = args.pretty
-	cmd.verbose = args.verbose
-	cmd.version = args.version
-}
-
-func (cmd *topicCmd) connect() {
-	var (
-		err error
-		usr *user.User
-		cfg = sarama.NewConfig()
-	)
-
-	cfg.Version = cmd.version
-
-	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
-	}
-	cfg.ClientID = "kt-topic-" + sanitizeUsername(usr.Username)
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
-	}
-
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
-	if err != nil {
-		failf("failed to setup certificates err=%v", err)
-	}
-	if tlsConfig != nil {
-		cfg.Net.TLS.Enable = true
-		cfg.Net.TLS.Config = tlsConfig
-	}
-
-	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
-		failf("failed to create client err=%v", err)
-	}
-}
-
-func (cmd *topicCmd) run(as []string) {
-	cmd.parseArgs(as)
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	cmd.connect()
+	if err := cmd.connect(); err != nil {
+		return err
+	}
 	defer cmd.client.Close()
 
 	all, err := cmd.client.Topics()
 	if err != nil {
-		failf("failed to read topics err=%v", err)
+		return fmt.Errorf("failed to read topics: %v", err)
 	}
 
 	topics := []string{}
@@ -173,21 +85,30 @@ func (cmd *topicCmd) run(as []string) {
 	}
 
 	out := newPrinter(cmd.pretty)
-	var wg sync.WaitGroup
+	var wg errgroup.Group
 	for _, topicName := range topics {
 		topicName := topicName
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() error {
 			topic, err := cmd.readTopic(topicName)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to read info for topic %s. err=%v\n", topicName, err)
-				return
+				return fmt.Errorf("failed to read info for topic %s: %v", topicName, err)
 			}
 			out.print(topic)
-		}()
+			return nil
+		})
 	}
-	wg.Wait()
+	return wg.Wait()
+}
+
+func (cmd *topicCmd) connect() error {
+	cfg, err := cmd.saramaConfig("topic")
+	if err != nil {
+		return err
+	}
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
+		return fmt.Errorf("failed to create client: %v", err)
+	}
+	return nil
 }
 
 func (cmd *topicCmd) readTopic(name string) (topic, error) {

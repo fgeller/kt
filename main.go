@@ -1,22 +1,15 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 )
 
-// TODO have these all the time
-var buildVersion, buildTime string
-
 type command interface {
-	run(args []string)
-}
-
-func init() {
-	if len(buildTime) > 0 && len(buildVersion) > 0 {
-		usageMessage = fmt.Sprintf(`%v
-Build %v from %v.`, usageMessage, buildVersion, buildTime)
-	}
+	addFlags(*flag.FlagSet)
+	environFlags() map[string]string
+	run(args []string) error
 }
 
 var usageMessage = `kt is a tool for Kafka.
@@ -35,33 +28,65 @@ The commands are:
 
 Use "kt [command] -help" for for information about the command.
 
-More at https://github.com/fgeller/kt`
+More at https://github.com/fgeller/kt
+`
 
-func parseArgs() command {
-	if len(os.Args) < 2 {
-		failf(usageMessage)
-	}
-
-	switch os.Args[1] {
-	case "consume":
-		return &consumeCmd{}
-	case "produce":
-		return &produceCmd{}
-	case "topic":
-		return &topicCmd{}
-	case "group":
-		return &groupCmd{}
-	case "admin":
-		return &adminCmd{}
-	case "-h", "-help", "--help":
-		quitf(usageMessage)
-	default:
-		failf(usageMessage)
-	}
-	return nil
+var commands = map[string]command{
+	"consume": &consumeCmd{},
+	"produce": &produceCmd{},
+	"topic":   &topicCmd{},
+	"group":   &groupCmd{},
+	"admin":   &adminCmd{},
 }
 
+var errSilent = fmt.Errorf("silent error; you should not be seeing this")
+
 func main() {
-	cmd := parseArgs()
-	cmd.run(os.Args[2:])
+	os.Exit(main1())
+}
+
+func main1() int {
+	if err := main2(); err != nil {
+		if err != errSilent && err != flag.ErrHelp {
+			fmt.Fprintf(os.Stderr, "hkt: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func main2() error {
+	c, args, err := parseCmd(os.Args...)
+	if err != nil {
+		return err
+	}
+	return c.run(args)
+}
+
+func parseCmd(args ...string) (command, []string, error) {
+	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
+	flags.Usage = func() {
+		fmt.Fprint(os.Stderr, usageMessage)
+	}
+	if err := flags.Parse(args[1:]); err != nil {
+		return nil, nil, errSilent
+	}
+	if flags.NArg() < 1 {
+		flags.Usage()
+		return nil, nil, errSilent
+	}
+	cmdName := flags.Arg(0)
+	c := commands[cmdName]
+	if c == nil {
+		return nil, nil, fmt.Errorf("unknown command %q; use `hkt -help` for help", cmdName)
+	}
+	subcmdFlags := flag.NewFlagSet("hkt "+cmdName, flag.ContinueOnError)
+	c.addFlags(subcmdFlags)
+	if err := subcmdFlags.Parse(flags.Args()[1:]); err != nil {
+		return nil, nil, err
+	}
+	if err := setFlagsFromEnv(subcmdFlags, c.environFlags()); err != nil {
+		return nil, nil, err
+	}
+	return c, subcmdFlags.Args(), nil
 }
