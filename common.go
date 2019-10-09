@@ -11,15 +11,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"os/signal"
 	"os/user"
 	"regexp"
 	"strings"
 	"sync"
-	"time"
-	"unicode/utf16"
 
 	"github.com/Shopify/sarama"
 	"golang.org/x/crypto/ssh/terminal"
@@ -106,13 +103,6 @@ func (v listFlag) Set(s string) error {
 	return nil
 }
 
-func kafkaVersionFlagVar(fs *flag.FlagSet, vp *sarama.KafkaVersion) {
-	*vp = defaultKafkaVersion
-	fs.Var(kafkaVersionFlag{
-		v: vp,
-	}, "version", "Kafka protocol version")
-}
-
 type kafkaVersionFlag struct {
 	v *sarama.KafkaVersion
 }
@@ -170,52 +160,14 @@ func warningf(f string, a ...interface{}) {
 
 func readStdinLines(max int, out chan string) {
 	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, max), max)
-
+	scanner.Buffer(nil, max)
 	for scanner.Scan() {
 		out <- scanner.Text()
 	}
-
 	if err := scanner.Err(); err != nil {
-		warningf("scanning input failed: %v", err)
+		warningf("error reading standard input: %v", err)
 	}
 	close(out)
-}
-
-// hashCode imitates the behavior of the JDK's String#hashCode method.
-// https://docs.oracle.com/javase/7/docs/api/java/lang/String.html#hashCode()
-//
-// As strings are encoded in utf16 on the JVM, this implementation checks wether
-// s contains non-bmp runes and uses utf16 surrogate pairs for those.
-func hashCode(s string) (hc int32) {
-	for _, r := range s {
-		r1, r2 := utf16.EncodeRune(r)
-		if r1 == 0xfffd && r1 == r2 {
-			hc = hc*31 + r
-		} else {
-			hc = (hc*31+r1)*31 + r2
-		}
-	}
-	return
-}
-
-func kafkaAbs(i int32) int32 {
-	switch {
-	case i == -2147483648: // Integer.MIN_VALUE
-		return 0
-	case i < 0:
-		return i * -1
-	default:
-		return i
-	}
-}
-
-func hashCodePartition(key string, partitions int32) int32 {
-	if partitions <= 0 {
-		return -1
-	}
-
-	return kafkaAbs(hashCode(key)) % partitions
 }
 
 func sanitizeUsername(u string) string {
@@ -225,13 +177,6 @@ func sanitizeUsername(u string) string {
 	// Windows account can contain spaces or other special characters not supported
 	// in client ID. Keep the bare minimum and ditch the rest.
 	return invalidClientIDCharactersRegExp.ReplaceAllString(u, "")
-}
-
-func randomString(length int) string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	buf := make([]byte, length)
-	r.Read(buf)
-	return fmt.Sprintf("%x", buf)[:length]
 }
 
 // setUpCerts takes the paths to a tls certificate, CA, and certificate key in
@@ -315,7 +260,7 @@ func decoderForType(typ string) (func(m json.RawMessage) ([]byte, error), error)
 			return []byte(s), nil
 		}
 	default:
-		return nil, fmt.Errorf(`unsupported decoder %#v, only string, hex and base64 are supported.`, typ)
+		return nil, fmt.Errorf(`unsupported decoder %#v, only json, string, hex and base64 are supported`, typ)
 	}
 	return func(m json.RawMessage) ([]byte, error) {
 		var s string
@@ -348,7 +293,7 @@ func encoderForType(typ string) (func([]byte) (json.RawMessage, error), error) {
 			return string(data)
 		}
 	default:
-		return nil, fmt.Errorf(`unsupported decoder %#v, only string, hex and base64 are supported.`, typ)
+		return nil, fmt.Errorf(`unsupported decoder %#v, only json, string, hex and base64 are supported`, typ)
 	}
 	return func(data []byte) (json.RawMessage, error) {
 		if data == nil {
@@ -368,9 +313,4 @@ func min(x, y int64) int64 {
 		return x
 	}
 	return y
-}
-
-func checkValidJSON(data []byte) error {
-	var j json.RawMessage
-	return json.Unmarshal(data, &j)
 }

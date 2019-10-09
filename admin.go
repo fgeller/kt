@@ -20,8 +20,7 @@ type adminCmd struct {
 	deleteTopic     string
 	topicDetailPath string
 
-	topicDetail *sarama.TopicDetail
-	admin       sarama.ClusterAdmin
+	admin sarama.ClusterAdmin
 }
 
 func (cmd *adminCmd) run(args []string) error {

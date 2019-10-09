@@ -25,7 +25,6 @@ type groupCmd struct {
 	resetStr        string
 	verbose         bool
 	pretty          bool
-	version         sarama.KafkaVersion
 	offsets         bool
 
 	reset        int64
@@ -175,7 +174,7 @@ func (cmd *groupCmd) init() error {
 	}
 
 	if cmd.partitions == nil {
-		return fmt.Errorf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, cmd.partitions)
+		return fmt.Errorf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all"`, cmd.partitions)
 	}
 
 	var err error
@@ -188,7 +187,7 @@ func (cmd *groupCmd) init() error {
 	}
 
 	if cmd.resetStr != "" && (cmd.topic == "" || cmd.group == "") {
-		return fmt.Errorf("group and topic are required to reset offsets.")
+		return fmt.Errorf("group and topic are required to reset offsets")
 	}
 
 	switch cmd.resetStr {
@@ -202,7 +201,7 @@ func (cmd *groupCmd) init() error {
 	default:
 		cmd.reset, err = strconv.ParseInt(cmd.resetStr, 10, 64)
 		if err != nil {
-			return fmt.Errorf(`set value %#v not valid. either newest, oldest or specific offset expected.`, cmd.resetStr)
+			return fmt.Errorf(`set value %#v not valid. either newest, oldest or specific offset expected`, cmd.resetStr)
 		}
 	}
 	return nil
@@ -278,6 +277,9 @@ func (cmd *groupCmd) fetchGroupOffset(grp, top string, part int32, results chan<
 		resolvedOff := cmd.reset
 		if specialOffset {
 			resolvedOff, err = cmd.resolveOffset(top, part, cmd.reset)
+			if err != nil {
+				return fmt.Errorf("cannot resolve offset: %v", err)
+			}
 		}
 		if resolvedOff > groupOff {
 			pom.MarkOffset(resolvedOff, "")
