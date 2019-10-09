@@ -3,13 +3,11 @@ package main
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	qt "github.com/frankban/quicktest"
 )
 
 func TestHashCode(t *testing.T) {
-
 	data := []struct {
 		in       string
 		expected int32
@@ -115,10 +113,12 @@ func TestProduceParseArgsUsesEnvVar(t *testing.T) {
 	c.Setenv("KT_TOPIC", "test-topic")
 	c.Setenv("KT_BROKERS", "hans:2000")
 
-	var target produceCmd
-	target.parseArgs(nil)
-	c.Assert(target.topic, qt.Equals, "test-topic")
-	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
+	cmd0, _, err := parseCmd("hkt", "produce")
+	c.Assert(err, qt.Equals, nil)
+	cmd := cmd0.(*produceCmd)
+
+	c.Assert(cmd.topic, qt.Equals, "test-topic")
+	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
 // brokers default to localhost:9092
@@ -129,10 +129,11 @@ func TestProduceParseArgsDefault(t *testing.T) {
 	c.Setenv("KT_TOPIC", "")
 	c.Setenv("KT_BROKERS", "")
 
-	var target produceCmd
-	target.parseArgs([]string{"-topic", "test-topic"})
-	c.Assert(target.topic, qt.Equals, "test-topic")
-	c.Assert(target.brokers, qt.DeepEquals, []string{"localhost:9092"})
+	cmd0, _, err := parseCmd("hkt", "produce", "-topic", "test-topic")
+	c.Assert(err, qt.Equals, nil)
+	cmd := cmd0.(*produceCmd)
+	c.Assert(cmd.topic, qt.Equals, "test-topic")
+	c.Assert(cmd.brokers, qt.DeepEquals, []string{"localhost:9092"})
 }
 
 func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
@@ -143,10 +144,11 @@ func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
 	c.Setenv("KT_TOPIC", "BLUBB")
 	c.Setenv("KT_BROKERS", "BLABB")
 
-	var target produceCmd
-	target.parseArgs([]string{"-topic", "test-topic", "-brokers", "hans:2000"})
-	c.Assert(target.topic, qt.Equals, "test-topic")
-	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
+	cmd0, _, err := parseCmd("hkt", "produce", "-topic", "test-topic", "-brokers", "hans:2000")
+	c.Assert(err, qt.Equals, nil)
+	cmd := cmd0.(*produceCmd)
+	c.Assert(cmd.topic, qt.Equals, "test-topic")
+	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
 func newMessage(key, value string, partition int32) producerMessage {
@@ -210,35 +212,35 @@ func TestDeserializeLines(t *testing.T) {
 	data := []struct {
 		in             string
 		literal        bool
-		partition      int32
+		partition      int
 		partitionCount int32
-		expected       producerMessage
+		expected       []producerMessage
 	}{{
 		in:             "",
 		literal:        false,
 		partitionCount: 1,
-		expected:       newMessage("", "", 0),
+		expected:       nil,
 	}, {
 		in:             `{"key":"hans","value":"123"}`,
 		literal:        false,
 		partitionCount: 4,
-		expected:       newMessage("hans", "123", hashCodePartition("hans", 4)),
+		expected:       []producerMessage{newMessage("hans", "123", hashCodePartition("hans", 4))},
 	}, {
 		in:             `{"key":"hans","value":"123","partition":1}`,
 		literal:        false,
 		partitionCount: 3,
-		expected:       newMessage("hans", "123", 1),
+		expected:       []producerMessage{newMessage("hans", "123", 1)},
 	}, {
 		in:             `{"other":"json","values":"avail"}`,
 		literal:        true,
 		partition:      2,
 		partitionCount: 4,
-		expected:       newMessage("", `{"other":"json","values":"avail"}`, 2),
+		expected:       []producerMessage{newMessage("", `{"other":"json","values":"avail"}`, 2)},
 	}, {
 		in:             `so lange schon`,
 		literal:        false,
 		partitionCount: 3,
-		expected:       newMessage("", "so lange schon", 0),
+		expected:       nil,
 	}}
 
 	c := qt.New(t)
@@ -253,13 +255,12 @@ func TestDeserializeLines(t *testing.T) {
 			out := make(chan producerMessage)
 			go target.deserializeLines(in, out, d.partitionCount)
 			in <- d.in
-
-			select {
-			case <-time.After(time.Second):
-				t.Errorf("did not receive output in time")
-			case actual := <-out:
-				c.Check(actual, deepEquals, d.expected)
+			close(in)
+			var msgs []producerMessage
+			for m := range out {
+				msgs = append(msgs, m)
 			}
+			c.Assert(msgs, deepEquals, d.expected)
 		})
 	}
 }

@@ -19,11 +19,7 @@ var updateFlag = flag.Bool("update", false, "update testscript scripts to corres
 // function so that it can be invoked by the testscript tests.
 func TestMain(m *testing.M) {
 	os.Exit(testscript.RunMain(m, map[string]func() int{
-		"kt": func() int {
-			main()
-			// TODO make main return exit code.
-			return 0
-		},
+		"kt": main1,
 	}))
 }
 

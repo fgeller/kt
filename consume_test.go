@@ -786,10 +786,11 @@ func TestConsumeParseArgsUsesEnvVar(t *testing.T) {
 	c.Setenv("KT_TOPIC", "test-topic")
 	c.Setenv("KT_BROKERS", "hans:2000")
 
-	var target consumeCmd
-	target.parseArgs(nil)
-	c.Assert(target.topic, qt.Equals, "test-topic")
-	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
+	cmd0, _, err := parseCmd("hkt", "consume")
+	c.Assert(err, qt.Equals, nil)
+	cmd := cmd0.(*consumeCmd)
+	c.Assert(cmd.topic, qt.Equals, "test-topic")
+	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
 // brokers default to localhost:9092
@@ -799,11 +800,11 @@ func TestConsumeParseArgsDefault(t *testing.T) {
 
 	c.Setenv("KT_TOPIC", "")
 	c.Setenv("KT_BROKERS", "")
-
-	var target consumeCmd
-	target.parseArgs([]string{"-topic", "test-topic"})
-	c.Assert(target.topic, qt.Equals, "test-topic")
-	c.Assert(target.brokers, qt.DeepEquals, []string{"localhost:9092"})
+	cmd0, _, err := parseCmd("hkt", "consume", "-topic", "test-topic")
+	c.Assert(err, qt.Equals, nil)
+	cmd := cmd0.(*consumeCmd)
+	c.Assert(cmd.topic, qt.Equals, "test-topic")
+	c.Assert(cmd.brokers, qt.DeepEquals, []string{"localhost:9092"})
 }
 
 func TestConsumeParseArgsFlagsOverrideEnv(t *testing.T) {
@@ -814,10 +815,11 @@ func TestConsumeParseArgsFlagsOverrideEnv(t *testing.T) {
 	c.Setenv("KT_TOPIC", "BLUBB")
 	c.Setenv("KT_BROKERS", "BLABB")
 
-	var target consumeCmd
-	target.parseArgs([]string{"-topic", "test-topic", "-brokers", "hans:2000"})
-	c.Assert(target.topic, qt.Equals, "test-topic")
-	c.Assert(target.brokers, qt.DeepEquals, []string{"hans:2000"})
+	cmd0, _, err := parseCmd("hkt", "consume", "-topic", "test-topic", "-brokers", "hans:2000")
+	c.Assert(err, qt.Equals, nil)
+	cmd := cmd0.(*consumeCmd)
+	c.Assert(cmd.topic, qt.Equals, "test-topic")
+	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
 func T(s string) time.Time {

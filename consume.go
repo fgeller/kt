@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,130 +13,65 @@ import (
 )
 
 type consumeCmd struct {
-	topic       string
-	brokers     []string
-	tlsCA       string
-	tlsCert     string
-	tlsCertKey  string
-	offsets     map[int32]interval
-	timeout     time.Duration
-	verbose     bool
-	version     sarama.KafkaVersion
+	commonFlags
+	topic           string
+	offsets         string
+	timeout         time.Duration
+	encodeValueType string
+	encodeKeyType   string
+	pretty          bool
+	follow          bool
+
 	encodeValue func([]byte) *string
 	encodeKey   func([]byte) *string
-	pretty      bool
-	follow      bool
-
-	client   sarama.Client
-	consumer sarama.Consumer
+	client      sarama.Client
+	consumer    sarama.Consumer
 }
 
-type consumeArgs struct {
-	topic       string
-	brokers     string
-	tlsCA       string
-	tlsCert     string
-	tlsCertKey  string
-	timeout     time.Duration
-	offsets     string
-	verbose     bool
-	version     sarama.KafkaVersion
-	encodeValue string
-	encodeKey   string
-	pretty      bool
-	follow      bool
-}
-
-func (cmd *consumeCmd) parseArgs(as []string) error {
-	args := cmd.parseFlags(as)
-	cmd.topic = args.topic
-	cmd.tlsCA = args.tlsCA
-	cmd.tlsCert = args.tlsCert
-	cmd.tlsCertKey = args.tlsCertKey
-	cmd.timeout = args.timeout
-	cmd.verbose = args.verbose
-	cmd.pretty = args.pretty
-	cmd.follow = args.follow
-	cmd.version = args.version
-
-	var err error
-	cmd.encodeValue, err = encoderForType(args.encodeValue)
-	if err != nil {
-		return fmt.Errorf("bad -encodevalue argument: %v", err)
-	}
-	cmd.encodeKey, err = encoderForType(args.encodeKey)
-	if err != nil {
-		return fmt.Errorf("bad -encodekey argument: %v", err)
-	}
-	cmd.brokers = strings.Split(args.brokers, ",")
-	for i, b := range cmd.brokers {
-		if !strings.Contains(b, ":") {
-			cmd.brokers[i] = b + ":9092"
-		}
-	}
-	cmd.offsets, err = parseOffsets(args.offsets, time.Now())
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
-	var args consumeArgs
-	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
-	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&args.brokers, "brokers", "localhost:9092", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
-	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
-	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
-	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.BoolVar(&args.follow, "f", false, "Follow topic by waiting new messages (default is to stop at end of topic)")
-	kafkaVersionFlagVar(flags, &args.version)
-	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
-	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
+func (cmd *consumeCmd) addFlags(flags *flag.FlagSet) {
+	cmd.commonFlags.addFlags(flags)
+	flags.StringVar(&cmd.topic, "topic", "", "Topic to consume (required).")
+	flags.StringVar(&cmd.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
+	flags.DurationVar(&cmd.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+	flags.BoolVar(&cmd.pretty, "pretty", true, "Control output pretty printing.")
+	flags.BoolVar(&cmd.follow, "f", false, "Follow topic by waiting new messages (default is to stop at end of topic)")
+	flags.StringVar(&cmd.encodeValueType, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
+	flags.StringVar(&cmd.encodeKeyType, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, consumeDocString)
 	}
+}
 
-	err := flags.Parse(as)
-	if err == flag.ErrHelp {
-		os.Exit(0)
-	} else if err != nil {
-		os.Exit(2)
-	}
-
-	if err := setFlagsFromEnv(flags, map[string]string{
+func (cmd *consumeCmd) environFlags() map[string]string {
+	return map[string]string{
 		"topic":   "KT_TOPIC",
 		"brokers": "KT_BROKERS",
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-
-	return args
-}
-
-func (cmd *consumeCmd) run(args []string) {
-	if err := cmd.parseArgs(args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		failf(`use "kt consume -help" for more information`)
-	}
-	if err := cmd.run1(args); err != nil {
-		failf("%v", err)
 	}
 }
 
-func (cmd *consumeCmd) run1(args []string) error {
+func (cmd *consumeCmd) run(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("unexpected argument to consume command")
+	}
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
-
+	var err error
+	cmd.encodeValue, err = encoderForType(cmd.encodeValueType)
+	if err != nil {
+		return fmt.Errorf("bad -encodevalue argument: %v", err)
+	}
+	cmd.encodeKey, err = encoderForType(cmd.encodeKeyType)
+	if err != nil {
+		return fmt.Errorf("bad -encodekey argument: %v", err)
+	}
+	offsets, err := parseOffsets(cmd.offsets, time.Now())
+	if err != nil {
+		return err
+	}
 	c, err := cmd.newClient()
 	if err != nil {
 		return err
@@ -150,7 +83,7 @@ func (cmd *consumeCmd) run1(args []string) error {
 	}
 	cmd.consumer = consumer
 	defer logClose("consumer", cmd.consumer)
-	resolvedOffsets, limits, err := cmd.resolveOffsets(context.TODO(), cmd.offsets)
+	resolvedOffsets, limits, err := cmd.resolveOffsets(context.TODO(), offsets)
 	if err != nil {
 		return fmt.Errorf("cannot resolve offsets: %v", err)
 	}
@@ -161,29 +94,10 @@ func (cmd *consumeCmd) run1(args []string) error {
 }
 
 func (cmd *consumeCmd) newClient() (sarama.Client, error) {
-	cfg := sarama.NewConfig()
-	cfg.Version = cmd.version
-	usr, err := user.Current()
-	var username string
+	cfg, err := cmd.saramaConfig("consume")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read current user name: %v", err)
-		username = "anon"
-	} else {
-		username = usr.Username
+		return nil, err
 	}
-	cfg.ClientID = "kt-consume-" + sanitizeUsername(username)
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
-	}
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
-	if err != nil {
-		return nil, fmt.Errorf("cannot set up certificates: %v", err)
-	}
-	if tlsConfig != nil {
-		cfg.Net.TLS.Enable = true
-		cfg.Net.TLS.Config = tlsConfig
-	}
-
 	client, err := sarama.NewClient(cmd.brokers, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create kafka client: %v", err)
@@ -209,7 +123,7 @@ func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval, limits map
 			defer wg.Done()
 			defer close(outc)
 			if err := cmd.consumePartition(outc, p, interval); err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				warningf("cannot consume partition %v: %v", p, err)
 			}
 		}()
 		consumerChans = append(consumerChans, outc)
@@ -234,7 +148,7 @@ func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval, limits map
 		go func() {
 			defer wg.Done()
 			if err := cmd.consumePartition(outc, p, interval); err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				warningf("cannot consume partition %v: %v", p, err)
 			}
 		}()
 	}
