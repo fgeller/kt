@@ -1,0 +1,18 @@
+kt admin -createtopic $topic -topicdetail topic-detail.json
+
+stdin produce-stdin.json
+kt produce -valuecodec string -topic $topic
+
+kt consume -topic $topic
+cmp stdout consume-stdout.json
+cmp stderr consume-stderr
+
+-- topic-detail.json --
+{"NumPartitions": 1, "ReplicationFactor": 1}
+-- produce-stdin.json --
+{"key":"k1","value":"]","time":"2019-10-08T01:01:01Z"}
+{"key":"k2","value":"1234","time":"2019-10-08T01:01:02Z"}
+-- consume-stdout.json --
+{"partition":0,"offset":1,"key":"k2","value":1234,"time":"2019-10-08T01:01:02Z"}
+-- consume-stderr --
+hkt: warning: invalid message in partition 0, offset 0: invalid value: invalid JSON value "]": invalid character ']' looking for beginning of value
