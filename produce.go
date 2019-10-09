@@ -79,7 +79,6 @@ func (cmd *produceCmd) addFlags(flags *flag.FlagSet) {
 
 func (cmd *produceCmd) environFlags() map[string]string {
 	return map[string]string{
-		"topic":   "KT_TOPIC",
 		"brokers": "KT_BROKERS",
 	}
 }
@@ -261,8 +260,8 @@ func (p producerPartitioner) MessageRequiresConsistency(m *sarama.ProducerMessag
 }
 
 var produceDocString = `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
+The value for -brokers can also be set with the environment variable KT_BROKERS.
+The value supplied on the command line takes precedence over the environment variable.
 
 Input is read from stdin and separated by newlines.
 

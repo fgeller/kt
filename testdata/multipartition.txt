@@ -3,10 +3,10 @@ kt admin -createtopic $topic -topicdetail topic-detail.json
 stdin produce-stdin.json
 kt produce -valuecodec string -topic $topic
 
-kt consume -valuecodec string -topic $topic
+kt consume -valuecodec string $topic
 cmp stdout consume-1-stdout.json
 
-kt consume -valuecodec string -offsets 3=1:newest-1 -topic $topic
+kt consume -valuecodec string $topic 3=1:newest-1
 cmp stdout consume-2-stdout.json
 
 -- topic-detail.json --

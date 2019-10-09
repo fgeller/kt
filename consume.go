@@ -49,8 +49,6 @@ func (cmd *consumeCmd) addFlags(flags *flag.FlagSet) {
 	cmd.commonFlags.addFlags(flags)
 	cmd.partitioners = []string{"sarama"}
 	flags.Var(listFlag{&cmd.partitioners}, "partitioners", "Comma-separated list of partitioners to consider when using the key flag. See below for details")
-	flags.StringVar(&cmd.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&cmd.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&cmd.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.StringVar(&cmd.keyStr, "key", "", "Print only messages with this key. Note: this relies on the producer using one of the partitioning algorithms specified with the -partitioners argument")
 	flags.BoolVar(&cmd.pretty, "pretty", true, "Control output pretty printing.")
@@ -59,7 +57,7 @@ func (cmd *consumeCmd) addFlags(flags *flag.FlagSet) {
 	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Present message key as (string|hex|base64), defaults to string.")
 
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage of consume:")
+		fmt.Fprintln(os.Stderr, "Usage: hkt consume [flags] TOPIC [OFFSETS]")
 		flags.PrintDefaults()
 		fmt.Fprintln(os.Stderr, consumeDocString)
 	}
@@ -67,14 +65,24 @@ func (cmd *consumeCmd) addFlags(flags *flag.FlagSet) {
 
 func (cmd *consumeCmd) environFlags() map[string]string {
 	return map[string]string{
-		"topic":   "KT_TOPIC",
 		"brokers": "KT_BROKERS",
 	}
 }
 
 func (cmd *consumeCmd) run(args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("unexpected argument to consume command")
+	if len(args) < 1 {
+		return fmt.Errorf("consume: no topic specified in first argument")
+	}
+	if len(args) > 2 {
+		return fmt.Errorf("unexpected extra arguments to consume command")
+	}
+	cmd.topic = args[0]
+	if cmd.topic == "" {
+		return fmt.Errorf("empty topic name")
+	}
+	offsetsStr := "all"
+	if len(args) > 1 {
+		offsetsStr = args[1]
 	}
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -92,7 +100,7 @@ func (cmd *consumeCmd) run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("bad -keycodec argument: %v", err)
 	}
-	offsets, err := parseOffsets(cmd.offsets, time.Now())
+	offsets, err := parseOffsets(offsetsStr, time.Now())
 	if err != nil {
 		return err
 	}
@@ -442,6 +450,9 @@ var consumeDocString = `
 The consume command reads messages from a Kafka topic and prints them
 to the standard output.
 
+If the OFFSETS argument isn't provided, it defaults to "all" (all messages from
+the topic are returned).
+
 The messages will be printed as a stream of JSON objects in the following form:
 
 	{
@@ -461,8 +472,8 @@ For example:
 
 	{"partition":0,"key":"k1","value":{"foo":1234},"time":"2019-10-08T01:01:01Z"}
 
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
-The values supplied on the command line have priority over environment variable values.
+The value for -brokers can also be set with the environment variable KT_BROKERS.
+The value supplied on the command line takes precedence over the environment variable.
 
 KEY SEARCH
 
@@ -515,9 +526,12 @@ the given topic.
  - partition is the numeric identifier for a partition. You can use "all" to
    specify a default interval for all partitions.
 
- - start is the included offset or time where consumption should start.
+ - start is the included offset or time where consumption should start;
+   it defaults to "oldest".
 
- - end is the included offset or time where consumption should end.
+ - end is the included offset or time where consumption should end;
+   it defaults to "newest" when the -f flag isn't provided, or the
+   maximum possible offset if it is.
 
 An offset may be specified as:
 

@@ -8,16 +8,16 @@ kt produce -valuecodec string -partitioner std -topic $topic
 
 # consuming with just the default (sarama) partitioner will only
 # get messages from the partition chosen by that.
-kt consume -valuecodec string -key k1 -topic $topic
+kt consume -valuecodec string -key k1 $topic
 cmp stdout consume-1-stdout.json
 
 # adding another partitioner will pull in that partition too
-kt consume -valuecodec string -key k1 -partitioners sarama,std -topic $topic
+kt consume -valuecodec string -key k1 -partitioners sarama,std $topic
 cmp stdout consume-2-stdout.json
 
 # specifying "all" will pull in the message that was sent to the
 # manually chosen partition too
-kt consume -valuecodec string -key k1 -partitioners all -topic $topic
+kt consume -valuecodec string -key k1 -partitioners all $topic
 cmp stdout consume-3-stdout.json
 
 -- topic-detail.json --

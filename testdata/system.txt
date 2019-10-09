@@ -9,7 +9,7 @@ kt produce -valuecodec string -topic $topic
 ! stdout .
 
 # 2
-kt consume -valuecodec string -f -topic $topic -timeout 500ms
+kt consume -valuecodec string -f -timeout 500ms $topic
 stderr 'consuming from partition 0 timed out after 500ms'
 cmpenvjson stdout '{"value": "hello 1", "key": "boom", "partition": 0, "offset": 0, "time": "$now"}'
 
