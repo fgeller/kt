@@ -20,23 +20,23 @@ type produceCmd struct {
 	pretty          bool
 	literal         bool
 	partition       int
-	decodeKeyType   string
-	decodeValueType string
+	keyCodecType    string
+	valueCodecType  string
 	compressionType string
 	bufferSize      int
 	partitioner     string
 
 	compression sarama.CompressionCodec
-	decodeKey   func(string) ([]byte, error)
-	decodeValue func(string) ([]byte, error)
+	decodeKey   func(json.RawMessage) ([]byte, error)
+	decodeValue func(json.RawMessage) ([]byte, error)
 	leaders     map[int32]*sarama.Broker
 }
 
 type producerMessage struct {
-	Value     *string    `json:"value"`
-	Key       *string    `json:"key"`
-	Partition *int32     `json:"partition"`
-	Timestamp *time.Time `json:"time"`
+	Value     json.RawMessage `json:"value"`
+	Key       json.RawMessage `json:"key"`
+	Partition *int32          `json:"partition"`
+	Timestamp *time.Time      `json:"time"`
 }
 
 func (cmd *produceCmd) addFlags(flags *flag.FlagSet) {
@@ -50,8 +50,8 @@ func (cmd *produceCmd) addFlags(flags *flag.FlagSet) {
 	flags.BoolVar(&cmd.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&cmd.compressionType, "compression", "", "Kafka message compression codec [gzip|snappy|lz4] (defaults to none)")
 	flags.StringVar(&cmd.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
-	flags.StringVar(&cmd.decodeKeyType, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
-	flags.StringVar(&cmd.decodeValueType, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
+	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Interpret message value as (string|json|hex|base64), defaults to string.")
+	flags.StringVar(&cmd.valueCodecType, "valuecodec", "json", "Interpret message value as (json|string|hex|base64), defaults to json.")
 	flags.IntVar(&cmd.bufferSize, "buffersize", 16777216, "Buffer size for scanning stdin, defaults to 16777216=16*1024*1024.")
 
 	flags.Usage = func() {
@@ -69,14 +69,17 @@ func (cmd *produceCmd) environFlags() map[string]string {
 }
 
 func (cmd *produceCmd) run(args []string) error {
-	var err error
-	cmd.decodeValue, err = decoderForType(cmd.decodeValueType)
-	if err != nil {
-		return fmt.Errorf("bad -decodevalue argument: %v", err)
+	if cmd.partitioner != "" {
+		return fmt.Errorf("-partitioner unsupported currently")
 	}
-	cmd.decodeKey, err = decoderForType(cmd.decodeValueType)
+	var err error
+	cmd.decodeValue, err = decoderForType(cmd.valueCodecType)
 	if err != nil {
-		return fmt.Errorf("bad -decodekey argument: %v", err)
+		return fmt.Errorf("bad -valuecodec argument: %v", err)
+	}
+	cmd.decodeKey, err = decoderForType(cmd.keyCodecType)
+	if err != nil {
+		return fmt.Errorf("bad -keycodec argument: %v", err)
 	}
 	if cmd.verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -203,25 +206,24 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan producerMessage
 	for l := range in {
 		l := l
 		var msg producerMessage
-		l = strings.TrimSpace(l)
-		if l == "" {
-			// Ignore blank line.
-			continue
-		}
 
 		if cmd.literal {
-			msg.Value = &l
+			data, _ := json.Marshal(l) // Marshaling a string can't fail.
+			msg.Value = json.RawMessage(data)
 			msg.Partition = &partition
-		} else if err := json.Unmarshal([]byte(l), &msg); err != nil {
-			warningf("skipping invalid JSON input %q: %v", l, err)
-			continue
+		} else {
+			if l = strings.TrimSpace(l); l == "" {
+				// Ignore blank line.
+				continue
+			}
+			if err := json.Unmarshal([]byte(l), &msg); err != nil {
+				warningf("skipping invalid JSON input %q: %v", l, err)
+				continue
+			}
 		}
 
-		var part int32
-		if msg.Key != nil && cmd.partitioner == "hashCode" {
-			part = hashCodePartition(*msg.Key, partitionCount)
-		}
 		if msg.Partition == nil {
+			part := int32(0)
 			msg.Partition = &part
 		}
 		out <- msg
@@ -263,14 +265,14 @@ type partitionProduceResult struct {
 func (cmd *produceCmd) makeSaramaMessage(msg producerMessage) (*sarama.Message, error) {
 	sm := &sarama.Message{Codec: cmd.compression}
 	if msg.Key != nil {
-		key, err := cmd.decodeKey(*msg.Key)
+		key, err := cmd.decodeKey(msg.Key)
 		if err != nil {
 			return nil, fmt.Errorf("cannot decode key: %v", err)
 		}
 		sm.Key = key
 	}
 	if msg.Value != nil {
-		value, err := cmd.decodeValue(*msg.Value)
+		value, err := cmd.decodeValue(msg.Value)
 		if err != nil {
 			return nil, fmt.Errorf("cannot decode value: %v", err)
 		}
@@ -301,7 +303,8 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []pr
 		}
 		sm, err := cmd.makeSaramaMessage(msg)
 		if err != nil {
-			return err
+			warningf("invalid message: %v", err)
+			continue
 		}
 		req.AddMessage(cmd.topic, *msg.Partition, sm)
 	}

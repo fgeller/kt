@@ -1,0 +1,16 @@
+kt admin -createtopic $topic -topicdetail topic-detail.json
+
+stdin produce-stdin.json
+kt produce -topic $topic
+
+kt consume -topic $topic
+cmp stdout consume-stdout.json
+
+-- topic-detail.json --
+{"NumPartitions": 1, "ReplicationFactor": 1}
+-- produce-stdin.json --
+{"key":"k1","value":{"a":"b"},"time":"2019-10-08T01:01:01Z"}
+{"key":"k2","value":1234,"time":"2019-10-08T01:01:02Z"}
+-- consume-stdout.json --
+{"partition":0,"offset":0,"key":"k1","value":{"a":"b"},"time":"2019-10-08T01:01:01Z"}
+{"partition":0,"offset":1,"key":"k2","value":1234,"time":"2019-10-08T01:01:02Z"}

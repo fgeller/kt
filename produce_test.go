@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -152,16 +153,13 @@ func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
 }
 
 func newMessage(key, value string, partition int32) producerMessage {
-	var k *string
+	var k, v json.RawMessage
 	if key != "" {
-		k = &key
+		k = json.RawMessage(key)
 	}
-
-	var v *string
 	if value != "" {
-		v = &value
+		v = json.RawMessage(value)
 	}
-
 	return producerMessage{
 		Key:       k,
 		Value:     v,
@@ -171,7 +169,7 @@ func newMessage(key, value string, partition int32) producerMessage {
 
 func TestMakeSaramaMessage(t *testing.T) {
 	c := qt.New(t)
-	mustDecoderForType := func(typ string) func(string) ([]byte, error) {
+	mustDecoderForType := func(typ string) func(json.RawMessage) ([]byte, error) {
 		dec, err := decoderForType(typ)
 		c.Assert(err, qt.Equals, nil)
 		return dec
@@ -179,33 +177,42 @@ func TestMakeSaramaMessage(t *testing.T) {
 	stringDecoder := mustDecoderForType("string")
 	hexDecoder := mustDecoderForType("hex")
 	base64Decoder := mustDecoderForType("base64")
+	jsonDecoder := mustDecoderForType("json")
 
 	target := &produceCmd{
 		decodeKey:   stringDecoder,
 		decodeValue: stringDecoder,
 	}
-	key, value := "key", "value"
-	msg := producerMessage{Key: &key, Value: &value}
+	key, value := `"key"`, `"value"`
+	msg := producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err := target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
-	c.Assert(string(actual.Key), qt.Equals, key)
-	c.Assert(string(actual.Value), qt.Equals, value)
+	c.Assert(string(actual.Key), qt.Equals, "key")
+	c.Assert(string(actual.Value), qt.Equals, "value")
 
 	target.decodeKey, target.decodeValue = hexDecoder, hexDecoder
-	key, value = "41", "42"
-	msg = producerMessage{Key: &key, Value: &value}
+	key, value = `"41"`, `"42"`
+	msg = producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
 	c.Assert(string(actual.Key), qt.Equals, "A")
 	c.Assert(string(actual.Value), qt.Equals, "B")
 
 	target.decodeKey, target.decodeValue = base64Decoder, base64Decoder
-	key, value = "aGFucw==", "cGV0ZXI="
-	msg = producerMessage{Key: &key, Value: &value}
+	key, value = `"aGFucw=="`, `"cGV0ZXI="`
+	msg = producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
 	c.Assert(string(actual.Key), qt.Equals, "hans")
 	c.Assert(string(actual.Value), qt.Equals, "peter")
+
+	target.decodeKey, target.decodeValue = jsonDecoder, jsonDecoder
+	key, value = `{"x":1}`, `[1,2]`
+	msg = producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
+	actual, err = target.makeSaramaMessage(msg)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(string(actual.Key), qt.Equals, `{"x":1}`)
+	c.Assert(string(actual.Value), qt.Equals, `[1,2]`)
 }
 
 func TestDeserializeLines(t *testing.T) {
@@ -224,18 +231,20 @@ func TestDeserializeLines(t *testing.T) {
 		in:             `{"key":"hans","value":"123"}`,
 		literal:        false,
 		partitionCount: 4,
-		expected:       []producerMessage{newMessage("hans", "123", hashCodePartition("hans", 4))},
+		expected: []producerMessage{
+			newMessage(`"hans"`, `"123"`, 0),
+		},
 	}, {
 		in:             `{"key":"hans","value":"123","partition":1}`,
 		literal:        false,
 		partitionCount: 3,
-		expected:       []producerMessage{newMessage("hans", "123", 1)},
+		expected:       []producerMessage{newMessage(`"hans"`, `"123"`, 1)},
 	}, {
 		in:             `{"other":"json","values":"avail"}`,
 		literal:        true,
 		partition:      2,
 		partitionCount: 4,
-		expected:       []producerMessage{newMessage("", `{"other":"json","values":"avail"}`, 2)},
+		expected:       []producerMessage{newMessage("", `"{\"other\":\"json\",\"values\":\"avail\"}"`, 2)},
 	}, {
 		in:             `so lange schon`,
 		literal:        false,
@@ -247,9 +256,8 @@ func TestDeserializeLines(t *testing.T) {
 	for i, d := range data {
 		c.Run(fmt.Sprint(i), func(c *qt.C) {
 			target := &produceCmd{
-				partitioner: "hashCode",
-				literal:     d.literal,
-				partition:   d.partition,
+				literal:   d.literal,
+				partition: d.partition,
 			}
 			in := make(chan string, 1)
 			out := make(chan producerMessage)

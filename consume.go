@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -14,16 +15,16 @@ import (
 
 type consumeCmd struct {
 	commonFlags
-	topic           string
-	offsets         string
-	timeout         time.Duration
-	encodeValueType string
-	encodeKeyType   string
-	pretty          bool
-	follow          bool
+	topic          string
+	offsets        string
+	timeout        time.Duration
+	valueCodecType string
+	keyCodecType   string
+	pretty         bool
+	follow         bool
 
-	encodeValue func([]byte) *string
-	encodeKey   func([]byte) *string
+	encodeValue func([]byte) (json.RawMessage, error)
+	encodeKey   func([]byte) (json.RawMessage, error)
 	client      sarama.Client
 	consumer    sarama.Consumer
 }
@@ -35,8 +36,8 @@ func (cmd *consumeCmd) addFlags(flags *flag.FlagSet) {
 	flags.DurationVar(&cmd.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&cmd.pretty, "pretty", true, "Control output pretty printing.")
 	flags.BoolVar(&cmd.follow, "f", false, "Follow topic by waiting new messages (default is to stop at end of topic)")
-	flags.StringVar(&cmd.encodeValueType, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
-	flags.StringVar(&cmd.encodeKeyType, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
+	flags.StringVar(&cmd.valueCodecType, "valuecodec", "json", "Present message value as (json|string|hex|base64), defaults to json.")
+	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Present message key as (string|json|hex|base64), defaults to string.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -60,13 +61,13 @@ func (cmd *consumeCmd) run(args []string) error {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 	var err error
-	cmd.encodeValue, err = encoderForType(cmd.encodeValueType)
+	cmd.encodeValue, err = encoderForType(cmd.valueCodecType)
 	if err != nil {
-		return fmt.Errorf("bad -encodevalue argument: %v", err)
+		return fmt.Errorf("bad -valuecodec argument: %v", err)
 	}
-	cmd.encodeKey, err = encoderForType(cmd.encodeKeyType)
+	cmd.encodeKey, err = encoderForType(cmd.keyCodecType)
 	if err != nil {
-		return fmt.Errorf("bad -encodekey argument: %v", err)
+		return fmt.Errorf("bad -keycodec argument: %v", err)
 	}
 	offsets, err := parseOffsets(cmd.offsets, time.Now())
 	if err != nil {
@@ -130,7 +131,11 @@ func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval, limits map
 	}
 	allMsgs := mergeConsumers(consumerChans...)
 	for m := range allMsgs {
-		out.print(cmd.newConsumedMessage(m))
+		if m1, err := cmd.newConsumedMessage(m); err != nil {
+			warningf("invalid message in partition %d, offset %d: %v", m.Partition, m.Offset, err)
+		} else {
+			out.print(m1)
+		}
 	}
 	wg.Wait()
 	// We've got to the end of all partitions; now print messages
@@ -157,7 +162,11 @@ func (cmd *consumeCmd) consume(partitions map[int32]resolvedInterval, limits map
 		close(outc)
 	}()
 	for m := range outc {
-		out.print(cmd.newConsumedMessage(m))
+		if m1, err := cmd.newConsumedMessage(m); err != nil {
+			warningf("invalid message in partition %d, offset %d: %v", m.Partition, m.Offset, err)
+		} else {
+			out.print(m1)
+		}
 	}
 	return nil
 }
@@ -202,25 +211,33 @@ func (cmd *consumeCmd) consumePartition(out chan<- *sarama.ConsumerMessage, part
 }
 
 type consumedMessage struct {
-	Partition int32      `json:"partition"`
-	Offset    int64      `json:"offset"`
-	Key       *string    `json:"key"`
-	Value     *string    `json:"value"`
-	Time      *time.Time `json:"time,omitempty"`
+	Partition int32           `json:"partition"`
+	Offset    int64           `json:"offset"`
+	Key       json.RawMessage `json:"key,omitempty"`
+	Value     json.RawMessage `json:"value"`
+	Time      *time.Time      `json:"time,omitempty"`
 }
 
-func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) consumedMessage {
+func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) (consumedMessage, error) {
+	key, err := cmd.encodeKey(m.Key)
+	if err != nil {
+		return consumedMessage{}, fmt.Errorf("invalid key: %v", err)
+	}
+	value, err := cmd.encodeValue(m.Value)
+	if err != nil {
+		return consumedMessage{}, fmt.Errorf("invalid value: %v", err)
+	}
 	result := consumedMessage{
 		Partition: m.Partition,
 		Offset:    m.Offset,
-		Key:       cmd.encodeKey(m.Key),
-		Value:     cmd.encodeValue(m.Value),
+		Key:       key,
+		Value:     value,
 	}
 	if !m.Timestamp.IsZero() {
 		t := m.Timestamp.UTC()
 		result.Time = &t
 	}
-	return result
+	return result, nil
 }
 
 // mergeConsumers merges all the given channels in timestamp order
@@ -306,7 +323,7 @@ The values supplied on the command line win over environment variable values.
 
 Offsets can be specified as a comma-separated list of intervals:
 
-  [[partition=start:end],...]
+  partition[=[start]:[end]]
 
 For example:
 
