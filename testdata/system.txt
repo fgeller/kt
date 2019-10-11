@@ -6,7 +6,7 @@ kt admin -createtopic $topic -topicdetail 0-admin/topic.json
 stdin 1-produce/stdin.json
 kt produce -valuecodec string -topic $topic
 ! stderr .
-cmpenvjson stdout '{"count": 1, "partition": 0, "startOffset": 0}'
+! stdout .
 
 # 2
 kt consume -valuecodec string -f -topic $topic -timeout 500ms
@@ -17,7 +17,7 @@ cmpenvjson stdout '{"value": "hello 1", "key": "boom", "partition": 0, "offset":
 stdin 4-produce/stdin.json
 kt produce -valuecodec string -topic $topic
 ! stderr .
-cmpenvjson stdout '{"count": 1, "partition": 0, "startOffset": 1}'
+! stdout .
 
 # 5
 kt topic -filter $topic

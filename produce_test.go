@@ -5,107 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Shopify/sarama"
 	qt "github.com/frankban/quicktest"
 )
-
-func TestHashCode(t *testing.T) {
-	data := []struct {
-		in       string
-		expected int32
-	}{
-		{
-			in:       "",
-			expected: 0,
-		},
-		{
-			in:       "a",
-			expected: 97,
-		},
-		{
-			in:       "b",
-			expected: 98,
-		},
-		{
-			in:       "⌘",
-			expected: 8984,
-		},
-		{
-			in:       "😼", //non-bmp character, 4bytes in utf16
-			expected: 1772959,
-		},
-		{
-			in:       "hashCode",
-			expected: 147696667,
-		},
-		{
-			in:       "c03a3475-3ed6-4ed1-8ae5-1c432da43e73",
-			expected: 1116730239,
-		},
-		{
-			in:       "random",
-			expected: -938285885,
-		},
-	}
-
-	for _, d := range data {
-		actual := hashCode(d.in)
-		if actual != d.expected {
-			t.Errorf("expected %v but found %v\n", d.expected, actual)
-		}
-	}
-}
-
-func TestHashCodePartition(t *testing.T) {
-
-	data := []struct {
-		key        string
-		partitions int32
-		expected   int32
-	}{{
-		key:        "",
-		partitions: 0,
-		expected:   -1,
-	}, {
-		key:        "",
-		partitions: 1,
-		expected:   0,
-	}, {
-		key:        "super-duper-key",
-		partitions: 1,
-		expected:   0,
-	}, {
-		key:        "",
-		partitions: 1,
-		expected:   0,
-	}, {
-		key:        "",
-		partitions: 2,
-		expected:   0,
-	}, {
-		key:        "a",
-		partitions: 2,
-		expected:   1,
-	}, {
-		key:        "b",
-		partitions: 2,
-		expected:   0,
-	}, {
-		key:        "random",
-		partitions: 2,
-		expected:   1,
-	}, {
-		key:        "random",
-		partitions: 5,
-		expected:   0,
-	}}
-	c := qt.New(t)
-	for _, d := range data {
-		testName := fmt.Sprintf("%q-%d", d.key, d.partitions)
-		c.Run(testName, func(c *qt.C) {
-			c.Assert(hashCodePartition(d.key, d.partitions), qt.Equals, d.expected)
-		})
-	}
-}
 
 func TestProduceParseArgsUsesEnvVar(t *testing.T) {
 	c := qt.New(t)
@@ -152,21 +54,6 @@ func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
 	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
-func newMessage(key, value string, partition int32) producerMessage {
-	var k, v json.RawMessage
-	if key != "" {
-		k = json.RawMessage(key)
-	}
-	if value != "" {
-		v = json.RawMessage(value)
-	}
-	return producerMessage{
-		Key:       k,
-		Value:     v,
-		Partition: &partition,
-	}
-}
-
 func TestMakeSaramaMessage(t *testing.T) {
 	c := qt.New(t)
 	mustDecoderForType := func(typ string) func(json.RawMessage) ([]byte, error) {
@@ -187,39 +74,38 @@ func TestMakeSaramaMessage(t *testing.T) {
 	msg := producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err := target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
-	c.Assert(string(actual.Key), qt.Equals, "key")
-	c.Assert(string(actual.Value), qt.Equals, "value")
+	c.Assert(encoderStr(actual.Key), qt.Equals, "key")
+	c.Assert(encoderStr(actual.Value), qt.Equals, "value")
 
 	target.decodeKey, target.decodeValue = hexDecoder, hexDecoder
 	key, value = `"41"`, `"42"`
 	msg = producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
-	c.Assert(string(actual.Key), qt.Equals, "A")
-	c.Assert(string(actual.Value), qt.Equals, "B")
+	c.Assert(encoderStr(actual.Key), qt.Equals, "A")
+	c.Assert(encoderStr(actual.Value), qt.Equals, "B")
 
 	target.decodeKey, target.decodeValue = base64Decoder, base64Decoder
 	key, value = `"aGFucw=="`, `"cGV0ZXI="`
 	msg = producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
-	c.Assert(string(actual.Key), qt.Equals, "hans")
-	c.Assert(string(actual.Value), qt.Equals, "peter")
+	c.Assert(encoderStr(actual.Key), qt.Equals, "hans")
+	c.Assert(encoderStr(actual.Value), qt.Equals, "peter")
 
 	target.decodeKey, target.decodeValue = jsonDecoder, jsonDecoder
 	key, value = `{"x":1}`, `[1,2]`
 	msg = producerMessage{Key: json.RawMessage(key), Value: json.RawMessage(value)}
 	actual, err = target.makeSaramaMessage(msg)
 	c.Assert(err, qt.Equals, nil)
-	c.Assert(string(actual.Key), qt.Equals, `{"x":1}`)
-	c.Assert(string(actual.Value), qt.Equals, `[1,2]`)
+	c.Assert(encoderStr(actual.Key), qt.Equals, `{"x":1}`)
+	c.Assert(encoderStr(actual.Value), qt.Equals, `[1,2]`)
 }
 
 func TestDeserializeLines(t *testing.T) {
 	data := []struct {
 		in             string
 		literal        bool
-		partition      int
 		partitionCount int32
 		expected       []producerMessage
 	}{{
@@ -232,7 +118,7 @@ func TestDeserializeLines(t *testing.T) {
 		literal:        false,
 		partitionCount: 4,
 		expected: []producerMessage{
-			newMessage(`"hans"`, `"123"`, 0),
+			newMessage(`"hans"`, `"123"`, -1),
 		},
 	}, {
 		in:             `{"key":"hans","value":"123","partition":1}`,
@@ -242,9 +128,8 @@ func TestDeserializeLines(t *testing.T) {
 	}, {
 		in:             `{"other":"json","values":"avail"}`,
 		literal:        true,
-		partition:      2,
 		partitionCount: 4,
-		expected:       []producerMessage{newMessage("", `"{\"other\":\"json\",\"values\":\"avail\"}"`, 2)},
+		expected:       []producerMessage{newMessage("", `"{\"other\":\"json\",\"values\":\"avail\"}"`, -1)},
 	}, {
 		in:             `so lange schon`,
 		literal:        false,
@@ -256,8 +141,7 @@ func TestDeserializeLines(t *testing.T) {
 	for i, d := range data {
 		c.Run(fmt.Sprint(i), func(c *qt.C) {
 			target := &produceCmd{
-				literal:   d.literal,
-				partition: d.partition,
+				literal: d.literal,
 			}
 			in := make(chan string, 1)
 			out := make(chan producerMessage)
@@ -271,4 +155,26 @@ func TestDeserializeLines(t *testing.T) {
 			c.Assert(msgs, deepEquals, d.expected)
 		})
 	}
+}
+
+func encoderStr(enc sarama.Encoder) string {
+	data, err := enc.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+func newMessage(key, value string, partition int32) producerMessage {
+	var m producerMessage
+	if key != "" {
+		m.Key = json.RawMessage(key)
+	}
+	if value != "" {
+		m.Value = json.RawMessage(value)
+	}
+	if partition >= 0 {
+		m.Partition = &partition
+	}
+	return m
 }

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -58,6 +60,14 @@ func TestSystem(t *testing.T) {
 		},
 		UpdateScripts: *updateFlag,
 	})
+}
+
+func randomString(length int) string {
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		panic(fmt.Errorf("cannot generate random numbers: %v", err))
+	}
+	return fmt.Sprintf("hkt-%x", buf)
 }
 
 // cmpenvjson implements the cmpenvjson testscript command.
