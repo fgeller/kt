@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -22,22 +24,39 @@ type consumeCmd struct {
 	keyCodecType   string
 	pretty         bool
 	follow         bool
+	keyStr         string
+	partitioners   []string
 
-	encodeValue func([]byte) (json.RawMessage, error)
-	encodeKey   func([]byte) (json.RawMessage, error)
-	client      sarama.Client
-	consumer    sarama.Consumer
+	allPartitions []int32
+	key           []byte // This holds the raw version of keyStr.
+	encodeValue   func([]byte) (json.RawMessage, error)
+	encodeKey     func([]byte) (json.RawMessage, error)
+	client        sarama.Client
+	consumer      sarama.Consumer
+}
+
+// consumedMessage defines the format that's used to
+// print messages to the standard output.
+type consumedMessage struct {
+	Partition int32           `json:"partition"`
+	Offset    int64           `json:"offset"`
+	Key       json.RawMessage `json:"key,omitempty"`
+	Value     json.RawMessage `json:"value"`
+	Time      *time.Time      `json:"time,omitempty"`
 }
 
 func (cmd *consumeCmd) addFlags(flags *flag.FlagSet) {
 	cmd.commonFlags.addFlags(flags)
+	cmd.partitioners = []string{"sarama"}
+	flags.Var(listFlag{&cmd.partitioners}, "partitioners", "Comma-separated list of partitioners to consider when using the key flag. See below for details")
 	flags.StringVar(&cmd.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&cmd.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&cmd.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
+	flags.StringVar(&cmd.keyStr, "key", "", "Print only messages with this key. Note: this relies on the producer using one of the partitioning algorithms specified with the -partitioners argument")
 	flags.BoolVar(&cmd.pretty, "pretty", true, "Control output pretty printing.")
 	flags.BoolVar(&cmd.follow, "f", false, "Follow topic by waiting new messages (default is to stop at end of topic)")
 	flags.StringVar(&cmd.valueCodecType, "valuecodec", "json", "Present message value as (json|string|hex|base64), defaults to json.")
-	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Present message key as (string|json|hex|base64), defaults to string.")
+	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Present message key as (string|hex|base64), defaults to string.")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -65,6 +84,10 @@ func (cmd *consumeCmd) run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("bad -valuecodec argument: %v", err)
 	}
+	if cmd.keyCodecType == "json" {
+		// JSON for keys is not a good idea.
+		return fmt.Errorf("JSON key codec not supported")
+	}
 	cmd.encodeKey, err = encoderForType(cmd.keyCodecType)
 	if err != nil {
 		return fmt.Errorf("bad -keycodec argument: %v", err)
@@ -72,6 +95,10 @@ func (cmd *consumeCmd) run(args []string) error {
 	offsets, err := parseOffsets(cmd.offsets, time.Now())
 	if err != nil {
 		return err
+	}
+	partitioners, err := parseConsumerPartitioners(cmd.partitioners, partitioners["sarama"])
+	if err != nil {
+		return fmt.Errorf("bad -partitioners argument: %v", err)
 	}
 	c, err := cmd.newClient()
 	if err != nil {
@@ -84,6 +111,20 @@ func (cmd *consumeCmd) run(args []string) error {
 	}
 	cmd.consumer = consumer
 	defer logClose("consumer", cmd.consumer)
+	cmd.allPartitions, err = cmd.consumer.Partitions(cmd.topic)
+	if err != nil {
+		return err
+	}
+	if cmd.keyStr != "" {
+		cmd.key, err = cmd.keyBytes(cmd.keyStr)
+		if err != nil {
+			return fmt.Errorf("invalid -key argument %q: %v", cmd.keyStr, err)
+		}
+		cmd.allPartitions, err = partitioners.partitionsForKey(cmd.key, cmd.allPartitions)
+		if err != nil {
+			return fmt.Errorf("cannot determine partitions for key: %v", err)
+		}
+	}
 	resolvedOffsets, limits, err := cmd.resolveOffsets(context.TODO(), offsets)
 	if err != nil {
 		return fmt.Errorf("cannot resolve offsets: %v", err)
@@ -202,20 +243,14 @@ func (cmd *consumeCmd) consumePartition(out chan<- *sarama.ConsumerMessage, part
 			if !ok {
 				return fmt.Errorf("unexpected closed messages chan")
 			}
-			out <- msg
+			if cmd.key == nil || bytes.Equal(msg.Key, cmd.key) {
+				out <- msg
+			}
 			if interval.end > 0 && msg.Offset >= interval.end-1 {
 				return nil
 			}
 		}
 	}
-}
-
-type consumedMessage struct {
-	Partition int32           `json:"partition"`
-	Offset    int64           `json:"offset"`
-	Key       json.RawMessage `json:"key,omitempty"`
-	Value     json.RawMessage `json:"value"`
-	Time      *time.Time      `json:"time,omitempty"`
 }
 
 func (cmd *consumeCmd) newConsumedMessage(m *sarama.ConsumerMessage) (consumedMessage, error) {
@@ -317,11 +352,150 @@ func mergeMessages(cs [2]<-chan *sarama.ConsumerMessage, out chan<- *sarama.Cons
 	}
 }
 
-var consumeDocString = `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
+type consumerPartitioners struct {
+	all          bool
+	partitioners []func(key []byte, numPartitions int) (int, error)
+}
 
-Offsets can be specified as a comma-separated list of intervals:
+func parseConsumerPartitioners(ps []string, defaultPartitioner sarama.PartitionerConstructor) (*consumerPartitioners, error) {
+	var cp consumerPartitioners
+	for _, p := range ps {
+		switch p {
+		case "all":
+			cp.all = true
+		case "sarama", "std":
+			cp.partitioners = append(cp.partitioners, partitionerFunc(partitioners[p]))
+		default:
+			return nil, fmt.Errorf("unknown partitioner %q", p)
+		}
+	}
+	if cp.all {
+		// No point in having any explicit partitioners if
+		cp.partitioners = nil
+	} else if len(cp.partitioners) == 0 {
+		cp.partitioners = append(cp.partitioners, partitionerFunc(defaultPartitioner))
+	}
+	return &cp, nil
+}
+
+func partitionerFunc(makePartitioner sarama.PartitionerConstructor) func(key []byte, partitionSize int) (int, error) {
+	if makePartitioner == nil {
+		panic("bad partitioner (internal consistency error)")
+	}
+	// Note: all known partitioners ignore the topic argument to the constructor.
+	// Why would a partitioner ever behave differently depending on the topic name anyway?!
+	p := makePartitioner("")
+	return func(key []byte, numPartitions int) (int, error) {
+		// Note: the only partitioners we use ignore all fields except the key.
+		n, err := p.Partition(&sarama.ProducerMessage{
+			Key: sarama.ByteEncoder(key),
+		}, int32(numPartitions))
+		return int(n), err
+	}
+}
+
+func (cmd *consumeCmd) keyBytes(key string) ([]byte, error) {
+	dec, err := decoderForType(cmd.keyCodecType)
+	if err != nil {
+		// Shouldn't be able to happen, but be defensive.
+		return nil, err
+	}
+	data, err := json.Marshal(key)
+	if err != nil {
+		// Shouldn't be able to happen, but be defensive.
+		return nil, err
+	}
+	return dec(json.RawMessage(data))
+}
+
+// partitionsForKey returns the partitions that the given key may be found in, given the key itself
+// and the list of all current partition ids.
+func (cp *consumerPartitioners) partitionsForKey(key []byte, allPartitions []int32) ([]int32, error) {
+	if len(allPartitions) == 0 {
+		return nil, fmt.Errorf("no partitions found")
+	}
+	if cp.all {
+		return allPartitions, nil
+	}
+	partitions := make(map[int32]bool)
+	for _, pf := range cp.partitioners {
+		choice, err := pf(key, len(allPartitions))
+		if err != nil {
+			return nil, err
+		}
+		if choice < 0 || choice >= len(allPartitions) {
+			return nil, fmt.Errorf("invalid partition choice - broken partitioner")
+		}
+		partitions[allPartitions[choice]] = true
+	}
+	chosen := make([]int32, 0, len(partitions))
+	for p := range partitions {
+		chosen = append(chosen, p)
+	}
+	sort.Slice(chosen, func(i, j int) bool {
+		return chosen[i] < chosen[j]
+	})
+	return chosen, nil
+}
+
+var consumeDocString = `
+The consume command reads messages from a Kafka topic and prints them
+to the standard output.
+
+The messages will be printed as a stream of JSON objects in the following form:
+
+	{
+		// The partition ID holding the message.
+		partition: int
+		// The offset of the message within the partition
+		offset: int
+		// The key of the message (optional)
+		key?: string
+		// The value of the message (encoded according to the -valuecodec flag)
+		value: null | string | {...}
+		// The timestamp of the message in RFC3339 format.
+		time?: string
+	}
+
+For example:
+
+	{"partition":0,"key":"k1","value":{"foo":1234},"time":"2019-10-08T01:01:01Z"}
+
+The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+The values supplied on the command line have priority over environment variable values.
+
+KEY SEARCH
+
+When the -key flag is specified, the "all" name for all partitions (see
+in OFFSETS below) refers instead to all the partitions that may contain
+messages with the specified key. Only messages with the specified key
+will be printed.
+
+Since clients, not Kafka itself, are responsible for choosing the
+partition for a message, this means that hkt must read all partitions that
+clients may have chosen. This is specified with the "-partitioners" flag,
+which should be set to all the possible partitioners used by producers
+to the topic. Possible partitioners are:
+
+	sarama - used by default with the Sarama Go client.
+	std - used by the Java clients
+	all - all partitions will be read
+
+As the number of partitions can change over time, this technique will
+only work correctly if they haven't changed over the range of messages
+being selected.
+
+For example:
+
+	hkt consume -key foo -partitioners sarama,std
+
+will print only messages with key "foo" produced by Go and Java clients
+across the current partition size.
+
+OFFSETS
+
+Offsets can be specified as a comma-separated list of intervals, each of which
+is of the form:
 
   partition[=[start]:[end]]
 
@@ -332,9 +506,11 @@ For example:
 would consume from offset 100 to offset 300 inclusive in partition 3,
 and from 43 to 67 in partition 5.
 
-If the second part of an interval is omitted, there is no upper bound to the interval unless an imprecise timestamp is used (see below).
+If the second part of an interval is omitted, there is no upper bound
+to the interval unless an imprecise timestamp is used (see below).
 
-The default is to consume from the oldest offset on every partition for the given topic.
+The default is to consume from the oldest offset on every partition for
+the given topic.
 
  - partition is the numeric identifier for a partition. You can use "all" to
    specify a default interval for all partitions.
@@ -353,8 +529,8 @@ An offset may be specified as:
 
 - a timestamp enclosed in square brackets (see below).
 
-A timestamp specifies the offset of the next message found
-after the specified time. It may be specified as:
+A timestamp specifies the offset of the next message found after the
+specified time. It may be specified as:
 
 - an RFC3339 time, for example "[2019-09-12T14:49:12Z]")
 - an ISO8601 date, for example "[2019-09-12]"
@@ -365,15 +541,15 @@ after the specified time. It may be specified as:
 - an hour within the current day, in 12h format, for example "[2pm]".
 
 When a timestamp is specified with seconds precision, a timestamp
-represents an exact moment; otherwise it represents the implied
-precision of the timestamp (a year represents the whole of that year;
-a month represents the whole month, etc).
+represents an exact moment; otherwise it represents the implied precision
+of the timestamp (a year represents the whole of that year; a month
+represents the whole month, etc).
 
 The UTC time zone will be used unless the -local flag is provided.
 
-When a non-precise timestamp is used as the start of an offset
-range, the earliest time in the range is used; when it's used as
-the end of a range, the latest time is used. So, for example:
+When a non-precise timestamp is used as the start of an offset range,
+the earliest time in the range is used; when it's used as the end of a
+range, the latest time is used. So, for example:
 
 	all=[2019]:[2020]
 
@@ -401,10 +577,9 @@ will request the latest thousand messages.
 
 	all=oldest+1000:oldest+2000
 
-will request the second thousand messages stored.
-The absolute offset may be omitted; it defaults to "newest"
-for "-" and "oldest" for "+", so the previous two examples
-may be abbreviated to the following:
+will request the second thousand messages stored.  The absolute offset
+may be omitted; it defaults to "newest" for "-" and "oldest" for "+",
+so the previous two examples may be abbreviated to the following:
 
 	all=-1000
 	all=+1000:+2000
@@ -412,9 +587,9 @@ may be abbreviated to the following:
 Relative offsets are based on numeric values and will not take skipped
 offsets (e.g. due to compaction) into account.
 
-A relative offset may also be specified as duration, meaning all messages
-within that time period. The syntax is that accepted by Go's time.ParseDuration
-function, for example:
+A relative offset may also be specified as duration, meaning all
+messages within that time period. The syntax is that accepted by Go's
+time.ParseDuration function, for example:
 
 	3.5s - three and a half seconds
 	1s400ms - 1.4 seconds
@@ -426,9 +601,9 @@ So, for example:
 will ask for all messages in the 10 minute interval around the message
 with offset 1000.
 
-Note that if a message with that offset doesn't exist (because of compaction,
-for example), the first message found after that offset will be used for the
-timestamp.
+Note that if a message with that offset doesn't exist (because of
+compaction, for example), the first message found after that offset will
+be used for the timestamp.
 
 More examples:
 
@@ -479,5 +654,4 @@ and
   +10:
 
 Will achieve the same as the two examples above.
-
 `

@@ -1,0 +1,60 @@
+kt admin -createtopic $topic -topicdetail topic-detail.json
+
+stdin produce-1-stdin.json
+kt produce -valuecodec string -topic $topic
+
+stdin produce-2-stdin.json
+kt produce -valuecodec string -partitioner std -topic $topic
+
+# consuming with just the default (sarama) partitioner will only
+# get messages from the partition chosen by that.
+kt consume -valuecodec string -key k1 -topic $topic
+cmp stdout consume-1-stdout.json
+
+# adding another partitioner will pull in that partition too
+kt consume -valuecodec string -key k1 -partitioners sarama,std -topic $topic
+cmp stdout consume-2-stdout.json
+
+# specifying "all" will pull in the message that was sent to the
+# manually chosen partition too
+kt consume -valuecodec string -key k1 -partitioners all -topic $topic
+cmp stdout consume-3-stdout.json
+
+-- topic-detail.json --
+{"NumPartitions": 5, "ReplicationFactor": 1}
+
+-- produce-1-stdin.json --
+{"key":"k1","value":"v1","time":"2019-10-08T01:01:01Z"}
+{"key":"k1","value":"v2","time":"2019-10-08T01:01:02Z"}
+{"key":"k2","value":"v3","time":"2019-10-08T01:01:03Z"}
+{"key":"k1","value":"v4","time":"2019-10-08T01:01:04Z"}
+{"key":"k1","value":"v5","time":"2019-10-08T01:01:05Z"}
+{"key":"k1","value":"v6","time":"2019-10-08T01:01:06Z"}
+{"key":"k7","value":"v7","time":"2019-10-08T01:01:07Z"}
+{"key":"k8","value":"v8","time":"2019-10-08T01:01:08Z"}
+{"key":"k9","value":"v9","time":"2019-10-08T01:01:09Z"}
+{"key":"k10","value":"v10","time":"2019-10-08T01:01:10Z"}
+-- produce-2-stdin.json --
+{"key":"k1","value":"v11","time":"2019-10-08T01:01:11Z"}
+{"key":"k1","value":"v12","time":"2019-10-08T01:01:12Z","partition":4}
+-- consume-1-stdout.json --
+{"partition":2,"offset":0,"key":"k1","value":"v1","time":"2019-10-08T01:01:01Z"}
+{"partition":2,"offset":1,"key":"k1","value":"v2","time":"2019-10-08T01:01:02Z"}
+{"partition":2,"offset":2,"key":"k1","value":"v4","time":"2019-10-08T01:01:04Z"}
+{"partition":2,"offset":3,"key":"k1","value":"v5","time":"2019-10-08T01:01:05Z"}
+{"partition":2,"offset":4,"key":"k1","value":"v6","time":"2019-10-08T01:01:06Z"}
+-- consume-2-stdout.json --
+{"partition":2,"offset":0,"key":"k1","value":"v1","time":"2019-10-08T01:01:01Z"}
+{"partition":2,"offset":1,"key":"k1","value":"v2","time":"2019-10-08T01:01:02Z"}
+{"partition":2,"offset":2,"key":"k1","value":"v4","time":"2019-10-08T01:01:04Z"}
+{"partition":2,"offset":3,"key":"k1","value":"v5","time":"2019-10-08T01:01:05Z"}
+{"partition":2,"offset":4,"key":"k1","value":"v6","time":"2019-10-08T01:01:06Z"}
+{"partition":1,"offset":0,"key":"k1","value":"v11","time":"2019-10-08T01:01:11Z"}
+-- consume-3-stdout.json --
+{"partition":2,"offset":0,"key":"k1","value":"v1","time":"2019-10-08T01:01:01Z"}
+{"partition":2,"offset":1,"key":"k1","value":"v2","time":"2019-10-08T01:01:02Z"}
+{"partition":2,"offset":2,"key":"k1","value":"v4","time":"2019-10-08T01:01:04Z"}
+{"partition":2,"offset":3,"key":"k1","value":"v5","time":"2019-10-08T01:01:05Z"}
+{"partition":2,"offset":4,"key":"k1","value":"v6","time":"2019-10-08T01:01:06Z"}
+{"partition":1,"offset":0,"key":"k1","value":"v11","time":"2019-10-08T01:01:11Z"}
+{"partition":4,"offset":4,"key":"k1","value":"v12","time":"2019-10-08T01:01:12Z"}

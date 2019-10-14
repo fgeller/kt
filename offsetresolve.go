@@ -19,10 +19,6 @@ func (cmd *consumeCmd) resolveOffsets(ctx context.Context, offsets map[int32]int
 }
 
 func (cmd *consumeCmd) newResolver() (*resolver, error) {
-	allPartitions, err := cmd.consumer.Partitions(cmd.topic)
-	if err != nil {
-		return nil, err
-	}
 	queryer := &offsetQueryer{
 		topic:    cmd.topic,
 		client:   cmd.client,
@@ -32,7 +28,7 @@ func (cmd *consumeCmd) newResolver() (*resolver, error) {
 		truncate:      !cmd.follow,
 		runQuery:      queryer.runQuery,
 		topic:         cmd.topic,
-		allPartitions: allPartitions,
+		allPartitions: cmd.allPartitions,
 		info: offsetInfo{
 			offsets: make(map[int32]map[offsetRequest]int64),
 			times:   make(map[int32]map[int64]time.Time),

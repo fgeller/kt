@@ -32,6 +32,8 @@ type produceCmd struct {
 	leaders     map[int32]*sarama.Broker
 }
 
+// producerMessage defines the format of messages
+// accepted in the producer command's standard input.
 type producerMessage struct {
 	Value     json.RawMessage `json:"value"`
 	Key       json.RawMessage `json:"key"`
@@ -64,7 +66,7 @@ func (cmd *produceCmd) addFlags(flags *flag.FlagSet) {
 	flags.BoolVar(&cmd.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&cmd.compressionType, "compression", "none", "Kafka message compression codec [gzip|snappy|lz4]")
 	flags.StringVar(&cmd.partitionerType, "partitioner", "sarama", "Optional partitioner to use. Available: sarama, std, random, roundrobin")
-	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Interpret message value as (string|json|hex|base64), defaults to string.")
+	flags.StringVar(&cmd.keyCodecType, "keycodec", "string", "Interpret message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&cmd.valueCodecType, "valuecodec", "json", "Interpret message value as (json|string|hex|base64), defaults to json.")
 	flags.IntVar(&cmd.maxLineLen, "maxline", 16*1024*1024, "Maximum length of input line")
 
@@ -92,6 +94,10 @@ func (cmd *produceCmd) run(args []string) error {
 	cmd.decodeValue, err = decoderForType(cmd.valueCodecType)
 	if err != nil {
 		return fmt.Errorf("bad -valuecodec argument: %v", err)
+	}
+	if cmd.keyCodecType == "json" {
+		// JSON for keys is not a good idea.
+		return fmt.Errorf("JSON key codec not supported")
 	}
 	cmd.decodeKey, err = decoderForType(cmd.keyCodecType)
 	if err != nil {
@@ -202,12 +208,15 @@ func (cmd *produceCmd) produce(in chan producerMessage) error {
 		producer.AsyncClose()
 	}()
 	// We need to read from the producer errors channel until
-	// the errors channel is closed
+	// the errors channel is closed.
 	var errors sarama.ProducerErrors
 	for err := range producer.Errors() {
 		errors = append(errors, err)
 	}
 	if len(errors) > 0 {
+		for _, err := range errors {
+			warningf("error producing message %v", err.Err)
+		}
 		return errors
 	}
 	return nil
@@ -232,11 +241,23 @@ type producerPartitioner struct {
 	sarama.Partitioner
 }
 
+// Partition implements sarama.Partitioner.Partition by returning the partition
+// specified in the input message if it was present, or using the underlying
+// user-specified partitioner if not.
 func (p producerPartitioner) Partition(m *sarama.ProducerMessage, numPartitions int32) (int32, error) {
 	if partition, ok := m.Metadata.(int32); ok {
 		return partition, nil
 	}
 	return p.Partitioner.Partition(m, numPartitions)
+}
+
+// MessageRequiresConsistency implements sarama.DynamicConsistencyPartitioner.MessageRequiresConsistency
+// by querying the underlying partitioner.
+func (p producerPartitioner) MessageRequiresConsistency(m *sarama.ProducerMessage) bool {
+	if p1, ok := p.Partitioner.(sarama.DynamicConsistencyPartitioner); ok {
+		return p1.MessageRequiresConsistency(m)
+	}
+	return p.RequiresConsistency()
 }
 
 var produceDocString = `
