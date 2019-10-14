@@ -783,13 +783,11 @@ func TestConsumeParseArgsUsesEnvVar(t *testing.T) {
 	c := qt.New(t)
 	defer c.Done()
 
-	c.Setenv("KT_TOPIC", "test-topic")
 	c.Setenv("KT_BROKERS", "hans:2000")
 
 	cmd0, _, err := parseCmd("hkt", "consume")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*consumeCmd)
-	c.Assert(cmd.topic, qt.Equals, "test-topic")
 	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 
@@ -798,12 +796,10 @@ func TestConsumeParseArgsDefault(t *testing.T) {
 	c := qt.New(t)
 	defer c.Done()
 
-	c.Setenv("KT_TOPIC", "")
 	c.Setenv("KT_BROKERS", "")
-	cmd0, _, err := parseCmd("hkt", "consume", "-topic", "test-topic")
+	cmd0, _, err := parseCmd("hkt", "consume")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*consumeCmd)
-	c.Assert(cmd.topic, qt.Equals, "test-topic")
 	c.Assert(cmd.brokers, qt.DeepEquals, []string{"localhost:9092"})
 }
 
@@ -812,13 +808,11 @@ func TestConsumeParseArgsFlagsOverrideEnv(t *testing.T) {
 	defer c.Done()
 
 	// command line arg wins
-	c.Setenv("KT_TOPIC", "BLUBB")
 	c.Setenv("KT_BROKERS", "BLABB")
 
-	cmd0, _, err := parseCmd("hkt", "consume", "-topic", "test-topic", "-brokers", "hans:2000")
+	cmd0, _, err := parseCmd("hkt", "consume", "-brokers", "hans:2000")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*consumeCmd)
-	c.Assert(cmd.topic, qt.Equals, "test-topic")
 	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
 }
 

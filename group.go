@@ -71,7 +71,6 @@ func (cmd *groupCmd) addFlags(flags *flag.FlagSet) {
 
 func (cmd *groupCmd) environFlags() map[string]string {
 	return map[string]string{
-		"topic":   "KT_TOPIC",
 		"brokers": "KT_BROKERS",
 	}
 }
@@ -390,8 +389,8 @@ func (cmd *groupCmd) connect(broker *sarama.Broker) error {
 }
 
 var groupDocString = `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.
+The value for -brokers can also be set with the environment variable KT_BROKERS.
+The value supplied on the command line takes precedence over the environment variable.
 
 The group command can be used to list groups, their offsets and lag and to reset a group's offset.
 

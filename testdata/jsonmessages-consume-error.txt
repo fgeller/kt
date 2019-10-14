@@ -3,7 +3,7 @@ kt admin -createtopic $topic -topicdetail topic-detail.json
 stdin produce-stdin.json
 kt produce -valuecodec string -topic $topic
 
-kt consume -topic $topic
+kt consume $topic
 cmp stdout consume-stdout.json
 cmp stderr consume-stderr
 
