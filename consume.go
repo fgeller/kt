@@ -128,10 +128,18 @@ func (cmd *consumeCmd) run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid -key argument %q: %v", cmd.keyStr, err)
 		}
-		cmd.allPartitions, err = partitioners.partitionsForKey(cmd.key, cmd.allPartitions)
+		keyPartitions, err := partitioners.partitionsForKey(cmd.key, cmd.allPartitions)
 		if err != nil {
 			return fmt.Errorf("cannot determine partitions for key: %v", err)
 		}
+		if verbose {
+			if len(keyPartitions) == len(cmd.allPartitions) {
+				fmt.Fprintf(os.Stderr, "consuming all partitions\n")
+			} else {
+				fmt.Fprintf(os.Stderr, "consuming partitions %v from %v", keyPartitions, cmd.allPartitions)
+			}
+		}
+		cmd.allPartitions = keyPartitions
 	}
 	resolvedOffsets, limits, err := cmd.resolveOffsets(context.TODO(), offsets)
 	if err != nil {

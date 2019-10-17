@@ -278,8 +278,7 @@ func encoderForType(typ string) (func([]byte) (json.RawMessage, error), error) {
 	switch typ {
 	case "json":
 		return func(data []byte) (json.RawMessage, error) {
-			var j json.RawMessage
-			if err := json.Unmarshal(data, &j); err != nil {
+			if err := json.Unmarshal(data, new(json.RawMessage)); err != nil {
 				return nil, fmt.Errorf("invalid JSON value %q: %v", data, err)
 			}
 			return json.RawMessage(data), nil
