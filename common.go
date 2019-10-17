@@ -38,17 +38,28 @@ var defaultKafkaVersion = sarama.V2_0_0_0
 
 type commonFlags struct {
 	verbose    bool
-	brokers    []string
 	version    sarama.KafkaVersion
 	tlsCA      string
 	tlsCert    string
 	tlsCertKey string
+
+	brokerStrs []string
+}
+
+func (f *commonFlags) brokers() []string {
+	brokers := append([]string{}, f.brokerStrs...)
+	for i, b := range f.brokerStrs {
+		if !strings.Contains(b, ":") {
+			brokers[i] = b + ":9092"
+		}
+	}
+	return brokers
 }
 
 func (f *commonFlags) addFlags(flags *flag.FlagSet) {
-	f.brokers = []string{"localhost:9092"}
+	f.brokerStrs = []string{"localhost"}
 	f.version = defaultKafkaVersion
-	flags.Var(listFlag{&f.brokers}, "brokers", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
+	flags.Var(listFlag{&f.brokerStrs}, "brokers", "Comma-separated list of brokers.  Each broker definition may optionally contain a port number. The port defaults to 9092 when omitted.")
 	flags.Var(kafkaVersionFlag{v: &f.version}, "version", "Kafka protocol version")
 	flags.StringVar(&f.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&f.tlsCert, "tlscert", "", "Path to the TLS client certificate file")

@@ -15,7 +15,7 @@ func TestTopicParseArgsUsesEnvVar(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "topic")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*topicCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"hans:2000"})
 }
 
 // brokers default to localhost:9092
@@ -28,7 +28,7 @@ func TestTopicParseArgsDefault(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "topic")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*topicCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"localhost:9092"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"localhost:9092"})
 }
 
 func TestTopicParseArgsFlagsOverrideEnv(t *testing.T) {
@@ -41,5 +41,5 @@ func TestTopicParseArgsFlagsOverrideEnv(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "topic", "-brokers", "hans:2000")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*topicCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"hans:2000"})
 }

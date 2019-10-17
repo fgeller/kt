@@ -156,7 +156,7 @@ func (cmd *consumeCmd) newClient() (sarama.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := sarama.NewClient(cmd.brokers, cfg)
+	client, err := sarama.NewClient(cmd.brokers(), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create kafka client: %v", err)
 	}

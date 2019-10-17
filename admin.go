@@ -31,7 +31,7 @@ func (cmd *adminCmd) run(args []string) error {
 	if err != nil {
 		return err
 	}
-	admin, err := sarama.NewClusterAdmin(cmd.brokers, cfg)
+	admin, err := sarama.NewClusterAdmin(cmd.brokers(), cfg)
 	if err != nil {
 		return fmt.Errorf("cannot create cluster admin: %v", err)
 	}

@@ -105,7 +105,7 @@ func (cmd *topicCmd) connect() error {
 	if err != nil {
 		return err
 	}
-	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
+	if cmd.client, err = sarama.NewClient(cmd.brokers(), cfg); err != nil {
 		return fmt.Errorf("failed to create client: %v", err)
 	}
 	return nil

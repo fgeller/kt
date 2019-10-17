@@ -671,7 +671,7 @@ func TestConsume(t *testing.T) {
 	}
 	target := consumeCmd{consumer: consumer}
 	target.topic = "hans"
-	target.brokers = []string{"localhost:9092"}
+	target.brokerStrs = []string{"localhost:9092"}
 
 	go target.consume(map[int32]resolvedInterval{
 		1: {1, 5},
@@ -788,7 +788,7 @@ func TestConsumeParseArgsUsesEnvVar(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "consume")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*consumeCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"hans:2000"})
 }
 
 // brokers default to localhost:9092
@@ -800,7 +800,7 @@ func TestConsumeParseArgsDefault(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "consume")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*consumeCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"localhost:9092"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"localhost:9092"})
 }
 
 func TestConsumeParseArgsFlagsOverrideEnv(t *testing.T) {
@@ -813,7 +813,7 @@ func TestConsumeParseArgsFlagsOverrideEnv(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "consume", "-brokers", "hans:2000")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*consumeCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"hans:2000"})
 }
 
 func T(s string) time.Time {

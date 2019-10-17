@@ -188,7 +188,7 @@ func (cmd *produceCmd) produce(in chan producerMessage) error {
 	cfg.Producer.Partitioner = func(topic string) sarama.Partitioner {
 		return producerPartitioner{cmd.partitioner(topic)}
 	}
-	producer, err := sarama.NewAsyncProducer(cmd.brokers, cfg)
+	producer, err := sarama.NewAsyncProducer(cmd.brokers(), cfg)
 	if err != nil {
 		return err
 	}

@@ -19,7 +19,7 @@ func TestProduceParseArgsUsesEnvVar(t *testing.T) {
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*produceCmd)
 
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"hans:2000"})
 }
 
 // brokers default to localhost:9092
@@ -32,7 +32,7 @@ func TestProduceParseArgsDefault(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "produce")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*produceCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"localhost:9092"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"localhost:9092"})
 }
 
 func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
@@ -45,7 +45,7 @@ func TestProduceParseArgsFlagsOverrideEnv(t *testing.T) {
 	cmd0, _, err := parseCmd("hkt", "produce", "-brokers", "hans:2000")
 	c.Assert(err, qt.Equals, nil)
 	cmd := cmd0.(*produceCmd)
-	c.Assert(cmd.brokers, qt.DeepEquals, []string{"hans:2000"})
+	c.Assert(cmd.brokers(), qt.DeepEquals, []string{"hans:2000"})
 }
 
 func TestMakeSaramaMessage(t *testing.T) {
