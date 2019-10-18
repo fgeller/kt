@@ -132,11 +132,11 @@ func (cmd *consumeCmd) run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("cannot determine partitions for key: %v", err)
 		}
-		if verbose {
+		if cmd.verbose {
 			if len(keyPartitions) == len(cmd.allPartitions) {
 				fmt.Fprintf(os.Stderr, "consuming all partitions\n")
 			} else {
-				fmt.Fprintf(os.Stderr, "consuming partitions %v from %v", keyPartitions, cmd.allPartitions)
+				fmt.Fprintf(os.Stderr, "consuming partitions %v from %v\n", keyPartitions, cmd.allPartitions)
 			}
 		}
 		cmd.allPartitions = keyPartitions
