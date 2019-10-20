@@ -242,3 +242,17 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
             admin          basic cluster administration.
 
     Use "kt [command] -help" for for information about the command.
+
+
+## Development
+
+### Requirements
+
+- Go >= v1.11 with go modules support
+- docker and docker-compose
+- Make
+
+### tests
+
+- start dependencies with docker-compose, e.g. `docker-compose -f test-dependencies.yml up`
+- run `go test -v` or `make test`
