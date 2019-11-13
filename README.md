@@ -1,4 +1,6 @@
-# kt - a Kafka tool that likes JSON [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
+# hkt - a Kafka tool that likes JSON [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
+
+_This is a fork of KT that we maintain, adding features oriented toward debugging_
 
 Some reasons why you might be interested:
 
@@ -19,7 +21,7 @@ Some reasons why you might be interested:
 <details><summary>Read details about topics that match a regex</summary>
 
 ```sh
-$ kt topic -filter news -partitions
+$ hkt topic -filter news -partitions
 {
   "name": "actor-news",
   "partitions": [
@@ -75,7 +77,7 @@ $ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic 
 <details><summary>Or pass in JSON object to control key, value and partition</summary>
 
 ```sh
-$ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce -topic actor-news
+$ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | hkt produce -topic actor-news
 {
   "count": 1,
   "partition": 0,
@@ -87,7 +89,7 @@ $ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt 
 <details><summary>Read messages at specific offsets on specific partitions</summary>
 
 ```sh
-$ kt consume -topic actor-news -offsets 0=1:2
+$ hkt consume -topic actor-news -offsets 0=1:2
 {
   "partition": 0,
   "offset": 1,
@@ -108,7 +110,7 @@ $ kt consume -topic actor-news -offsets 0=1:2
 <details><summary>Follow a topic, starting relative to newest offset</summary>
 
 ```sh
-$ kt consume -topic actor-news -offsets all=newest-1:
+$ hkt consume -topic actor-news -offsets all=newest-1:
 {
   "partition": 0,
   "offset": 4,
@@ -131,7 +133,7 @@ shutting down partition consumer for partition 0
 <details><summary>View offsets for a given consumer group</summary>
 
 ```sh
-$ kt group -group enews -topic actor-news -partitions 0
+$ hkt group -group enews -topic actor-news -partitions 0
 found 1 groups
 found 1 topics
 {
@@ -151,7 +153,7 @@ found 1 topics
 <details><summary>Change consumer group offset</summary>
 
 ```sh
-$ kt group -group enews -topic actor-news -partitions 0 -reset 1
+$ hkt group -group enews -topic actor-news -partitions 0 -reset 1
 found 1 groups
 found 1 topics
 {
@@ -165,7 +167,7 @@ found 1 topics
     }
   ]
 }
-$ kt group -group enews -topic actor-news -partitions 0
+$ hkt group -group enews -topic actor-news -partitions 0
 found 1 groups
 found 1 topics
 {
@@ -185,13 +187,13 @@ found 1 topics
 <details><summary>Create and delete a topic</summary>
 
 ```sh
-$ kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)
-$ kt topic -filter news
+$ hkt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)
+$ hkt topic -filter news
 {
   "name": "morenews"
 }
-$ kt admin -deletetopic morenews
-$ kt topic -filter news
+$ hkt admin -deletetopic morenews
+$ hkt topic -filter news
 ```
 
 </details>
@@ -200,38 +202,27 @@ $ kt topic -filter news
 
 ```sh
 $ export KT_BROKERS=brokers.kafka:9092
-$ kt <command> <option>
+$ hkt <command> <option>
 ```
 
 </details>
 
 ## Installation
 
-You can download kt via the [Releases](https://github.com/fgeller/kt/releases) section.
+You can download hkt via the [Releases](https://github.com/heetch/hkt/releases) section.
 
 Alternatively, the usual way via the go tool, for example:
 
-    $ go get -u github.com/fgeller/kt
-
-Or via Homebrew on OSX:
-
-    $ brew tap fgeller/tap
-    $ brew install kt
-
-### Docker
-
-[@Paxa](https://github.com/Paxa) maintains an image to run kt in a Docker environment - thanks!
-
-For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
+    $ GOMODULE111=off go get -u github.com/heetch/hkt
 
 ## Usage:
 
-    $ kt -help
-    kt is a tool for Kafka.
+    $ hkt -help
+    hkt is a tool for Kafka.
 
     Usage:
 
-            kt command [arguments]
+            hkt command [arguments]
 
     The commands are:
 
@@ -241,4 +232,4 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
             group          consumer group information and modification.
             admin          basic cluster administration.
 
-    Use "kt [command] -help" for for information about the command.
+    Use "hkt [command] -help" for for information about the command.
