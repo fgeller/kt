@@ -177,8 +177,14 @@ func randomString(length int) string {
 
 // setupCerts takes the paths to a tls certificate, CA, and certificate key in
 // a PEM format and returns a constructed tls.Config object.
-func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
+func setupCerts(tlsExpected bool, certPath, caPath, keyPath string) (*tls.Config, error) {
 	if certPath == "" && caPath == "" && keyPath == "" {
+		// If TLS is expected, return empty tls.Config.  This enables one-way authentication
+		// if kafka configured with ssl.client.auth=requested
+		if tlsExpected {
+			return &tls.Config{}, nil
+		}
+
 		return nil, nil
 	}
 

@@ -17,6 +17,7 @@ import (
 
 type groupCmd struct {
 	brokers      []string
+	tlsExpected  bool
 	tlsCA        string
 	tlsCert      string
 	tlsCertKey   string
@@ -329,7 +330,7 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	}
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
 
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	tlsConfig, err := setupCerts(cmd.tlsExpected, cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 	if err != nil {
 		failf("failed to setup certificates err=%v", err)
 	}
@@ -358,6 +359,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	}
 
 	cmd.topic = args.topic
+	cmd.tlsExpected = args.tlsExpected
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
 	cmd.tlsCertKey = args.tlsCertKey
@@ -434,6 +436,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 type groupArgs struct {
 	topic        string
 	brokers      string
+	tlsExpected  bool
 	tlsCA        string
 	tlsCert      string
 	tlsCertKey   string
@@ -453,6 +456,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags := flag.NewFlagSet("group", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.BoolVar(&args.tlsExpected, "tls", false, "Turn on server-only TLS if no certificate provided")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")

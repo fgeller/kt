@@ -19,6 +19,7 @@ type produceArgs struct {
 	topic       string
 	partition   int
 	brokers     string
+	tlsExpected bool
 	tlsCA       string
 	tlsCert     string
 	tlsCertKey  string
@@ -47,6 +48,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
 	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
+	flags.BoolVar(&args.tlsExpected, "tls", false, "Turn on server-only TLS if no certificate provided")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
@@ -94,6 +96,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 		}
 	}
 	cmd.topic = args.topic
+	cmd.tlsExpected = args.tlsExpected
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
 	cmd.tlsCertKey = args.tlsCertKey
@@ -172,7 +175,7 @@ func (cmd *produceCmd) findLeaders() {
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	tlsConfig, err := setupCerts(cmd.tlsExpected, cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 	if err != nil {
 		failf("failed to setup certificates err=%v", err)
 	}
@@ -237,6 +240,7 @@ loop:
 type produceCmd struct {
 	topic       string
 	brokers     []string
+	tlsExpected bool
 	tlsCA       string
 	tlsCert     string
 	tlsCertKey  string

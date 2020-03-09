@@ -15,13 +15,14 @@ import (
 )
 
 type adminCmd struct {
-	brokers    []string
-	verbose    bool
-	version    sarama.KafkaVersion
-	timeout    *time.Duration
-	tlsCA      string
-	tlsCert    string
-	tlsCertKey string
+	brokers     []string
+	verbose     bool
+	version     sarama.KafkaVersion
+	timeout     *time.Duration
+	tlsExpected bool
+	tlsCA       string
+	tlsCert     string
+	tlsCertKey  string
 
 	createTopic  string
 	topicDetail  *sarama.TopicDetail
@@ -32,13 +33,14 @@ type adminCmd struct {
 }
 
 type adminArgs struct {
-	brokers    string
-	verbose    bool
-	version    string
-	timeout    string
-	tlsCA      string
-	tlsCert    string
-	tlsCertKey string
+	brokers     string
+	verbose     bool
+	version     string
+	timeout     string
+	tlsExpected bool
+	tlsCA       string
+	tlsCert     string
+	tlsCertKey  string
 
 	createTopic     string
 	topicDetailPath string
@@ -59,6 +61,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 		cmd.timeout = parseTimeout(args.timeout)
 	}
 
+	cmd.tlsExpected = args.tlsExpected
 	cmd.tlsCA = args.tlsCA
 	cmd.tlsCert = args.tlsCert
 	cmd.tlsCertKey = args.tlsCertKey
@@ -150,7 +153,7 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 		cfg.Admin.Timeout = *cmd.timeout
 	}
 
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
+	tlsConfig, err := setupCerts(cmd.tlsExpected, cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
 	if err != nil {
 		failf("failed to setup certificates err=%v", err)
 	}
@@ -169,6 +172,7 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.timeout, "timeout", "", "Timeout for request to Kafka (default: 3s)")
+	flags.BoolVar(&args.tlsExpected, "tls", false, "Turn on server-only TLS if no certificate provided")
 	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
 	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
 	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
