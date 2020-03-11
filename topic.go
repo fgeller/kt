@@ -22,6 +22,7 @@ type topicArgs struct {
 	partitions bool
 	leaders    bool
 	replicas   bool
+	config     bool
 	verbose    bool
 	pretty     bool
 	version    string
@@ -36,16 +37,19 @@ type topicCmd struct {
 	partitions bool
 	leaders    bool
 	replicas   bool
+	config     bool
 	verbose    bool
 	pretty     bool
 	version    sarama.KafkaVersion
 
 	client sarama.Client
+	admin  sarama.ClusterAdmin
 }
 
 type topic struct {
-	Name       string      `json:"name"`
-	Partitions []partition `json:"partitions,omitempty"`
+	Name       string            `json:"name"`
+	Partitions []partition       `json:"partitions,omitempty"`
+	Config     map[string]string `json:"config,omitempty"`
 }
 
 type partition struct {
@@ -70,6 +74,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
 	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
 	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
+	flags.BoolVar(&args.config, "config", false, "Include topic configuration.")
 	flags.StringVar(&args.filter, "filter", "", "Regex to filter topics by name.")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
@@ -123,6 +128,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.partitions = args.partitions
 	cmd.leaders = args.leaders
 	cmd.replicas = args.replicas
+	cmd.config = args.config
 	cmd.pretty = args.pretty
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
@@ -157,6 +163,9 @@ func (cmd *topicCmd) connect() {
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
 	}
+	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cfg); err != nil {
+		failf("failed to create cluster admin err=%v", err)
+	}
 }
 
 func (cmd *topicCmd) run(as []string) {
@@ -173,6 +182,7 @@ func (cmd *topicCmd) run(as []string) {
 
 	cmd.connect()
 	defer cmd.client.Close()
+	defer cmd.admin.Close()
 
 	if all, err = cmd.client.Topics(); err != nil {
 		failf("failed to read topics err=%v", err)
@@ -216,11 +226,25 @@ func (cmd *topicCmd) print(name string, out chan printContext) {
 
 func (cmd *topicCmd) readTopic(name string) (topic, error) {
 	var (
-		err error
-		ps  []int32
-		led *sarama.Broker
-		top = topic{Name: name}
+		err           error
+		ps            []int32
+		led           *sarama.Broker
+		top           = topic{Name: name}
+		configEntries []sarama.ConfigEntry
 	)
+
+	if cmd.config {
+
+		resource := sarama.ConfigResource{Name: name, Type: sarama.TopicResource}
+		if configEntries, err = cmd.admin.DescribeConfig(resource); err != nil {
+			return top, err
+		}
+
+		top.Config = make(map[string]string)
+		for _, entry := range configEntries {
+			top.Config[entry.Name] = entry.Value
+		}
+	}
 
 	if !cmd.partitions {
 		return top, nil
