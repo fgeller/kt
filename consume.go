@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/user"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,108 +100,6 @@ type consumeArgs struct {
 	group       string
 }
 
-func parseOffset(str string) (offset, error) {
-	result := offset{}
-	re := regexp.MustCompile("(oldest|newest|resume)?(-|\\+)?(\\d+)?")
-	matches := re.FindAllStringSubmatch(str, -1)
-
-	if len(matches) == 0 || len(matches[0]) < 4 {
-		return result, fmt.Errorf("Could not parse offset [%v]", str)
-	}
-
-	startStr := matches[0][1]
-	qualifierStr := matches[0][2]
-	intStr := matches[0][3]
-
-	var err error
-	if result.start, err = strconv.ParseInt(intStr, 10, 64); err != nil && len(intStr) > 0 {
-		return result, fmt.Errorf("Invalid offset [%v]", str)
-	}
-
-	if len(qualifierStr) > 0 {
-		result.relative = true
-		result.diff = result.start
-		result.start = sarama.OffsetOldest
-		if qualifierStr == "-" {
-			result.start = sarama.OffsetNewest
-			result.diff = -result.diff
-		}
-	}
-
-	switch startStr {
-	case "newest":
-		result.relative = true
-		result.start = sarama.OffsetNewest
-	case "oldest":
-		result.relative = true
-		result.start = sarama.OffsetOldest
-	case "resume":
-		result.relative = true
-		result.start = offsetResume
-	}
-
-	return result, nil
-}
-
-func parseOffsets(str string) (map[int32]interval, error) {
-	defaultInterval := interval{
-		start: offset{relative: true, start: sarama.OffsetOldest},
-		end:   offset{start: 1<<63 - 1},
-	}
-
-	if len(str) == 0 {
-		return map[int32]interval{-1: defaultInterval}, nil
-	}
-
-	result := map[int32]interval{}
-	for _, partitionInfo := range strings.Split(str, ",") {
-		re := regexp.MustCompile("(all|\\d+)?=?([^:]+)?:?(.+)?")
-		matches := re.FindAllStringSubmatch(strings.TrimSpace(partitionInfo), -1)
-		if len(matches) != 1 || len(matches[0]) < 3 {
-			return result, fmt.Errorf("Invalid partition info [%v]", partitionInfo)
-		}
-
-		var partition int32
-		start := defaultInterval.start
-		end := defaultInterval.end
-		partitionMatches := matches[0]
-
-		// partition
-		partitionStr := partitionMatches[1]
-		if partitionStr == "all" || len(partitionStr) == 0 {
-			partition = -1
-		} else {
-			i, err := strconv.Atoi(partitionStr)
-			if err != nil {
-				return result, fmt.Errorf("Invalid partition [%v]", partitionStr)
-			}
-			partition = int32(i)
-		}
-
-		// start
-		if len(partitionMatches) > 2 && len(strings.TrimSpace(partitionMatches[2])) > 0 {
-			startStr := strings.TrimSpace(partitionMatches[2])
-			o, err := parseOffset(startStr)
-			if err == nil {
-				start = o
-			}
-		}
-
-		// end
-		if len(partitionMatches) > 3 && len(strings.TrimSpace(partitionMatches[3])) > 0 {
-			endStr := strings.TrimSpace(partitionMatches[3])
-			o, err := parseOffset(endStr)
-			if err == nil {
-				end = o
-			}
-		}
-
-		result[partition] = interval{start, end}
-	}
-
-	return result, nil
-}
-
 func (cmd *consumeCmd) failStartup(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	failf("use \"kt consume -help\" for more information")
@@ -263,6 +160,203 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	if err != nil {
 		cmd.failStartup(fmt.Sprintf("%s", err))
 	}
+}
+
+// parseOffsets parses a set of partition-offset specifiers in the following
+// syntax. The grammar uses the BNF-like syntax defined in https://golang.org/ref/spec.
+//
+//	offsets := [ partitionInterval { "," partitionInterval } ]
+//
+//	partitionInterval :=
+//		partition "=" interval |
+//		partition |
+//		interval
+//
+//	partition := "all" | number
+//
+//	interval := [ offset ] [ ":" [ offset ] ]
+//
+//	offset :=
+//		number |
+//		namedRelativeOffset |
+//		numericRelativeOffset |
+//		namedRelativeOffset numericRelativeOffset
+//
+//	namedRelativeOffset := "newest" | "oldest" | "resume"
+//
+//	numericRelativeOffset := "+" number | "-" number
+//
+//	number := {"0"| "1"| "2"| "3"| "4"| "5"| "6"| "7"| "8"| "9"}
+func parseOffsets(str string) (map[int32]interval, error) {
+	result := map[int32]interval{}
+	for _, partitionInfo := range strings.Split(str, ",") {
+		partitionInfo = strings.TrimSpace(partitionInfo)
+		// There's a grammatical ambiguity between a partition
+		// number and an interval, because both allow a single
+		// decimal number. We work around that by trying an explicit
+		// partition first.
+		p, err := parsePartition(partitionInfo)
+		if err == nil {
+			result[p] = interval{
+				start: oldestOffset(),
+				end:   lastOffset(),
+			}
+			continue
+		}
+		intervalStr := partitionInfo
+		if i := strings.Index(partitionInfo, "="); i >= 0 {
+			// There's an explicitly specified partition.
+			p, err = parsePartition(partitionInfo[0:i])
+			if err != nil {
+				return nil, err
+			}
+			intervalStr = partitionInfo[i+1:]
+		} else {
+			// No explicit partition, so implicitly use "all".
+			p = -1
+		}
+		intv, err := parseInterval(intervalStr)
+		if err != nil {
+			return nil, err
+		}
+		result[p] = intv
+	}
+	return result, nil
+}
+
+// parseRelativeOffset parses a relative offset, such as "oldest", "newest-30", or "+20".
+func parseRelativeOffset(s string) (offset, error) {
+	o, ok := parseNamedRelativeOffset(s)
+	if ok {
+		return o, nil
+	}
+	i := strings.IndexAny(s, "+-")
+	if i == -1 {
+		return offset{}, fmt.Errorf("invalid offset %q", s)
+	}
+	switch {
+	case i > 0:
+		// The + or - isn't at the start, so the relative offset must start
+		// with a named relative offset.
+		o, ok = parseNamedRelativeOffset(s[0:i])
+		if !ok {
+			return offset{}, fmt.Errorf("invalid offset %q", s)
+		}
+	case s[i] == '+':
+		// Offset +99 implies oldest+99.
+		o = oldestOffset()
+	default:
+		// Offset -99 implies newest-99.
+		o = newestOffset()
+	}
+	// Note: we include the leading sign when converting to int
+	// so the diff ends up with the correct sign.
+	diff, err := strconv.ParseInt(s[i:], 10, 64)
+	if err != nil {
+		if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
+			return offset{}, fmt.Errorf("offset %q is too large", s)
+		}
+		return offset{}, fmt.Errorf("invalid offset %q", s)
+	}
+	o.diff = int64(diff)
+	return o, nil
+}
+
+func parseNamedRelativeOffset(s string) (offset, bool) {
+	switch s {
+	case "newest":
+		return newestOffset(), true
+	case "oldest":
+		return oldestOffset(), true
+	case "resume":
+		return offset{relative: true, start: offsetResume}, true
+	default:
+		return offset{}, false
+	}
+}
+
+func parseInterval(s string) (interval, error) {
+	if s == "" {
+		// An empty string implies all messages.
+		return interval{
+			start: oldestOffset(),
+			end:   lastOffset(),
+		}, nil
+	}
+	var start, end string
+	i := strings.Index(s, ":")
+	if i == -1 {
+		// No colon, so the whole string specifies the start offset.
+		start = s
+	} else {
+		// We've got a colon, so there are explicitly specified
+		// start and end offsets.
+		start = s[0:i]
+		end = s[i+1:]
+	}
+	startOff, err := parseIntervalPart(start, oldestOffset())
+	if err != nil {
+		return interval{}, err
+	}
+	endOff, err := parseIntervalPart(end, lastOffset())
+	if err != nil {
+		return interval{}, err
+	}
+	return interval{
+		start: startOff,
+		end:   endOff,
+	}, nil
+}
+
+// parseIntervalPart parses one half of an interval pair.
+// If s is empty, the given default offset will be used.
+func parseIntervalPart(s string, defaultOffset offset) (offset, error) {
+	if s == "" {
+		return defaultOffset, nil
+	}
+	n, err := strconv.ParseUint(s, 10, 63)
+	if err == nil {
+		// It's an explicit numeric offset.
+		return offset{
+			start: int64(n),
+		}, nil
+	}
+	if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
+		return offset{}, fmt.Errorf("offset %q is too large", s)
+	}
+	o, err := parseRelativeOffset(s)
+	if err != nil {
+		return offset{}, err
+	}
+	return o, nil
+}
+
+// parsePartition parses a partition number, or the special
+// word "all", meaning all partitions.
+func parsePartition(s string) (int32, error) {
+	if s == "all" {
+		return -1, nil
+	}
+	p, err := strconv.ParseUint(s, 10, 31)
+	if err != nil {
+		if err := err.(*strconv.NumError); err.Err == strconv.ErrRange {
+			return 0, fmt.Errorf("partition number %q is too large", s)
+		}
+		return 0, fmt.Errorf("invalid partition number %q", s)
+	}
+	return int32(p), nil
+}
+
+func oldestOffset() offset {
+	return offset{relative: true, start: sarama.OffsetOldest}
+}
+
+func newestOffset() offset {
+	return offset{relative: true, start: sarama.OffsetNewest}
+}
+
+func lastOffset() offset {
+	return offset{relative: false, start: 1<<63 - 1}
 }
 
 func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
