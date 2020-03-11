@@ -5,7 +5,7 @@ services:
   - docker
 
 go:
-  - 1.11.1
+  - 1.14
 
 install:
 - sudo docker version
