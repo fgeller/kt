@@ -18,11 +18,19 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: SSL://localhost:9092
       KAFKA_ZOOKEEPER_CONNECT: zookeeper-1:2181
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.broker1.keystore.jks
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: broker1_keystore_creds
+      KAFKA_SSL_KEY_CREDENTIALS: broker1_sslkey_creds
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.broker1.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: broker1_truststore_creds
+      KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: " "
+      KAFKA_SSL_CLIENT_AUTH: requested
+      KAFKA_SECURITY_INTER_BROKER_PROTOCOL: SSL
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-
+      - ./test-secrets/:/etc/kafka/secrets
