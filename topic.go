@@ -95,7 +95,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 		re  *regexp.Regexp
 
 		args       = cmd.parseFlags(as)
-		envBrokers = os.Getenv("KT_BROKERS")
+		envBrokers = os.Getenv(ENV_BROKERS)
 	)
 	if args.brokers == "" {
 		if envBrokers != "" {
@@ -115,7 +115,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 		failf("invalid regex for filter err=%s", err)
 	}
 
-	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
 	cmd.filter = re
 	cmd.partitions = args.partitions

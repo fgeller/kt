@@ -81,7 +81,7 @@ func (cmd *produceCmd) failStartup(msg string) {
 
 func (cmd *produceCmd) parseArgs(as []string) {
 	args := cmd.read(as)
-	envTopic := os.Getenv("KT_TOPIC")
+	envTopic := os.Getenv(ENV_TOPIC)
 	if args.topic == "" {
 		if envTopic == "" {
 			cmd.failStartup("Topic name is required.")
@@ -91,9 +91,9 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	}
 	cmd.topic = args.topic
 
-	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
-	envBrokers := os.Getenv("KT_BROKERS")
+	envBrokers := os.Getenv(ENV_BROKERS)
 	if args.brokers == "" {
 		if envBrokers != "" {
 			args.brokers = envBrokers

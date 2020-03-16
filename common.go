@@ -22,7 +22,10 @@ import (
 )
 
 const (
-	envAuth = "KT_AUTH"
+	ENV_AUTH          = "KT_AUTH"
+	ENV_ADMIN_TIMEOUT = "KT_ADMIN_TIMEOUT"
+	ENV_BROKERS       = "KT_BROKERS"
+	ENV_TOPIC         = "KT_TOPIC"
 )
 
 var (

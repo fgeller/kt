@@ -50,14 +50,14 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.version = kafkaVersion(args.version)
 
-	cmd.timeout = parseTimeout(os.Getenv("KT_ADMIN_TIMEOUT"))
+	cmd.timeout = parseTimeout(os.Getenv(ENV_ADMIN_TIMEOUT))
 	if args.timeout != "" {
 		cmd.timeout = parseTimeout(args.timeout)
 	}
 
-	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
-	envBrokers := os.Getenv("KT_BROKERS")
+	envBrokers := os.Getenv(ENV_BROKERS)
 	if args.brokers == "" {
 		if envBrokers != "" {
 			args.brokers = envBrokers
