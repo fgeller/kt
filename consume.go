@@ -122,7 +122,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.version = kafkaVersion(args.version)
 	cmd.group = args.group
 
-	readAuthFile(args.auth, &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
 
 	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
 		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue))

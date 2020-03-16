@@ -55,7 +55,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 		cmd.timeout = parseTimeout(args.timeout)
 	}
 
-	readAuthFile(args.auth, &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {

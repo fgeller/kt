@@ -21,6 +21,10 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+const (
+	envAuth = "KT_AUTH"
+)
+
 var (
 	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 )
@@ -260,9 +264,14 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	return nil
 }
 
-func readAuthFile(fn string, target *authConfig) {
-	if fn == "" {
+func readAuthFile(argFN string, envFN string, target *authConfig) {
+	if argFN == "" && envFN == "" {
 		return
+	}
+
+	fn := argFN
+	if fn == "" {
+		fn = envFN
 	}
 
 	byts, err := ioutil.ReadFile(fn)

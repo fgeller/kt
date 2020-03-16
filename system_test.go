@@ -31,6 +31,7 @@ func (c *cmd) run(name string, args ...string) (int, string, string) {
 	cmd.Stderr = &stdErr
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "KT_BROKERS=localhost:9092")
+	cmd.Env = append(cmd.Env, "KT_AUTH=test-secrets/auth.json")
 
 	if len(c.in) > 0 {
 		cmd.Stdin = strings.NewReader(c.in)
@@ -82,8 +83,7 @@ func TestSystem(t *testing.T) {
 		stdIn(string(buf)).
 		run("./kt", "admin",
 			"-createtopic", topicName,
-			"-topicdetail", fnTopicDetail,
-			"-auth", "test-secrets/auth.json")
+			"-topicdetail", fnTopicDetail)
 	fmt.Printf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -103,8 +103,7 @@ func TestSystem(t *testing.T) {
 	require.NoError(t, err)
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).
 		run("./kt", "produce",
-			"-topic", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-topic", topicName)
 	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -126,8 +125,7 @@ func TestSystem(t *testing.T) {
 		run("./kt", "consume",
 			"-topic", topicName,
 			"-timeout", "500ms",
-			"-group", "hans",
-			"-auth", "test-secrets/auth.json")
+			"-group", "hans")
 	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -153,8 +151,7 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
-			"-topic", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-topic", topicName)
 	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -175,8 +172,7 @@ func TestSystem(t *testing.T) {
 	require.NoError(t, err)
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).
 		run("./kt", "produce",
-			"-topic", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-topic", topicName)
 	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -198,8 +194,7 @@ func TestSystem(t *testing.T) {
 			"-topic", topicName,
 			"-offsets", "all=resume",
 			"-timeout", "500ms",
-			"-group", "hans",
-			"-auth", "test-secrets/auth.json")
+			"-group", "hans")
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -227,8 +222,7 @@ func TestSystem(t *testing.T) {
 			"-topic", topicName,
 			"-partitions", "0",
 			"-group", "hans",
-			"-reset", "0",
-			"-auth", "test-secrets/auth.json")
+			"-reset", "0")
 	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -254,8 +248,7 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
-			"-topic", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-topic", topicName)
 	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -269,8 +262,7 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "topic",
-			"-filter", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-filter", topicName)
 	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
 	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
 	require.Zero(t, status)
@@ -298,8 +290,7 @@ func TestSystem(t *testing.T) {
 	//
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).
 		run("./kt", "admin",
-			"-deletetopic", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-deletetopic", topicName)
 	fmt.Printf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -313,8 +304,7 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "topic",
-			"-filter", topicName,
-			"-auth", "test-secrets/auth.json")
+			"-filter", topicName)
 	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
 	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
 	require.Zero(t, status)

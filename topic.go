@@ -115,7 +115,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 		failf("invalid regex for filter err=%s", err)
 	}
 
-	readAuthFile(args.auth, &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
 
 	cmd.filter = re
 	cmd.partitions = args.partitions

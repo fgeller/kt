@@ -91,7 +91,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	}
 	cmd.topic = args.topic
 
-	readAuthFile(args.auth, &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {

@@ -355,7 +355,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.offsets = args.offsets
 	cmd.version = kafkaVersion(args.version)
 
-	readAuthFile(args.auth, &cmd.auth)
+	readAuthFile(args.auth, os.Getenv(envAuth), &cmd.auth)
 
 	switch args.partitions {
 	case "", "all":
