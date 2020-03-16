@@ -243,19 +243,29 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
 
     Use "kt [command] -help" for for information about the command.
 
-    Authorization:
+    Authentication:
 
-    Authorization with Kafka can be configured via a JSON file.
+    Authentication with Kafka can be configured via a JSON file.
     You can set the file name via an "-auth" flag to each command or
     set it via the environment variable KT_AUTH.
 
 
-## Authorization
+## Authentication / Encryption
 
-Currently the only supported mode is TLS, please create an
-[https://github.com/fgeller/kt/issues/new](issue) with details in case you need
-another mode. Example for an authorization configuration that is used for the
-system tests:
+Authentication configuration is possibly via a JSON file. You indicate the mode
+of authentication you need and provide additional information as required for
+your mode.
+
+### TLS
+
+Required fields:
+
+ - `mode`: This needs to be set to `TLS`
+ - `client-certificate`: Path to your certificate
+ - `client-certificate-key`: Path to your certificate key
+ - `ca-certificate`: Path to your CA certificate
+
+Example for an authorization configuration that is used for the system tests:
 
 
     {
@@ -264,3 +274,22 @@ system tests:
         "client-certificate-key": "test-secrets/kt-test.key",
         "ca-certificate": "test-secrets/snakeoil-ca-1.crt"
     }
+
+### TLS one-way
+
+Required fields:
+
+ - `mode`: This needs to be set to `TLS-1way`
+
+Example:
+
+
+    {
+        "mode": "TLS-1way",
+    }
+
+### Other modes
+
+Please create an
+[https://github.com/fgeller/kt/issues/new](issue) with details for the mode that you need.
+
