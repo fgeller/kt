@@ -64,7 +64,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	)
 
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
+	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
 	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
 	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
 	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
@@ -274,6 +274,7 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 	return top, nil
 }
 
-var topicDocString = `
-The values for -brokers can also be set via the environment variable KT_BROKERS respectively.
-The values supplied on the command line win over environment variable values.`
+var topicDocString = fmt.Sprintf(`
+The values for -brokers can also be set via the environment variable %s respectively.
+The values supplied on the command line win over environment variable values.`,
+	ENV_BROKERS)

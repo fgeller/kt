@@ -441,7 +441,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags := flag.NewFlagSet("group", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
+	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
 	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
 	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")
@@ -468,8 +468,8 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	return args
 }
 
-var groupDocString = `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+var groupDocString = fmt.Sprintf(`
+The values for -topic and -brokers can also be set via environment variables %s and %s respectively.
 The values supplied on the command line win over environment variable values.
 
 The group command can be used to list groups, their offsets and lag and to reset a group's offset.
@@ -499,4 +499,4 @@ kt group -reset 23 -topic fav-topic -group specials -partitions 2
 To reset a consumer group's offset for all partitions:
 
 kt group -reset newest -topic fav-topic -group specials -partitions all
-`
+`, ENV_TOPIC, ENV_BROKERS)

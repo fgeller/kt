@@ -19,7 +19,7 @@ Build %v from %v.`, usageMessage, buildVersion, buildTime)
 	}
 }
 
-var usageMessage = `kt is a tool for Kafka.
+var usageMessage = fmt.Sprintf(`kt is a tool for Kafka.
 
 Usage:
 
@@ -39,9 +39,9 @@ Authorization:
 
 Authorization with Kafka can be configured via a JSON file.
 You can set the file name via an "-auth" flag to each command or
-set it via the environment variable KT_AUTH.
+set it via the environment variable %s.
 
-More at https://github.com/fgeller/kt`
+More at https://github.com/fgeller/kt`, ENV_AUTH)
 
 func parseArgs() command {
 	if len(os.Args) < 2 {

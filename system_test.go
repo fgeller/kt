@@ -30,8 +30,8 @@ func (c *cmd) run(name string, args ...string) (int, string, string) {
 	cmd.Stdout = &stdOut
 	cmd.Stderr = &stdErr
 	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, "KT_BROKERS=localhost:9092")
-	cmd.Env = append(cmd.Env, "KT_AUTH=test-secrets/auth.json")
+	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=localhost:9092", ENV_BROKERS))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=test-secrets/auth.json", ENV_AUTH))
 
 	if len(c.in) > 0 {
 		cmd.Stdin = strings.NewReader(c.in)

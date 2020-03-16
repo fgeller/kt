@@ -45,7 +45,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
 	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
+	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
 	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
 	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
@@ -502,8 +502,8 @@ func (cmd *produceCmd) readInput(q chan struct{}, stdin chan string, out chan st
 	}
 }
 
-var produceDocString = `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+var produceDocString = fmt.Sprintf(`
+The values for -topic and -brokers can also be set via environment variables %s and %s respectively.
 The values supplied on the command line win over environment variable values.
 
 Input is read from stdin and separated by newlines.
@@ -540,4 +540,4 @@ Keep reading input from stdin until interrupted (via ^C).
   $ kt consume -topic greetings -timeout 1s -offsets 0:4-
   {"partition":0,"offset":4,"key":"hello.","message":"hello."}
   {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
-`
+`, ENV_TOPIC, ENV_BROKERS)

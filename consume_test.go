@@ -621,8 +621,8 @@ func TestConsumeParseArgs(t *testing.T) {
 	givenBroker := "hans:9092"
 	brokers := []string{givenBroker}
 
-	os.Setenv("KT_TOPIC", topic)
-	os.Setenv("KT_BROKERS", givenBroker)
+	os.Setenv(ENV_TOPIC, topic)
+	os.Setenv(ENV_BROKERS, givenBroker)
 	target := &consumeCmd{}
 
 	target.parseArgs([]string{})
@@ -633,8 +633,8 @@ func TestConsumeParseArgs(t *testing.T) {
 	}
 
 	// default brokers to localhost:9092
-	os.Setenv("KT_TOPIC", "")
-	os.Setenv("KT_BROKERS", "")
+	os.Setenv(ENV_TOPIC, "")
+	os.Setenv(ENV_BROKERS, "")
 	brokers = []string{"localhost:9092"}
 
 	target.parseArgs([]string{"-topic", topic})
@@ -645,8 +645,8 @@ func TestConsumeParseArgs(t *testing.T) {
 	}
 
 	// command line arg wins
-	os.Setenv("KT_TOPIC", "BLUBB")
-	os.Setenv("KT_BROKERS", "BLABB")
+	os.Setenv(ENV_TOPIC, "BLUBB")
+	os.Setenv(ENV_BROKERS, "BLABB")
 	brokers = []string{givenBroker}
 
 	target.parseArgs([]string{"-topic", topic, "-brokers", givenBroker})

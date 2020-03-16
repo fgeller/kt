@@ -126,8 +126,8 @@ func TestProduceParseArgs(t *testing.T) {
 	expectedBrokers := []string{givenBroker}
 	target := &produceCmd{}
 
-	os.Setenv("KT_TOPIC", expectedTopic)
-	os.Setenv("KT_BROKERS", givenBroker)
+	os.Setenv(ENV_TOPIC, expectedTopic)
+	os.Setenv(ENV_BROKERS, givenBroker)
 
 	target.parseArgs([]string{})
 	if target.topic != expectedTopic ||
@@ -143,8 +143,8 @@ func TestProduceParseArgs(t *testing.T) {
 	}
 
 	// default brokers to localhost:9092
-	os.Setenv("KT_TOPIC", "")
-	os.Setenv("KT_BROKERS", "")
+	os.Setenv(ENV_TOPIC, "")
+	os.Setenv(ENV_BROKERS, "")
 	expectedBrokers = []string{"localhost:9092"}
 
 	target.parseArgs([]string{"-topic", expectedTopic})
@@ -161,8 +161,8 @@ func TestProduceParseArgs(t *testing.T) {
 	}
 
 	// command line arg wins
-	os.Setenv("KT_TOPIC", "BLUBB")
-	os.Setenv("KT_BROKERS", "BLABB")
+	os.Setenv(ENV_TOPIC, "BLUBB")
+	os.Setenv(ENV_BROKERS, "BLABB")
 	expectedBrokers = []string{givenBroker}
 
 	target.parseArgs([]string{"-topic", expectedTopic, "-brokers", givenBroker})

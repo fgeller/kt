@@ -107,7 +107,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 		args = cmd.parseFlags(as)
 	)
 
-	envTopic := os.Getenv("KT_TOPIC")
+	envTopic := os.Getenv(ENV_TOPIC)
 	if args.topic == "" {
 		if envTopic == "" {
 			cmd.failStartup("Topic name is required.")
@@ -136,7 +136,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	}
 	cmd.encodeKey = args.encodeKey
 
-	envBrokers := os.Getenv("KT_BROKERS")
+	envBrokers := os.Getenv(ENV_BROKERS)
 	if args.brokers == "" {
 		if envBrokers != "" {
 			args.brokers = envBrokers
@@ -359,7 +359,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
+	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
 	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
@@ -638,8 +638,8 @@ func (cmd *consumeCmd) findPartitions() []int32 {
 	return res
 }
 
-var consumeDocString = `
-The values for -topic and -brokers can also be set via environment variables KT_TOPIC and KT_BROKERS respectively.
+var consumeDocString = fmt.Sprintf(`
+The values for -topic and -brokers can also be set via environment variables %s and %s respectively.
 The values supplied on the command line win over environment variable values.
 
 Offsets can be specified as a comma-separated list of intervals:
@@ -727,4 +727,4 @@ and
 
 Will achieve the same as the two examples above.
 
-`
+`, ENV_TOPIC, ENV_BROKERS)

@@ -158,7 +158,7 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.timeout, "timeout", "", "Timeout for request to Kafka (default: 3s)")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
+	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
 
 	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
 	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")
@@ -182,8 +182,8 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	return args
 }
 
-var adminDocString = `
-The value for -brokers can also be set via environment variables KT_BROKERS.
+var adminDocString = fmt.Sprintf(`
+The value for -brokers can also be set via environment variables %s.
 The value supplied on the command line wins over the environment variable value.
 
 If both -createtopic and deletetopic are supplied, -createtopic wins.
@@ -193,4 +193,5 @@ cf https://godoc.org/github.com/Shopify/sarama#TopicDetail
 
 A simple way to pass a JSON file is to use a tool like https://github.com/fgeller/jsonify and shell's process substition:
 
-kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)`
+kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)`,
+	ENV_BROKERS)
