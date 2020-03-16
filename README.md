@@ -7,7 +7,7 @@ Some reasons why you might be interested:
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers and topic via environment variables `KT_BROKERS` and `KT_TOPIC` for a shell session.
+* Configure brokers, topic and authentication via environment variables `KT_BROKERS`, `KT_TOPIC` and `KT_AUTH` for a shell session.
 * Fast start up time.
 * No buffering of output.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.
@@ -254,7 +254,8 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
 
 Authentication configuration is possibly via a JSON file. You indicate the mode
 of authentication you need and provide additional information as required for
-your mode.
+your mode. You pass the path to your configuration file via the `-auth` flag to
+each command individually, or set it via the environment variable `KT_AUTH`.
 
 ### TLS
 
