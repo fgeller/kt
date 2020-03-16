@@ -158,7 +158,7 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.timeout, "timeout", "", "Timeout for request to Kafka (default: 3s)")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
 
 	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
 	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")

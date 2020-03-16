@@ -441,7 +441,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags := flag.NewFlagSet("group", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
 	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
 	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")

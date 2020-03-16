@@ -64,7 +64,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	)
 
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
 	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
 	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
 	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")

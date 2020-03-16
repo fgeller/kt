@@ -359,7 +359,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
 	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")

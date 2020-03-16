@@ -42,7 +42,7 @@ $ echo 'Alice wins Oscar' | kt produce -topic actor-news -literal
   "partition": 0,
   "startOffset": 0
 }
-$ echo 'Bob wins Oscar' | kt produce -tlsca myca.pem -tlscert myclientcert.pem -tlscertkey mycertkey.pem -topic actor-news -literal
+$ echo 'Bob wins Oscar' | kt produce -topic actor-news -literal
 {
   "count": 1,
   "partition": 0,
@@ -243,16 +243,24 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
 
     Use "kt [command] -help" for for information about the command.
 
+    Authorization:
 
-## Development
+    Authorization with Kafka can be configured via a JSON file.
+    You can set the file name via an "-auth" flag to each command or
+    set it via the environment variable KT_AUTH.
 
-### Requirements
 
-- Go >= v1.11 with go modules support
-- docker and docker-compose
-- Make
+## Authorization
 
-### tests
+Currently the only supported mode is TLS, please create an
+[https://github.com/fgeller/kt/issues/new](issue) with details in case you need
+another mode. Example for an authorization configuration that is used for the
+system tests:
 
-- start dependencies with docker-compose, e.g. `docker-compose -f test-dependencies.yml up`
-- run `go test -v` or `make test`
+
+    {
+        "mode": "TLS",
+        "client-certificate": "test-secrets/kt-test.crt",
+        "client-certificate-key": "test-secrets/kt-test.key",
+        "ca-certificate": "test-secrets/snakeoil-ca-1.crt"
+    }

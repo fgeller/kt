@@ -45,7 +45,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
 	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file, can also be set via KT_AUTH env variable")
 	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
 	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
