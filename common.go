@@ -210,3 +210,67 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 	bundle.BuildNameToCertificate()
 	return bundle, nil
 }
+
+type authConfig struct {
+	Mode          string `json:"mode"`
+	CACert        string `json:"ca-certificate"`
+	ClientCert    string `json:"client-certificate"`
+	ClientCertKey string `json:"client-certificate-key"`
+}
+
+func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
+	if auth.Mode == "" {
+		return nil
+	}
+
+	if auth.Mode == "TLS" {
+		return setupAuthTLS(auth, saramaCfg)
+	} else {
+		return fmt.Errorf("unsupport auth mode: %#v", auth.Mode)
+	}
+}
+
+func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
+	if auth.CACert == "" || auth.ClientCert == "" || auth.ClientCertKey == "" {
+		return fmt.Errorf("client-certificate, client-certificate-key and ca-certificate are required - got auth=%#v", auth)
+	}
+
+	caString, err := ioutil.ReadFile(auth.CACert)
+	if err != nil {
+		return fmt.Errorf("failed to read ca-certificate err=%v", err)
+	}
+
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caString)
+	if !ok {
+		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+	}
+
+	clientCert, err := tls.LoadX509KeyPair(auth.ClientCert, auth.ClientCertKey)
+	if err != nil {
+		return err
+	}
+
+	tlsCfg := &tls.Config{RootCAs: caPool, Certificates: []tls.Certificate{clientCert}}
+	tlsCfg.BuildNameToCertificate()
+
+	saramaCfg.Net.TLS.Enable = true
+	saramaCfg.Net.TLS.Config = tlsCfg
+
+	return nil
+}
+
+func readAuthFile(fn string, target *authConfig) {
+	if fn == "" {
+		return
+	}
+
+	byts, err := ioutil.ReadFile(fn)
+	if err != nil {
+		failf("failed to read auth file err=%v", err)
+	}
+
+	if err := json.Unmarshal(byts, target); err != nil {
+		failf("failed to unmarshal auth file err=%v", err)
+	}
+}

@@ -83,9 +83,7 @@ func TestSystem(t *testing.T) {
 		run("./kt", "admin",
 			"-createtopic", topicName,
 			"-topicdetail", fnTopicDetail,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -106,9 +104,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).
 		run("./kt", "produce",
 			"-topic", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -131,9 +127,7 @@ func TestSystem(t *testing.T) {
 			"-topic", topicName,
 			"-timeout", "500ms",
 			"-group", "hans",
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -160,9 +154,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
 			"-topic", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -184,9 +176,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).
 		run("./kt", "produce",
 			"-topic", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -209,9 +199,7 @@ func TestSystem(t *testing.T) {
 			"-offsets", "all=resume",
 			"-timeout", "500ms",
 			"-group", "hans",
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -240,9 +228,7 @@ func TestSystem(t *testing.T) {
 			"-partitions", "0",
 			"-group", "hans",
 			"-reset", "0",
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -269,9 +255,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
 			"-topic", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -286,9 +270,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "topic",
 			"-filter", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
 	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
 	require.Zero(t, status)
@@ -317,9 +299,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().stdIn(string(buf)).
 		run("./kt", "admin",
 			"-deletetopic", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -334,9 +314,7 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "topic",
 			"-filter", topicName,
-			"-tlsca", "test-secrets/snakeoil-ca-1.crt",
-			"-tlscert", "test-secrets/kt-test.crt",
-			"-tlscertkey", "test-secrets/kt-test.key")
+			"-auth", "test-secrets/auth.json")
 	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
 	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
 	require.Zero(t, status)

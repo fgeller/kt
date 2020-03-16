@@ -21,9 +21,7 @@ type consumeCmd struct {
 
 	topic       string
 	brokers     []string
-	tlsCA       string
-	tlsCert     string
-	tlsCertKey  string
+	auth        authConfig
 	offsets     map[int32]interval
 	timeout     time.Duration
 	verbose     bool
@@ -87,9 +85,7 @@ type interval struct {
 type consumeArgs struct {
 	topic       string
 	brokers     string
-	tlsCA       string
-	tlsCert     string
-	tlsCertKey  string
+	auth        string
 	timeout     time.Duration
 	offsets     string
 	verbose     bool
@@ -120,14 +116,13 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 		args.topic = envTopic
 	}
 	cmd.topic = args.topic
-	cmd.tlsCA = args.tlsCA
-	cmd.tlsCert = args.tlsCert
-	cmd.tlsCertKey = args.tlsCertKey
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.version = kafkaVersion(args.version)
 	cmd.group = args.group
+
+	readAuthFile(args.auth, &cmd.auth)
 
 	if args.encodeValue != "string" && args.encodeValue != "hex" && args.encodeValue != "base64" {
 		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, args.encodeValue))
@@ -364,9 +359,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
 	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
 	flags.StringVar(&args.offsets, "offsets", "", "Specifies what messages to read by partition and offset range (defaults to all).")
 	flags.DurationVar(&args.timeout, "timeout", time.Duration(0), "Timeout after not reading messages (default 0 to disable).")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
@@ -406,13 +399,9 @@ func (cmd *consumeCmd) setupClient() {
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
-	if err != nil {
-		failf("failed to setup certificates err=%v", err)
-	}
-	if tlsConfig != nil {
-		cfg.Net.TLS.Enable = true
-		cfg.Net.TLS.Config = tlsConfig
+
+	if err = setupAuth(cmd.auth, cfg); err != nil {
+		failf("failed to setup auth err=%v", err)
 	}
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {

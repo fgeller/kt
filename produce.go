@@ -19,9 +19,7 @@ type produceArgs struct {
 	topic       string
 	partition   int
 	brokers     string
-	tlsCA       string
-	tlsCert     string
-	tlsCertKey  string
+	auth        string
 	batch       int
 	timeout     time.Duration
 	verbose     bool
@@ -47,9 +45,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
 	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
 	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
 	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
@@ -94,9 +90,8 @@ func (cmd *produceCmd) parseArgs(as []string) {
 		}
 	}
 	cmd.topic = args.topic
-	cmd.tlsCA = args.tlsCA
-	cmd.tlsCert = args.tlsCert
-	cmd.tlsCertKey = args.tlsCertKey
+
+	readAuthFile(args.auth, &cmd.auth)
 
 	envBrokers := os.Getenv("KT_BROKERS")
 	if args.brokers == "" {
@@ -172,13 +167,9 @@ func (cmd *produceCmd) findLeaders() {
 	if cmd.verbose {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
-	if err != nil {
-		failf("failed to setup certificates err=%v", err)
-	}
-	if tlsConfig != nil {
-		cfg.Net.TLS.Enable = true
-		cfg.Net.TLS.Config = tlsConfig
+
+	if err = setupAuth(cmd.auth, cfg); err != nil {
+		failf("failed to setup auth err=%v", err)
 	}
 
 loop:
@@ -237,9 +228,7 @@ loop:
 type produceCmd struct {
 	topic       string
 	brokers     []string
-	tlsCA       string
-	tlsCert     string
-	tlsCertKey  string
+	auth        authConfig
 	batch       int
 	timeout     time.Duration
 	verbose     bool

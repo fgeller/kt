@@ -15,9 +15,7 @@ import (
 
 type topicArgs struct {
 	brokers    string
-	tlsCA      string
-	tlsCert    string
-	tlsCertKey string
+	auth       string
 	filter     string
 	partitions bool
 	leaders    bool
@@ -30,9 +28,7 @@ type topicArgs struct {
 
 type topicCmd struct {
 	brokers    []string
-	tlsCA      string
-	tlsCert    string
-	tlsCertKey string
+	auth       authConfig
 	filter     *regexp.Regexp
 	partitions bool
 	leaders    bool
@@ -68,9 +64,7 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	)
 
 	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.tlsCA, "tlsca", "", "Path to the TLS certificate authority file")
-	flags.StringVar(&args.tlsCert, "tlscert", "", "Path to the TLS client certificate file")
-	flags.StringVar(&args.tlsCertKey, "tlscertkey", "", "Path to the TLS client certificate key file")
+	flags.StringVar(&args.auth, "auth", "", "Path to auth configuration file")
 	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
 	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
 	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
@@ -121,9 +115,8 @@ func (cmd *topicCmd) parseArgs(as []string) {
 		failf("invalid regex for filter err=%s", err)
 	}
 
-	cmd.tlsCA = args.tlsCA
-	cmd.tlsCert = args.tlsCert
-	cmd.tlsCertKey = args.tlsCertKey
+	readAuthFile(args.auth, &cmd.auth)
+
 	cmd.filter = re
 	cmd.partitions = args.partitions
 	cmd.leaders = args.leaders
@@ -151,14 +144,7 @@ func (cmd *topicCmd) connect() {
 		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
 	}
 
-	tlsConfig, err := setupCerts(cmd.tlsCert, cmd.tlsCA, cmd.tlsCertKey)
-	if err != nil {
-		failf("failed to setup certificates err=%v", err)
-	}
-	if tlsConfig != nil {
-		cfg.Net.TLS.Enable = true
-		cfg.Net.TLS.Config = tlsConfig
-	}
+	setupAuth(cmd.auth, cfg)
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
