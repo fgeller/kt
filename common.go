@@ -230,11 +230,20 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 		return nil
 	}
 
-	if auth.Mode == "TLS" {
+	switch auth.Mode {
+	case "TLS":
 		return setupAuthTLS(auth, saramaCfg)
-	} else {
+	case "TLS-1way":
+		return setupAuthTLS1Way(auth, saramaCfg)
+	default:
 		return fmt.Errorf("unsupport auth mode: %#v", auth.Mode)
 	}
+}
+
+func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
+	saramaCfg.Net.TLS.Enable = true
+	saramaCfg.Net.TLS.Config = &tls.Config{}
+	return nil
 }
 
 func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
