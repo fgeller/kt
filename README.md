@@ -7,7 +7,7 @@ Some reasons why you might be interested:
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers, topic and authentication via environment variables `KT_BROKERS`, `KT_TOPIC` and `KT_AUTH` for a shell session.
+* Configure brokers, topic and authentication via environment variables `KT_BROKERS`, `KT_TOPIC` and `KT_AUTH`.
 * Fast start up time.
 * No buffering of output.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.
@@ -248,7 +248,6 @@ For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
     Authentication with Kafka can be configured via a JSON file.
     You can set the file name via an "-auth" flag to each command or
     set it via the environment variable KT_AUTH.
-
 
 ## Authentication / Encryption
 
