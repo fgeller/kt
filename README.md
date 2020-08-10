@@ -293,5 +293,5 @@ Example:
 ### Other modes
 
 Please create an
-[https://github.com/fgeller/kt/issues/new](issue) with details for the mode that you need.
+[issue](https://github.com/fgeller/kt/issues/new) with details for the mode that you need.
 
