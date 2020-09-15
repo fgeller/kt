@@ -524,6 +524,12 @@ like the following:
 In case the input line cannot be interpeted as a JSON object the key and value
 both default to the input line and partition to 0.
 
+If you don't want to specify key for single message, in other words, it doesn't matter that a message goes
+to a random paritition (with equal probability), you can set the flag '-partitioner' with 'hashCodeByValue'.
+That will tell kt to take the value of a message to calculate a hashcode deciding which paritition it will go to.
+This can be helpful when you just want there are many messages distributed in partitions of a topic, and don't
+care about what the content is. 
+
 Examples:
 
 Send a single message with a specific key:
@@ -533,6 +539,11 @@ Send a single message with a specific key:
 
   $ kt consume -topic greetings -timeout 1s -offsets 0:3-
   {"partition":0,"offset":3,"key":"id-23","message":"ola"}
+
+Send a single message without specified key:
+  $ echo 'no key specified message' | kt produce -topic greetings -partitioner hashCodeByValue
+  Sent message to a partition decided by your case
+  
 
 Keep reading input from stdin until interrupted (via ^C).
 
