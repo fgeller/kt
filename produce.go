@@ -53,7 +53,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.compression, "compression", "", "Kafka message compression codec [gzip|snappy|lz4] (defaults to none)")
-	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode")
+	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode, hashCodeByValue")
 	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
 	flags.IntVar(&args.bufferSize, "buffersize", 16777216, "Buffer size for scanning stdin, defaults to 16777216=16*1024*1024.")
@@ -320,11 +320,16 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 			}
 
 			var part int32 = 0
-			if msg.Key != nil && cmd.partitioner == "hashCode" {
-				part = hashCodePartition(*msg.Key, partitionCount)
-			}
-			if msg.Partition == nil {
+			if msg.Value != nil && cmd.partitioner == "hashCodeByValue" {
+				part = hashCodePartition(*msg.Value, partitionCount)
 				msg.Partition = &part
+			}else {
+				if msg.Key != nil && cmd.partitioner == "hashCode" {
+					part = hashCodePartition(*msg.Key, partitionCount)
+				}
+				if msg.Partition == nil {
+					msg.Partition = &part
+				}
 			}
 
 			out <- msg
