@@ -219,10 +219,12 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 }
 
 type authConfig struct {
-	Mode          string `json:"mode"`
-	CACert        string `json:"ca-certificate"`
-	ClientCert    string `json:"client-certificate"`
-	ClientCertKey string `json:"client-certificate-key"`
+	Mode              string `json:"mode"`
+	CACert            string `json:"ca-certificate"`
+	ClientCert        string `json:"client-certificate"`
+	ClientCertKey     string `json:"client-certificate-key"`
+	SASLPlainUser     string `json:"sasl_plain_user"`
+	SASLPlainPassword string `json:"sasl_plain_password"`
 }
 
 func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
@@ -235,9 +237,18 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 		return setupAuthTLS(auth, saramaCfg)
 	case "TLS-1way":
 		return setupAuthTLS1Way(auth, saramaCfg)
+	case "SASL":
+		return setupSASL(auth, saramaCfg)
 	default:
 		return fmt.Errorf("unsupport auth mode: %#v", auth.Mode)
 	}
+}
+
+func setupSASL(auth authConfig, saramaCfg *sarama.Config) error {
+	saramaCfg.Net.SASL.Enable = true
+	saramaCfg.Net.SASL.User = auth.SASLPlainUser
+	saramaCfg.Net.SASL.Password = auth.SASLPlainPassword
+	return nil
 }
 
 func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
