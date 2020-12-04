@@ -32,6 +32,10 @@ var (
 	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 )
 
+type command interface {
+	run(args []string)
+}
+
 func listenForInterrupt(q chan struct{}) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Kill, os.Interrupt)
