@@ -1,2 +1,4 @@
 /kt
 /quickfix
+.idea/*
+.vscode/*
