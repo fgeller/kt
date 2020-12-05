@@ -1,6 +1,7 @@
-name: Go
+name: Continuous Integration
 
 on:
+  workflow_dispatch:
   push:
     branches: [ master ]
   pull_request:
@@ -9,14 +10,14 @@ on:
 jobs:
 
   test:
-    name: Test
+    name: kt Test
     runs-on: ubuntu-latest
     steps:
 
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.14
+        go-version: ^1.15
 
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
