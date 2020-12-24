@@ -48,7 +48,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	)
 
 	cmd.verbose = args.verbose
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = kafkaVersion(args.version, os.Getenv(ENV_VERSION))
 
 	cmd.timeout = parseTimeout(os.Getenv(ENV_ADMIN_TIMEOUT))
 	if args.timeout != "" {

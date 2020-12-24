@@ -26,6 +26,7 @@ const (
 	ENV_ADMIN_TIMEOUT = "KT_ADMIN_TIMEOUT"
 	ENV_BROKERS       = "KT_BROKERS"
 	ENV_TOPIC         = "KT_TOPIC"
+	ENV_VERSION       = "KT_VERSION"
 )
 
 var (
@@ -44,7 +45,11 @@ func listenForInterrupt(q chan struct{}) {
 	close(q)
 }
 
-func kafkaVersion(s string) sarama.KafkaVersion {
+func kafkaVersion(argS, envS string) sarama.KafkaVersion {
+	s := argS
+	if s == "" {
+		s = envS
+	}
 	if s == "" {
 		return sarama.V2_0_0_0
 	}

@@ -353,7 +353,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = kafkaVersion(args.version, os.Getenv(ENV_VERSION))
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
