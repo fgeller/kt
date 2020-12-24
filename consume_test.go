@@ -619,40 +619,55 @@ func (c tConsumer) HighWaterMarks() map[string]map[int32]int64 {
 func TestConsumeParseArgs(t *testing.T) {
 	topic := "test-topic"
 	givenBroker := "hans:9092"
+	givenVersion := "0.10.2.0"
 	brokers := []string{givenBroker}
+	version := sarama.V0_10_2_0
 
 	os.Setenv(ENV_TOPIC, topic)
 	os.Setenv(ENV_BROKERS, givenBroker)
+	os.Setenv(ENV_VERSION, givenVersion)
+	defer func() {
+		os.Setenv(ENV_TOPIC, "")
+		os.Setenv(ENV_BROKERS, "")
+		os.Setenv(ENV_VERSION, "")
+	}()
 	target := &consumeCmd{}
 
 	target.parseArgs([]string{})
 	if target.topic != topic ||
-		!reflect.DeepEqual(target.brokers, brokers) {
-		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
+		!reflect.DeepEqual(target.brokers, brokers) ||
+		!reflect.DeepEqual(target.version, version) {
+		t.Errorf("Expected topic %#v, brokers %#v and version %#v from env vars, got %#v.", topic, brokers, version, target)
 		return
 	}
 
-	// default brokers to localhost:9092
+	// default brokers to localhost:9092, version to 2.0.0.0
 	os.Setenv(ENV_TOPIC, "")
 	os.Setenv(ENV_BROKERS, "")
+	os.Setenv(ENV_VERSION, "")
 	brokers = []string{"localhost:9092"}
+	version = sarama.V2_0_0_0
 
 	target.parseArgs([]string{"-topic", topic})
 	if target.topic != topic ||
-		!reflect.DeepEqual(target.brokers, brokers) {
-		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
+		!reflect.DeepEqual(target.brokers, brokers) ||
+		!reflect.DeepEqual(target.version, version) {
+		t.Errorf("Expected topic %#v, brokers %#v and version %#v from env vars, got %#v.", topic, brokers, version, target)
 		return
 	}
 
 	// command line arg wins
 	os.Setenv(ENV_TOPIC, "BLUBB")
 	os.Setenv(ENV_BROKERS, "BLABB")
+	os.Setenv(ENV_VERSION, "ALJFD")
 	brokers = []string{givenBroker}
+	version = sarama.V0_10_2_0
 
-	target.parseArgs([]string{"-topic", topic, "-brokers", givenBroker})
+	target.parseArgs([]string{"-version", givenVersion, "-topic", topic, "-brokers", givenBroker})
 	if target.topic != topic ||
-		!reflect.DeepEqual(target.brokers, brokers) {
-		t.Errorf("Expected topic %#v and brokers %#v from env vars, got %#v.", topic, brokers, target)
+		!reflect.DeepEqual(target.brokers, brokers) ||
+		!reflect.DeepEqual(target.version, version) {
+		t.Errorf("Expected topic %#v, brokers %#v and env %#v from env vars, got %#v.", topic, brokers, version, target)
 		return
 	}
 }

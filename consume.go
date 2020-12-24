@@ -119,7 +119,7 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = kafkaVersion(args.version, os.Getenv(ENV_VERSION))
 	cmd.group = args.group
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)

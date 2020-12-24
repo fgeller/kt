@@ -124,7 +124,7 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.config = args.config
 	cmd.pretty = args.pretty
 	cmd.verbose = args.verbose
-	cmd.version = kafkaVersion(args.version)
+	cmd.version = kafkaVersion(args.version, os.Getenv(ENV_VERSION))
 }
 
 func (cmd *topicCmd) connect() {
