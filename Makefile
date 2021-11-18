@@ -19,7 +19,7 @@ release-darwin:
 release: testing clean release-linux release-darwin
 
 dep-up:
-	docker-compose -f ./test-dependencies.yml up -d --remove-orphan 
+	docker-compose -f ./test-dependencies.yml up -d
 	sleep 4
 
 dep-down:
