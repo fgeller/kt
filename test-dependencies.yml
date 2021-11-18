@@ -2,7 +2,7 @@
 version: '2'
 services:
   zookeeper-1:
-    image: confluentinc/cp-zookeeper:5.4.1
+    image: confluentinc/cp-zookeeper:latest
     ports:
       - "2181:2181"
     environment:
@@ -10,7 +10,7 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
   kafka-1:
-    image: confluentinc/cp-kafka:5.4.1
+    image: confluentinc/cp-kafka:latest
     depends_on:
       - zookeeper-1
     ports:
@@ -34,3 +34,4 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./test-secrets/:/etc/kafka/secrets
+
