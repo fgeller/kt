@@ -52,7 +52,7 @@ func kafkaVersion(s string) sarama.KafkaVersion {
 	}
 
 	if s == "" {
-		return sarama.V2_0_0_0
+		return sarama.V3_0_0_0
 	}
 
 	v, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
