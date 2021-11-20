@@ -7,7 +7,7 @@ Some reasons why you might be interested:
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers, topic and authentication via environment variables `KT_BROKERS`, `KT_TOPIC` and `KT_AUTH`.
+* Configure brokers, topic, Kafka version and authentication via environment variables `KT_BROKERS`, `KT_TOPIC`, `KT_KAFKA_VERSION` and `KT_AUTH`.
 * Fast start up time.
 * No buffering of output.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.

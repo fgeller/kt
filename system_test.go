@@ -32,6 +32,7 @@ func (c *cmd) run(name string, args ...string) (int, string, string) {
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=localhost:9092", ENV_BROKERS))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=test-secrets/auth.json", ENV_AUTH))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=v3.0.0", ENV_KAFKA_VERSION))
 
 	if len(c.in) > 0 {
 		cmd.Stdin = strings.NewReader(c.in)
