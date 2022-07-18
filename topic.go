@@ -27,6 +27,8 @@ type topicArgs struct {
 }
 
 type topicCmd struct {
+	baseCmd
+
 	brokers    []string
 	auth       authConfig
 	filter     *regexp.Regexp
@@ -34,7 +36,6 @@ type topicCmd struct {
 	leaders    bool
 	replicas   bool
 	config     bool
-	verbose    bool
 	pretty     bool
 	version    sarama.KafkaVersion
 
@@ -124,7 +125,11 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.config = args.config
 	cmd.pretty = args.pretty
 	cmd.verbose = args.verbose
-	cmd.version = kafkaVersion(args.version)
+
+	cmd.version, err = kafkaVersion(args.version)
+	if err != nil {
+		failf("failed to read kafka version err=%v", err)
+	}
 }
 
 func (cmd *topicCmd) connect() {
@@ -137,12 +142,10 @@ func (cmd *topicCmd) connect() {
 	cfg.Version = cmd.version
 
 	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-topic-" + sanitizeUsername(usr.Username)
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
-	}
+	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	setupAuth(cmd.auth, cfg)
 
@@ -201,7 +204,7 @@ func (cmd *topicCmd) print(name string, out chan printContext) {
 	)
 
 	if top, err = cmd.readTopic(name); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read info for topic %s. err=%v\n", name, err)
+		warnf("failed to read info for topic %s. err=%v\n", name, err)
 		return
 	}
 

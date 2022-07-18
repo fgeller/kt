@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,7 +9,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"os/signal"
 	"regexp"
 	"strings"
 	"syscall"
@@ -37,49 +35,41 @@ type command interface {
 	run(args []string)
 }
 
-func listenForInterrupt(q chan struct{}) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Kill, os.Interrupt)
-	sig := <-signals
-	fmt.Fprintf(os.Stderr, "received signal %s\n", sig)
-	close(q)
+type baseCmd struct {
+	verbose bool
 }
 
-func kafkaVersion(s string) sarama.KafkaVersion {
+func (b *baseCmd) infof(msg string, args ...interface{}) {
+	if b.verbose {
+		warnf(msg, args...)
+	}
+}
+
+func warnf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, msg, args...)
+}
+
+func outf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stdout, msg, args...)
+}
+
+func logClose(name string, c io.Closer) {
+	if err := c.Close(); err != nil {
+		warnf("failed to close %#v err=%v", name, err)
+	}
+}
+
+func kafkaVersion(s string) (sarama.KafkaVersion, error) {
 	ev := os.Getenv(ENV_KAFKA_VERSION)
 	if s == "" && ev != "" {
 		s = ev
 	}
 
 	if s == "" {
-		return sarama.V3_0_0_0
+		return sarama.V3_0_0_0, nil
 	}
 
-	v, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
-	if err != nil {
-		failf(err.Error())
-	}
-
-	return v
-}
-
-func parseTimeout(s string) *time.Duration {
-	if s == "" {
-		return nil
-	}
-
-	v, err := time.ParseDuration(s)
-	if err != nil {
-		failf(err.Error())
-	}
-
-	return &v
-}
-
-func logClose(name string, c io.Closer) {
-	if err := c.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
-	}
+	return sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
 }
 
 type printContext struct {
@@ -119,25 +109,11 @@ func failf(msg string, args ...interface{}) {
 
 func exitf(code int, msg string, args ...interface{}) {
 	if code == 0 {
-		fmt.Fprintf(os.Stdout, msg+"\n", args...)
+		outf(msg+"\n", args...)
 	} else {
-		fmt.Fprintf(os.Stderr, msg+"\n", args...)
+		warnf(msg+"\n", args...)
 	}
 	os.Exit(code)
-}
-
-func readStdinLines(max int, out chan string) {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, max), max)
-
-	for scanner.Scan() {
-		out <- scanner.Text()
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "scanning input failed err=%v\n", err)
-	}
-	close(out)
 }
 
 // hashCode imitates the behavior of the JDK's String#hashCode method.

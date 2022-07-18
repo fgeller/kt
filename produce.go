@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"os/user"
 	"strings"
 	"time"
@@ -59,9 +61,9 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.IntVar(&args.bufferSize, "buffersize", 16777216, "Buffer size for scanning stdin, defaults to 16777216=16*1024*1024.")
 
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage of produce:")
+		warnf("Usage of produce:")
 		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, produceDocString)
+		warnf(produceDocString + "\n")
 	}
 
 	err := flags.Parse(as)
@@ -75,7 +77,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 }
 
 func (cmd *produceCmd) failStartup(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
+	warnf(msg)
 	failf("use \"kt produce -help\" for more information")
 }
 
@@ -120,7 +122,6 @@ func (cmd *produceCmd) parseArgs(as []string) {
 		return
 	}
 	cmd.decodeKey = args.decodeKey
-
 	cmd.batch = args.batch
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
@@ -128,7 +129,13 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
 	cmd.partitioner = args.partitioner
-	cmd.version = kafkaVersion(args.version)
+
+	var err error
+	cmd.version, err = kafkaVersion(args.version)
+	if err != nil {
+		failf("failed to read kafka version err=%v", err)
+	}
+
 	cmd.compression = kafkaCompression(args.compression)
 	cmd.bufferSize = args.bufferSize
 }
@@ -161,12 +168,10 @@ func (cmd *produceCmd) findLeaders() {
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
 	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-produce-" + sanitizeUsername(usr.Username)
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
-	}
+	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
@@ -176,16 +181,16 @@ loop:
 	for _, addr := range cmd.brokers {
 		broker := sarama.NewBroker(addr)
 		if err = broker.Open(cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", addr, err)
+			cmd.infof("Failed to open broker connection to %v. err=%s\n", addr, err)
 			continue loop
 		}
 		if connected, err := broker.Connected(); !connected || err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to open broker connection to %v. err=%s\n", addr, err)
+			cmd.infof("Failed to open broker connection to %v. err=%s\n", addr, err)
 			continue loop
 		}
 
 		if res, err = broker.GetMetadata(&req); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get metadata from %#v. err=%v\n", addr, err)
+			cmd.infof("Failed to get metadata from %#v. err=%v\n", addr, err)
 			continue loop
 		}
 
@@ -197,7 +202,7 @@ loop:
 		for _, tm := range res.Topics {
 			if tm.Name == cmd.topic {
 				if tm.Err != sarama.ErrNoError {
-					fmt.Fprintf(os.Stderr, "Failed to get metadata from %#v. err=%v\n", addr, tm.Err)
+					cmd.infof("Failed to get metadata from %#v. err=%v\n", addr, tm.Err)
 					continue loop
 				}
 
@@ -226,12 +231,13 @@ loop:
 }
 
 type produceCmd struct {
+	baseCmd
+
 	topic       string
 	brokers     []string
 	auth        authConfig
 	batch       int
 	timeout     time.Duration
-	verbose     bool
 	pretty      bool
 	literal     bool
 	partition   int32
@@ -260,14 +266,36 @@ func (cmd *produceCmd) run(as []string) {
 	out := make(chan printContext)
 	q := make(chan struct{})
 
-	go readStdinLines(cmd.bufferSize, stdin)
+	go cmd.readStdinLines(cmd.bufferSize, stdin)
 	go print(out, cmd.pretty)
 
-	go listenForInterrupt(q)
+	go cmd.listenForInterrupt(q)
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
 	go cmd.batchRecords(messages, batchedMessages)
 	cmd.produce(batchedMessages, out)
+}
+
+func (cmd *produceCmd) readStdinLines(max int, out chan string) {
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, max), max)
+
+	for scanner.Scan() {
+		out <- scanner.Text()
+	}
+
+	if err := scanner.Err(); err != nil {
+		warnf("scanning input failed err=%v\n", err)
+	}
+	close(out)
+}
+
+func (cmd *produceCmd) listenForInterrupt(q chan struct{}) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Kill, os.Interrupt)
+	sig := <-signals
+	warnf("received signal %s - triggering shutdown\n", sig)
+	close(q)
 }
 
 func (cmd *produceCmd) close() {
@@ -278,7 +306,7 @@ func (cmd *produceCmd) close() {
 		)
 
 		if connected, err = b.Connected(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to check if broker is connected. err=%s\n", err)
+			cmd.infof("Failed to check if broker is connected. err=%s\n", err)
 			continue
 		}
 
@@ -287,7 +315,7 @@ func (cmd *produceCmd) close() {
 		}
 
 		if err = b.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to close broker %v connection. err=%s\n", b, err)
+			cmd.infof("Failed to close broker %v connection. err=%s\n", b, err)
 		}
 	}
 }
@@ -308,9 +336,7 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 				msg.Partition = &cmd.partition
 			default:
 				if err := json.Unmarshal([]byte(l), &msg); err != nil {
-					if cmd.verbose {
-						fmt.Fprintf(os.Stderr, "Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
-					}
+					cmd.infof("Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
 					var v *string = &l
 					if len(l) == 0 {
 						v = nil
@@ -436,7 +462,7 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 			return fmt.Errorf("failed to send request to broker %#v. err=%s", broker, err)
 		}
 
-		offsets, err := readPartitionOffsetResults(resp)
+		offsets, err := cmd.readPartitionOffsetResults(resp)
 		if err != nil {
 
 			return fmt.Errorf("failed to read producer response err=%s", err)
@@ -453,12 +479,12 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 	return nil
 }
 
-func readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partitionProduceResult, error) {
+func (cmd *produceCmd) readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partitionProduceResult, error) {
 	offsets := map[int32]partitionProduceResult{}
 	for _, blocks := range resp.Blocks {
 		for partition, block := range blocks {
 			if block.Err != sarama.ErrNoError {
-				fmt.Fprintf(os.Stderr, "Failed to send message. err=%s\n", block.Err.Error())
+				warnf("Failed to send message. err=%s\n", block.Err.Error())
 				return offsets, block.Err
 			}
 
@@ -480,7 +506,7 @@ func (cmd *produceCmd) produce(in chan []message, out chan printContext) {
 				return
 			}
 			if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
-				fmt.Fprintln(os.Stderr, err.Error()) // TODO: failf
+				warnf(err.Error()) // TODO: failf
 				return
 			}
 		}
