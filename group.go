@@ -16,6 +16,8 @@ import (
 )
 
 type groupCmd struct {
+	baseCmd
+
 	brokers      []string
 	auth         authConfig
 	group        string
@@ -24,7 +26,6 @@ type groupCmd struct {
 	topic        string
 	partitions   []int32
 	reset        int64
-	verbose      bool
 	pretty       bool
 	version      sarama.KafkaVersion
 	offsets      bool
@@ -63,7 +64,7 @@ func (cmd *groupCmd) run(args []string) {
 	}
 
 	brokers := cmd.client.Brokers()
-	fmt.Fprintf(os.Stderr, "found %v brokers\n", len(brokers))
+	cmd.infof("found %v brokers\n", len(brokers))
 
 	groups := []string{cmd.group}
 	if cmd.group == "" {
@@ -74,7 +75,7 @@ func (cmd *groupCmd) run(args []string) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "found %v groups\n", len(groups))
+	cmd.infof("found %v groups\n", len(groups))
 
 	topics := []string{cmd.topic}
 	if cmd.topic == "" {
@@ -85,7 +86,7 @@ func (cmd *groupCmd) run(args []string) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
+	cmd.infof("found %v topics\n", len(topics))
 
 	out := make(chan printContext)
 	go print(out, cmd.pretty)
@@ -96,9 +97,7 @@ func (cmd *groupCmd) run(args []string) {
 			out <- ctx
 			<-ctx.done
 
-			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "%v/%v\n", i+1, len(groups))
-			}
+			cmd.infof("%v/%v\n", i+1, len(groups))
 		}
 		return
 	}
@@ -108,7 +107,7 @@ func (cmd *groupCmd) run(args []string) {
 		parts := cmd.partitions
 		if len(parts) == 0 {
 			parts = cmd.fetchPartitions(topic)
-			fmt.Fprintf(os.Stderr, "found partitions=%v for topic=%v\n", parts, topic)
+			cmd.infof("found partitions=%v for topic=%v\n", parts, topic)
 		}
 		topicPartitions[topic] = parts
 	}
@@ -164,9 +163,7 @@ func (cmd *groupCmd) resolveOffset(top string, part int32, off int64) int64 {
 		failf("failed to get offset to reset to for partition=%d err=%v", part, err)
 	}
 
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "resolved offset %v for topic=%s partition=%d to %v\n", off, top, part, resolvedOff)
-	}
+	cmd.infof("resolved offset %v for topic=%s partition=%d to %v\n", off, top, part, resolvedOff)
 
 	return resolvedOff
 }
@@ -174,9 +171,7 @@ func (cmd *groupCmd) resolveOffset(top string, part int32, off int64) int64 {
 func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part int32, results chan<- groupOffset) {
 	defer wg.Done()
 
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "fetching offset information for group=%v topic=%v partition=%v\n", grp, top, part)
-	}
+	cmd.infof("fetching offset information for group=%v topic=%v partition=%v\n", grp, top, part)
 
 	offsetManager, err := sarama.NewOffsetManagerFromClient(grp, cmd.client)
 	if err != nil {
@@ -323,9 +318,10 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 
 	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
+	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	setupAuth(cmd.auth, cfg)
 
@@ -333,7 +329,7 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 }
 
 func (cmd *groupCmd) failStartup(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
+	warnf(msg)
 	failf("use \"kt group -help\" for more information")
 }
 
@@ -353,7 +349,10 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
-	cmd.version = kafkaVersion(args.version)
+	cmd.version, err = kafkaVersion(args.version)
+	if err != nil {
+		failf("failed to read kafka version err=%v", err)
+	}
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
@@ -398,9 +397,7 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
-			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "failed to parse set %#v err=%v", args.reset, err)
-			}
+			warnf("failed to parse set %#v err=%v", args.reset, err)
 			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either newest, oldest or specific offset expected.`, args.reset))
 		}
 	}

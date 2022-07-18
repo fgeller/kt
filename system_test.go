@@ -152,9 +152,10 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
+			"-verbose",
 			"-topic", topicName)
-	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt group -verbose -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -verbose -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
 	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, topicName))
@@ -220,12 +221,13 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
+			"-verbose",
 			"-topic", topicName,
 			"-partitions", "0",
 			"-group", "hans",
 			"-reset", "0")
-	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt group -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt group -verbose -topic %v -partitions 0 -group hans -reset 0 stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -verbose -topic %v -partitions 0 -group hans -reset 0  stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines = strings.Split(stdOut, "\n")
@@ -249,9 +251,10 @@ func TestSystem(t *testing.T) {
 
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "group",
+			"-verbose",
 			"-topic", topicName)
-	fmt.Printf(">> system test kt group -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt group -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt group -verbose -topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group -verbose -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
 	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"hans","topic":"%v","offsets":[{"partition":0,"offset":0,"lag":2}]}`, topicName))
