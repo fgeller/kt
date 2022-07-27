@@ -583,6 +583,10 @@ func (pc tPartitionConsumer) Errors() <-chan *sarama.ConsumerError {
 	return pc.errors
 }
 
+func (pc tPartitionConsumer) IsPaused() bool { return false }
+func (pc tPartitionConsumer) Pause()         {}
+func (pc tPartitionConsumer) Resume()        {}
+
 type tConsumer struct {
 	topics              []string
 	topicsErr           error
@@ -615,6 +619,12 @@ func (c tConsumer) Close() error {
 func (c tConsumer) HighWaterMarks() map[string]map[int32]int64 {
 	return nil
 }
+
+func (c tConsumer) Pause(topicPartitions map[string][]int32) {}
+func (c tConsumer) PauseAll()                                {}
+
+func (c tConsumer) Resume(topicPartitions map[string][]int32) {}
+func (c tConsumer) ResumeAll()                                {}
 
 func TestConsumeParseArgs(t *testing.T) {
 	topic := "test-topic"
