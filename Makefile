@@ -19,11 +19,10 @@ release-darwin:
 release: testing clean release-linux release-darwin
 
 dep-up:
-	docker-compose -f ./test-dependencies.yml up -d
-	sleep 4
+	docker compose -f ./test-dependencies.yml up -d
 
 dep-down:
-	docker-compose -f ./test-dependencies.yml down
+	docker compose -f ./test-dependencies.yml down
 
 testing: dep-up test dep-down
 
