@@ -58,22 +58,23 @@ You can find more details at https://github.com/fgeller/kt
 
 %s`, ENV_AUTH, versionMessage)
 
-func parseArgs() command {
+func main() {
 	if len(os.Args) < 2 {
 		failf(usageMessage)
 	}
 
+	var cmd command
 	switch os.Args[1] {
 	case "consume":
-		return &consumeCmd{}
+		cmd = &consumeCmd{}
 	case "produce":
-		return &produceCmd{}
+		cmd = &produceCmd{}
 	case "topic":
-		return &topicCmd{}
+		cmd = &topicCmd{}
 	case "group":
-		return &groupCmd{}
+		cmd = &groupCmd{}
 	case "admin":
-		return &adminCmd{}
+		cmd = &adminCmd{}
 	case "-h", "-help", "--help":
 		quitf(usageMessage)
 	case "-version", "--version":
@@ -81,10 +82,6 @@ func parseArgs() command {
 	default:
 		failf(usageMessage)
 	}
-	return nil
-}
 
-func main() {
-	cmd := parseArgs()
 	cmd.run(os.Args[2:])
 }
