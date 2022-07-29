@@ -50,7 +50,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	)
 
 	cmd.verbose = args.verbose
-	cmd.version, err = kafkaVersion(args.version)
+	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
 		failf("failed to read kafka version err=%v", err)
 	}

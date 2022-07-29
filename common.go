@@ -59,17 +59,15 @@ func logClose(name string, c io.Closer) {
 	}
 }
 
-func kafkaVersion(s string) (sarama.KafkaVersion, error) {
-	ev := os.Getenv(ENV_KAFKA_VERSION)
-	if s == "" && ev != "" {
-		s = ev
-	}
-
-	if s == "" {
+func chooseKafkaVersion(arg, env string) (sarama.KafkaVersion, error) {
+	switch {
+	case arg != "":
+		return sarama.ParseKafkaVersion(strings.TrimPrefix(arg, "v"))
+	case env != "":
+		return sarama.ParseKafkaVersion(strings.TrimPrefix(env, "v"))
+	default:
 		return sarama.V3_0_0_0, nil
 	}
-
-	return sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
 }
 
 type printContext struct {
