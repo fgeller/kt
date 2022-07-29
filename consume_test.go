@@ -21,7 +21,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "empty",
 			input:    "",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{start: 1<<63 - 1},
 				},
@@ -31,7 +31,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "single-comma",
 			input:    ",",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{start: 1<<63 - 1},
 				},
@@ -41,7 +41,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "all",
 			input:    "all",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -51,7 +51,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "oldest",
 			input:    "oldest",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -61,7 +61,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "resume",
 			input:    "resume",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: offsetResume},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -71,7 +71,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "all-with-space",
 			input: "	all ",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -81,7 +81,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "all-with-zero-initial-offset",
 			input:    "all=+0:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -91,15 +91,15 @@ func TestParseOffsets(t *testing.T) {
 			testName: "several-partitions",
 			input:    "1,2,4",
 			expected: map[int32]interval{
-				1: interval{
+				1: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
-				2: interval{
+				2: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
-				4: interval{
+				4: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -109,7 +109,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "one-partition,empty-offsets",
 			input:    "0=",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -119,7 +119,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "one-partition,one-offset",
 			input:    "0=1",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: false, start: 1},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -129,7 +129,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "one-partition,empty-after-colon",
 			input:    "0=1:",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: false, start: 1},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -139,15 +139,15 @@ func TestParseOffsets(t *testing.T) {
 			testName: "multiple-partitions",
 			input:    "0=4:,2=1:10,6",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: false, start: 4},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
-				2: interval{
+				2: {
 					start: offset{relative: false, start: 1},
 					end:   offset{relative: false, start: 10},
 				},
-				6: interval{
+				6: {
 					start: offset{relative: true, start: sarama.OffsetOldest},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -157,7 +157,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "newest-relative",
 			input:    "0=-1",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetNewest, diff: -1},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -167,7 +167,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "newest-relative,empty-after-colon",
 			input:    "0=-1:",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetNewest, diff: -1},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -177,7 +177,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "resume-relative",
 			input:    "0=resume-10",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: offsetResume, diff: -10},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -187,7 +187,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "oldest-relative",
 			input:    "0=+1",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -197,7 +197,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "oldest-relative,empty-after-colon",
 			input:    "0=+1:",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
 					end:   offset{relative: false, start: 1<<63 - 1},
 				},
@@ -207,7 +207,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "oldest-relative-to-newest-relative",
 			input:    "0=+1:-1",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
 					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -1},
 				},
@@ -217,11 +217,11 @@ func TestParseOffsets(t *testing.T) {
 			testName: "specific-partition-with-all-partitions",
 			input:    "0=+1:-1,all=1:10",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 1},
 					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -1},
 				},
-				-1: interval{
+				-1: {
 					start: offset{relative: false, start: 1, diff: 0},
 					end:   offset{relative: false, start: 10, diff: 0},
 				},
@@ -231,7 +231,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "oldest-to-newest",
 			input:    "0=oldest:newest",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
 					end:   offset{relative: true, start: sarama.OffsetNewest, diff: 0},
 				},
@@ -241,7 +241,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "oldest-to-newest-with-offsets",
 			input:    "0=oldest+10:newest-10",
 			expected: map[int32]interval{
-				0: interval{
+				0: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
 					end:   offset{relative: true, start: sarama.OffsetNewest, diff: -10},
 				},
@@ -251,7 +251,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "newest",
 			input:    "newest",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -261,7 +261,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "single-partition",
 			input:    "10",
 			expected: map[int32]interval{
-				10: interval{
+				10: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 0},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -271,7 +271,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "single-range,all-partitions",
 			input:    "10:20",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{start: 10},
 					end:   offset{start: 20},
 				},
@@ -281,7 +281,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "single-range,all-partitions,open-end",
 			input:    "10:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{start: 10},
 					end:   offset{start: 1<<63 - 1},
 				},
@@ -291,7 +291,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "all-newest",
 			input:    "all=newest:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetNewest, diff: 0},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -301,7 +301,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "implicit-all-newest-with-offset",
 			input:    "newest-10:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetNewest, diff: -10},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -311,7 +311,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "implicit-all-oldest-with-offset",
 			input:    "oldest+10:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -321,7 +321,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "implicit-all-neg-offset-empty-colon",
 			input:    "-10:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetNewest, diff: -10},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -331,7 +331,7 @@ func TestParseOffsets(t *testing.T) {
 			testName: "implicit-all-pos-offset-empty-colon",
 			input:    "+10:",
 			expected: map[int32]interval{
-				-1: interval{
+				-1: {
 					start: offset{relative: true, start: sarama.OffsetOldest, diff: 10},
 					end:   offset{relative: false, start: 1<<63 - 1, diff: 0},
 				},
@@ -429,7 +429,7 @@ func TestFindPartitionsToConsume(t *testing.T) {
 			consumer: tConsumer{
 				topics:              []string{"a"},
 				topicsErr:           nil,
-				partitions:          map[string][]int32{"a": []int32{0, 10}},
+				partitions:          map[string][]int32{"a": {0, 10}},
 				partitionsErr:       map[string]error{"a": nil},
 				consumePartition:    map[tConsumePartition]tPartitionConsumer{},
 				consumePartitionErr: map[tConsumePartition]error{},
@@ -445,7 +445,7 @@ func TestFindPartitionsToConsume(t *testing.T) {
 			consumer: tConsumer{
 				topics:              []string{"a"},
 				topicsErr:           nil,
-				partitions:          map[string][]int32{"a": []int32{0, 10}},
+				partitions:          map[string][]int32{"a": {0, 10}},
 				partitionsErr:       map[string]error{"a": nil},
 				consumePartition:    map[tConsumePartition]tPartitionConsumer{},
 				consumePartitionErr: map[tConsumePartition]error{},
@@ -486,8 +486,8 @@ func TestConsume(t *testing.T) {
 	calls := make(chan tConsumePartition)
 	consumer := tConsumer{
 		consumePartition: map[tConsumePartition]tPartitionConsumer{
-			tConsumePartition{"hans", 1, 1}: tPartitionConsumer{messages: messageChan},
-			tConsumePartition{"hans", 2, 1}: tPartitionConsumer{messages: messageChan},
+			{"hans", 1, 1}: {messages: messageChan},
+			{"hans", 2, 1}: {messages: messageChan},
 		},
 		calls: calls,
 	}
@@ -496,7 +496,7 @@ func TestConsume(t *testing.T) {
 	target.topic = "hans"
 	target.brokers = []string{"localhost:9092"}
 	target.offsets = map[int32]interval{
-		-1: interval{start: offset{false, 1, 0}, end: offset{false, 5, 0}},
+		-1: {start: offset{false, 1, 0}, end: offset{false, 5, 0}},
 	}
 
 	go target.consume(partitions)
@@ -506,8 +506,8 @@ func TestConsume(t *testing.T) {
 	go func(c chan tConsumePartition, e chan struct{}) {
 		actual := []tConsumePartition{}
 		expected := []tConsumePartition{
-			tConsumePartition{"hans", 1, 1},
-			tConsumePartition{"hans", 2, 1},
+			{"hans", 1, 1},
+			{"hans", 2, 1},
 		}
 		for {
 			select {
