@@ -1,4 +1,4 @@
-module github.com/fgeller/kt
+module github.com/fgeller/kt/v13
 
 require (
 	github.com/Shopify/sarama v1.35.0
@@ -30,4 +30,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-go 1.18
+go 1.19
