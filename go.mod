@@ -1,4 +1,4 @@
-module github.com/fgeller/kt/v13
+module github.com/fgeller/kt/v14
 
 go 1.19
 
