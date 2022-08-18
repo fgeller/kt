@@ -1,5 +1,7 @@
 module github.com/fgeller/kt/v13
 
+go 1.19
+
 require (
 	github.com/Shopify/sarama v1.35.0
 	github.com/davecgh/go-spew v1.1.1
@@ -29,5 +31,3 @@ require (
 	golang.org/x/term v0.0.0-20220722155259-a9ba230a4035 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-go 1.19
