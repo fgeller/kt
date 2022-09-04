@@ -213,7 +213,7 @@ You can download kt via the [Releases](https://github.com/fgeller/kt/releases) s
 
 Alternatively, the usual way via the go tool, for example:
 
-    $ go get -u github.com/fgeller/kt
+    $ go install github.com/fgeller/kt/v14@latest
 
 Or via Homebrew on OSX:
 
