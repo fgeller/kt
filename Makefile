@@ -27,7 +27,7 @@ dep-down:
 testing: dep-up test dep-down
 
 test: clean
-	go test -v -vet=all -failfast
+	go test -v -vet=all -failfast -race
 
 clean:
 	rm -f kt
