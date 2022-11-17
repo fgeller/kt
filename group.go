@@ -447,7 +447,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partitions, "partitions", allPartitionsHuman, "comma separated list of partitions to limit offsets to, or all")
-	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
+	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defaults to true)")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of group:")
