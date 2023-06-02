@@ -238,6 +238,26 @@ func setupSASL(auth authConfig, saramaCfg *sarama.Config) error {
 func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 	saramaCfg.Net.TLS.Enable = true
 	saramaCfg.Net.TLS.Config = &tls.Config{}
+
+	if auth.CACert == "" {
+		return nil
+	}
+
+	caString, err := ioutil.ReadFile(auth.CACert)
+	if err != nil {
+		return fmt.Errorf("failed to read ca-certificate err=%v", err)
+	}
+
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caString)
+	if !ok {
+		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+	}
+
+	tlsCfg := &tls.Config{RootCAs: caPool}
+	tlsCfg.BuildNameToCertificate()
+
+	saramaCfg.Net.TLS.Config = tlsCfg
 	return nil
 }
 
