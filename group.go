@@ -323,7 +323,9 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	setupAuth(cmd.auth, cfg)
+	if err = setupAuth(cmd.auth, cfg); err != nil {
+		failf("failed to setup auth err=%v", err)
+	}
 
 	return cfg
 }
