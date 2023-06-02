@@ -283,11 +283,16 @@ Required fields:
 
  - `mode`: This needs to be set to `TLS-1way`
 
+Optional fields:
+
+ - `ca-certificate`: Path to your CA certificate
+
+
 Example:
 
 
     {
-        "mode": "TLS-1way",
+        "mode": "TLS-1way"
     }
 
 ### Other modes
