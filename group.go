@@ -204,12 +204,6 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		groupOff = resolvedOff
 	}
 
-	// we haven't reset it, and it wasn't set before - lag depends on client's config
-	if specialOffset {
-		results <- groupOffset{Partition: part}
-		return
-	}
-
 	partOff := cmd.resolveOffset(top, part, sarama.OffsetNewest)
 	lag := partOff - groupOff
 	results <- groupOffset{Partition: part, Offset: &groupOff, Lag: &lag}
