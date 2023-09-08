@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -291,6 +292,12 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	return nil
 }
 
+func qualifyPath(argFN string, target *string) {
+	if *target != "" && !filepath.IsAbs(*target) {
+		*target = filepath.Join(filepath.Dir(argFN), *target)
+	}
+}
+
 func readAuthFile(argFN string, envFN string, target *authConfig) {
 	if argFN == "" && envFN == "" {
 		return
@@ -309,4 +316,8 @@ func readAuthFile(argFN string, envFN string, target *authConfig) {
 	if err := json.Unmarshal(byts, target); err != nil {
 		failf("failed to unmarshal auth file err=%v", err)
 	}
+
+	qualifyPath(fn, &target.CACert)
+	qualifyPath(fn, &target.ClientCert)
+	qualifyPath(fn, &target.ClientCertKey)
 }
