@@ -14,7 +14,8 @@ Some reasons why you might be interested:
 * Support for TLS authentication.
 * Basic cluster admin functions: Create & delete topics.
 
-I'm not using kt actively myself anymore, so if you think it's lacking some feature - please let me know by creating an issue!
+> [!NOTE]
+> I'm not using kt actively myself anymore, so if you think it's lacking some feature - please let me know by creating an issue.
 
 ## Examples
 
