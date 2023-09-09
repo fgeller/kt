@@ -349,7 +349,7 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 			if msg.Value != nil && cmd.partitioner == "hashCodeByValue" {
 				part = hashCodePartition(*msg.Value, partitionCount)
 				msg.Partition = &part
-			}else {
+			} else {
 				if msg.Key != nil && cmd.partitioner == "hashCode" {
 					part = hashCodePartition(*msg.Key, partitionCount)
 				}
@@ -469,7 +469,6 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 
 		offsets, err := cmd.readPartitionOffsetResults(resp)
 		if err != nil {
-
 			return fmt.Errorf("failed to read producer response err=%s", err)
 		}
 
