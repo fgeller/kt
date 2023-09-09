@@ -5,8 +5,6 @@ go 1.21
 require (
 	github.com/IBM/sarama v1.41.1
 	github.com/davecgh/go-spew v1.1.1
-	github.com/stretchr/testify v1.5.1
-	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72
 	github.com/markusmobius/go-dateparser v1.2.1
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/crypto v0.13.0
