@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 )
 
 type adminCmd struct {
@@ -129,7 +129,6 @@ func (cmd *adminCmd) run(args []string) {
 
 	if cmd.createTopic != "" {
 		cmd.runCreateTopic()
-
 	} else if cmd.deleteTopic != "" {
 		cmd.runDeleteTopic()
 	} else {
@@ -214,7 +213,7 @@ The value supplied on the command line wins over the environment variable value.
 If both -createtopic and deletetopic are supplied, -createtopic wins.
 
 The topic details should be passed via a JSON file that represents a sarama.TopicDetail struct.
-cf https://godoc.org/github.com/Shopify/sarama#TopicDetail
+cf https://godoc.org/github.com/IBM/sarama#TopicDetail
 
 A simple way to pass a JSON file is to use a tool like https://github.com/fgeller/jsonify and shell's process substition:
 

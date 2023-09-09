@@ -3,9 +3,9 @@ module github.com/fgeller/kt/v14
 go 1.21
 
 require (
-	github.com/Shopify/sarama v1.38.1
+	github.com/IBM/sarama v1.41.1
 	github.com/davecgh/go-spew v1.1.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.4
 	golang.org/x/crypto v0.13.0
 )
 

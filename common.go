@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
