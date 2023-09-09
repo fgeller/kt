@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 )
 
 type topicArgs struct {
@@ -147,7 +147,9 @@ func (cmd *topicCmd) connect() {
 	cfg.ClientID = "kt-topic-" + sanitizeUsername(usr.Username)
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	setupAuth(cmd.auth, cfg)
+	if err = setupAuth(cmd.auth, cfg); err != nil {
+		failf("failed to setup auth err=%v", err)
+	}
 
 	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)

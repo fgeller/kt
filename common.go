@@ -9,13 +9,14 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf16"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -27,9 +28,7 @@ const (
 	ENV_KAFKA_VERSION = "KT_KAFKA_VERSION"
 )
 
-var (
-	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-)
+var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 type command interface {
 	run(args []string)
@@ -238,6 +237,26 @@ func setupSASL(auth authConfig, saramaCfg *sarama.Config) error {
 func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 	saramaCfg.Net.TLS.Enable = true
 	saramaCfg.Net.TLS.Config = &tls.Config{}
+
+	if auth.CACert == "" {
+		return nil
+	}
+
+	caString, err := ioutil.ReadFile(auth.CACert)
+	if err != nil {
+		return fmt.Errorf("failed to read ca-certificate err=%v", err)
+	}
+
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caString)
+	if !ok {
+		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+	}
+
+	tlsCfg := &tls.Config{RootCAs: caPool}
+	tlsCfg.BuildNameToCertificate()
+
+	saramaCfg.Net.TLS.Config = tlsCfg
 	return nil
 }
 
@@ -271,6 +290,12 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	return nil
 }
 
+func qualifyPath(argFN string, target *string) {
+	if *target != "" && !filepath.IsAbs(*target) && filepath.Dir(*target) == "." {
+		*target = filepath.Join(filepath.Dir(argFN), *target)
+	}
+}
+
 func readAuthFile(argFN string, envFN string, target *authConfig) {
 	if argFN == "" && envFN == "" {
 		return
@@ -289,4 +314,8 @@ func readAuthFile(argFN string, envFN string, target *authConfig) {
 	if err := json.Unmarshal(byts, target); err != nil {
 		failf("failed to unmarshal auth file err=%v", err)
 	}
+
+	qualifyPath(fn, &target.CACert)
+	qualifyPath(fn, &target.ClientCert)
+	qualifyPath(fn, &target.ClientCertKey)
 }

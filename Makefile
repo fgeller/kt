@@ -29,6 +29,10 @@ testing: dep-up test dep-down
 test: clean
 	go test -v -vet=all -failfast -race
 
+.PHONY: test-secrets
+test-secrets:
+	cd test-secrets ; /usr/bin/env bash create-certs.sh
+
 clean:
 	rm -f kt
 	rm -f kt-*.txz

@@ -5,6 +5,10 @@ set -o nounset \
     -o verbose \
     -o xtrace
 
+rm -f kt-test.*
+rm -f kafka.*.jks
+rm -f snakeoil-ca-*
+
 # Generate CA key
 openssl req -new -x509 -keyout snakeoil-ca-1.key -out snakeoil-ca-1.crt -days 365 -subj '/CN=localhost/OU=TEST/O=KT' -addext 'subjectAltName = DNS:localhost' -passin pass:ktktkt -passout pass:ktktkt
 
