@@ -1,4 +1,4 @@
-# kt - a Kafka tool that likes JSON [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
+# kt - a Kafka tool that likes JSON [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=main)](https://travis-ci.org/fgeller/kt)
 
 Some reasons why you might be interested:
 
