@@ -5,28 +5,30 @@ set -o nounset \
     -o verbose \
     -o xtrace
 
+rm -f kt-test.*
+rm -f kafka.*.jks
+rm -f snakeoil-ca-*
+
 # Generate CA key
-openssl req -new -x509 -keyout snakeoil-ca-1.key -out snakeoil-ca-1.crt -days 365 -subj '/CN=localhost/OU=TEST/O=KT' -passin pass:ktktkt -passout pass:ktktkt
+openssl req -new -x509 -keyout snakeoil-ca-1.key -out snakeoil-ca-1.crt -days 365 -subj '/CN=localhost/OU=TEST/O=KT' -addext 'subjectAltName = DNS:localhost' -passin pass:ktktkt -passout pass:ktktkt
 
 for i in broker1
 do
 	echo $i
+	echo ">> 0 <<"
 	keytool -genkey -noprompt \
 				 -alias $i \
 				 -dname "CN=localhost, OU=TEST, O=KT" \
+				 -ext "SAN=DNS:localhost" \
 				 -keystore kafka.$i.keystore.jks \
 				 -keyalg RSA \
 				 -storepass ktktkt \
 				 -keypass ktktkt
-
 	# Create CSR, sign the key and import back into keystore
 	keytool -keystore kafka.$i.keystore.jks -alias $i -certreq -file $i.csr -storepass ktktkt -keypass ktktkt
-
-	openssl x509 -req -CA snakeoil-ca-1.crt -CAkey snakeoil-ca-1.key -in $i.csr -out $i-ca1-signed.crt -days 9999 -CAcreateserial -passin pass:ktktkt
-
+	openssl x509 -req -extfile <(printf "subjectAltName=DNS:localhost") -CA snakeoil-ca-1.crt -CAkey snakeoil-ca-1.key -in $i.csr -out $i-ca1-signed.crt -days 9999 -CAcreateserial -passin pass:ktktkt
 	keytool -keystore kafka.$i.keystore.jks -alias CARoot -import -file snakeoil-ca-1.crt -storepass ktktkt -keypass ktktkt
 	keytool -keystore kafka.$i.keystore.jks -alias $i -import -file $i-ca1-signed.crt -storepass ktktkt -keypass ktktkt
-
 	# Create truststore and import the CA cert.
 	keytool -keystore kafka.$i.truststore.jks -alias CARoot -import -file snakeoil-ca-1.crt -storepass ktktkt -keypass ktktkt
 
@@ -37,5 +39,5 @@ done
 
 # generate public/private key pair for kt
 openssl genrsa -out kt-test.key 2048
-openssl req -new -key kt-test.key -out kt-test.csr -subj '/CN=localhost/OU=TEST/O=KT'
-openssl x509 -req -days 9999 -in kt-test.csr -CA snakeoil-ca-1.crt -CAkey snakeoil-ca-1.key -CAcreateserial -out kt-test.crt
+openssl req -new -key kt-test.key -out kt-test.csr -subj '/CN=localhost/OU=TEST/O=KT' -addext 'subjectAltName = DNS:localhost'
+openssl x509 -req -extfile <(printf "subjectAltName=DNS:localhost") -days 9999 -in kt-test.csr -CA snakeoil-ca-1.crt -CAkey snakeoil-ca-1.key -CAcreateserial -out kt-test.crt

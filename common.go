@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,14 +9,14 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf16"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -26,49 +25,47 @@ const (
 	ENV_ADMIN_TIMEOUT = "KT_ADMIN_TIMEOUT"
 	ENV_BROKERS       = "KT_BROKERS"
 	ENV_TOPIC         = "KT_TOPIC"
+	ENV_KAFKA_VERSION = "KT_KAFKA_VERSION"
 )
 
-var (
-	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-)
+var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
-func listenForInterrupt(q chan struct{}) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Kill, os.Interrupt)
-	sig := <-signals
-	fmt.Fprintf(os.Stderr, "received signal %s\n", sig)
-	close(q)
+type command interface {
+	run(args []string)
 }
 
-func kafkaVersion(s string) sarama.KafkaVersion {
-	if s == "" {
-		return sarama.V2_0_0_0
-	}
-
-	v, err := sarama.ParseKafkaVersion(strings.TrimPrefix(s, "v"))
-	if err != nil {
-		failf(err.Error())
-	}
-
-	return v
+type baseCmd struct {
+	verbose bool
 }
 
-func parseTimeout(s string) *time.Duration {
-	if s == "" {
-		return nil
+func (b *baseCmd) infof(msg string, args ...interface{}) {
+	if b.verbose {
+		warnf(msg, args...)
 	}
+}
 
-	v, err := time.ParseDuration(s)
-	if err != nil {
-		failf(err.Error())
-	}
+func warnf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, msg, args...)
+}
 
-	return &v
+func outf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stdout, msg, args...)
 }
 
 func logClose(name string, c io.Closer) {
 	if err := c.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to close %#v err=%v", name, err)
+		warnf("failed to close %#v err=%v", name, err)
+	}
+}
+
+func chooseKafkaVersion(arg, env string) (sarama.KafkaVersion, error) {
+	switch {
+	case arg != "":
+		return sarama.ParseKafkaVersion(strings.TrimPrefix(arg, "v"))
+	case env != "":
+		return sarama.ParseKafkaVersion(strings.TrimPrefix(env, "v"))
+	default:
+		return sarama.V3_0_0_0, nil
 	}
 }
 
@@ -109,25 +106,11 @@ func failf(msg string, args ...interface{}) {
 
 func exitf(code int, msg string, args ...interface{}) {
 	if code == 0 {
-		fmt.Fprintf(os.Stdout, msg+"\n", args...)
+		outf(msg+"\n", args...)
 	} else {
-		fmt.Fprintf(os.Stderr, msg+"\n", args...)
+		warnf(msg+"\n", args...)
 	}
 	os.Exit(code)
-}
-
-func readStdinLines(max int, out chan string) {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, max), max)
-
-	for scanner.Scan() {
-		out <- scanner.Text()
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "scanning input failed err=%v\n", err)
-	}
-	close(out)
 }
 
 // hashCode imitates the behavior of the JDK's String#hashCode method.
@@ -219,10 +202,12 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 }
 
 type authConfig struct {
-	Mode          string `json:"mode"`
-	CACert        string `json:"ca-certificate"`
-	ClientCert    string `json:"client-certificate"`
-	ClientCertKey string `json:"client-certificate-key"`
+	Mode              string `json:"mode"`
+	CACert            string `json:"ca-certificate"`
+	ClientCert        string `json:"client-certificate"`
+	ClientCertKey     string `json:"client-certificate-key"`
+	SASLPlainUser     string `json:"sasl_plain_user"`
+	SASLPlainPassword string `json:"sasl_plain_password"`
 }
 
 func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
@@ -235,14 +220,43 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 		return setupAuthTLS(auth, saramaCfg)
 	case "TLS-1way":
 		return setupAuthTLS1Way(auth, saramaCfg)
+	case "SASL":
+		return setupSASL(auth, saramaCfg)
 	default:
 		return fmt.Errorf("unsupport auth mode: %#v", auth.Mode)
 	}
 }
 
+func setupSASL(auth authConfig, saramaCfg *sarama.Config) error {
+	saramaCfg.Net.SASL.Enable = true
+	saramaCfg.Net.SASL.User = auth.SASLPlainUser
+	saramaCfg.Net.SASL.Password = auth.SASLPlainPassword
+	return nil
+}
+
 func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 	saramaCfg.Net.TLS.Enable = true
 	saramaCfg.Net.TLS.Config = &tls.Config{}
+
+	if auth.CACert == "" {
+		return nil
+	}
+
+	caString, err := ioutil.ReadFile(auth.CACert)
+	if err != nil {
+		return fmt.Errorf("failed to read ca-certificate err=%v", err)
+	}
+
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caString)
+	if !ok {
+		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+	}
+
+	tlsCfg := &tls.Config{RootCAs: caPool}
+	tlsCfg.BuildNameToCertificate()
+
+	saramaCfg.Net.TLS.Config = tlsCfg
 	return nil
 }
 
@@ -276,6 +290,12 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	return nil
 }
 
+func qualifyPath(argFN string, target *string) {
+	if *target != "" && !filepath.IsAbs(*target) && filepath.Dir(*target) == "." {
+		*target = filepath.Join(filepath.Dir(argFN), *target)
+	}
+}
+
 func readAuthFile(argFN string, envFN string, target *authConfig) {
 	if argFN == "" && envFN == "" {
 		return
@@ -294,4 +314,8 @@ func readAuthFile(argFN string, envFN string, target *authConfig) {
 	if err := json.Unmarshal(byts, target); err != nil {
 		failf("failed to unmarshal auth file err=%v", err)
 	}
+
+	qualifyPath(fn, &target.CACert)
+	qualifyPath(fn, &target.ClientCert)
+	qualifyPath(fn, &target.ClientCertKey)
 }

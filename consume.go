@@ -13,18 +13,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 )
 
 type consumeCmd struct {
 	sync.Mutex
+	baseCmd
 
 	topic       string
 	brokers     []string
 	auth        authConfig
 	offsets     map[int32]interval
 	timeout     time.Duration
-	verbose     bool
 	version     sarama.KafkaVersion
 	encodeValue string
 	encodeKey   string
@@ -97,7 +97,7 @@ type consumeArgs struct {
 }
 
 func (cmd *consumeCmd) failStartup(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
+	warnf(msg)
 	failf("use \"kt consume -help\" for more information")
 }
 
@@ -119,8 +119,12 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
-	cmd.version = kafkaVersion(args.version)
 	cmd.group = args.group
+
+	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
+	if err != nil {
+		failf("failed to read kafka version err=%v", err)
+	}
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
@@ -393,12 +397,10 @@ func (cmd *consumeCmd) setupClient() {
 	)
 	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-consume-" + sanitizeUsername(usr.Username)
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "sarama client configuration %#v\n", cfg)
-	}
+	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
@@ -476,17 +478,17 @@ func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) 
 	}
 
 	if start, err = cmd.resolveOffset(offsets.start, partition); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read start offset for partition %v err=%v\n", partition, err)
+		warnf("Failed to read start offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
 	if end, err = cmd.resolveOffset(offsets.end, partition); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read end offset for partition %v err=%v\n", partition, err)
+		warnf("Failed to read end offset for partition %v err=%v\n", partition, err)
 		return
 	}
 
 	if pcon, err = cmd.consumer.ConsumePartition(cmd.topic, partition, start); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to consume partition %v err=%v\n", partition, err)
+		warnf("Failed to consume partition %v err=%v\n", partition, err)
 		return
 	}
 
@@ -538,7 +540,7 @@ func (cmd *consumeCmd) closePOMs() {
 	cmd.Lock()
 	for p, pom := range cmd.poms {
 		if err := pom.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to close partition offset manager for partition %v err=%v", p, err)
+			warnf("failed to close partition offset manager for partition %v err=%v", p, err)
 		}
 	}
 	cmd.Unlock()
@@ -588,14 +590,14 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 
 		select {
 		case <-timeout:
-			fmt.Fprintf(os.Stderr, "consuming from partition %v timed out after %s\n", p, cmd.timeout)
+			warnf("consuming from partition %v timed out after %s\n", p, cmd.timeout)
 			return
 		case err := <-pc.Errors():
-			fmt.Fprintf(os.Stderr, "partition %v consumer encountered err %s", p, err)
+			warnf("partition %v consumer encountered err %s", p, err)
 			return
 		case msg, ok := <-pc.Messages():
 			if !ok {
-				fmt.Fprintf(os.Stderr, "unexpected closed messages chan")
+				warnf("unexpected closed messages chan")
 				return
 			}
 

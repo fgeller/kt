@@ -11,12 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 )
 
 type adminCmd struct {
+	baseCmd
+
 	brokers []string
-	verbose bool
 	version sarama.KafkaVersion
 	timeout *time.Duration
 	auth    authConfig
@@ -45,14 +46,25 @@ type adminArgs struct {
 func (cmd *adminCmd) parseArgs(as []string) {
 	var (
 		args = cmd.parseFlags(as)
+		err  error
 	)
 
 	cmd.verbose = args.verbose
-	cmd.version = kafkaVersion(args.version)
+	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
+	if err != nil {
+		failf("failed to read kafka version err=%v", err)
+	}
 
-	cmd.timeout = parseTimeout(os.Getenv(ENV_ADMIN_TIMEOUT))
+	cmd.timeout, err = parseTimeout(os.Getenv(ENV_ADMIN_TIMEOUT))
+	if err != nil {
+		failf("failed to read timeout from env var err=%v", err)
+	}
+
 	if args.timeout != "" {
-		cmd.timeout = parseTimeout(args.timeout)
+		cmd.timeout, err = parseTimeout(args.timeout)
+		if err != nil {
+			failf("failed to read timeout from args err=%v", err)
+		}
 	}
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
@@ -90,6 +102,18 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	}
 }
 
+func parseTimeout(s string) (*time.Duration, error) {
+	if s == "" {
+		return nil, nil
+	}
+
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
 func (cmd *adminCmd) run(args []string) {
 	var err error
 
@@ -105,7 +129,6 @@ func (cmd *adminCmd) run(args []string) {
 
 	if cmd.createTopic != "" {
 		cmd.runCreateTopic()
-
 	} else if cmd.deleteTopic != "" {
 		cmd.runDeleteTopic()
 	} else {
@@ -136,9 +159,10 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 
 	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-admin-" + sanitizeUsername(usr.Username)
+	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if cmd.timeout != nil {
 		cfg.Admin.Timeout = *cmd.timeout
@@ -167,9 +191,9 @@ func (cmd *adminCmd) parseFlags(as []string) adminArgs {
 	flags.StringVar(&args.deleteTopic, "deletetopic", "", "Name of the topic that should be deleted.")
 
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage of admin:")
+		warnf("Usage of admin:")
 		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, adminDocString)
+		warnf(adminDocString + "\n")
 	}
 
 	err := flags.Parse(as)
@@ -189,7 +213,7 @@ The value supplied on the command line wins over the environment variable value.
 If both -createtopic and deletetopic are supplied, -createtopic wins.
 
 The topic details should be passed via a JSON file that represents a sarama.TopicDetail struct.
-cf https://godoc.org/github.com/Shopify/sarama#TopicDetail
+cf https://godoc.org/github.com/IBM/sarama#TopicDetail
 
 A simple way to pass a JSON file is to use a tool like https://github.com/fgeller/jsonify and shell's process substition:
 

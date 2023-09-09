@@ -1,4 +1,4 @@
-# kt - a Kafka tool that likes JSON [![Build Status](https://travis-ci.org/fgeller/kt.svg?branch=master)](https://travis-ci.org/fgeller/kt)
+# kt - a Kafka tool that likes JSON [![Continuous Integration](https://github.com/fgeller/kt/actions/workflows/go.yml/badge.svg)](https://github.com/fgeller/kt/actions/workflows/go.yml)
 
 Some reasons why you might be interested:
 
@@ -7,14 +7,15 @@ Some reasons why you might be interested:
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers, topic and authentication via environment variables `KT_BROKERS`, `KT_TOPIC` and `KT_AUTH`.
+* Configure brokers, topic, Kafka version and authentication via environment variables `KT_BROKERS`, `KT_TOPIC`, `KT_KAFKA_VERSION` and `KT_AUTH`.
 * Fast start up time.
 * No buffering of output.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.
 * Support for TLS authentication.
 * Basic cluster admin functions: Create & delete topics.
 
-I'm not using kt actively myself anymore, so if you think it's lacking some feature - please let me know by creating an issue!
+> [!NOTE]
+> I'm not using kt actively myself anymore, so if you think it's lacking some feature - please let me know by creating an issue.
 
 ## Examples
 
@@ -213,7 +214,7 @@ You can download kt via the [Releases](https://github.com/fgeller/kt/releases) s
 
 Alternatively, the usual way via the go tool, for example:
 
-    $ go get -u github.com/fgeller/kt
+    $ go install github.com/fgeller/kt/v14@latest
 
 Or via Homebrew on OSX:
 
@@ -283,11 +284,16 @@ Required fields:
 
  - `mode`: This needs to be set to `TLS-1way`
 
+Optional fields:
+
+ - `ca-certificate`: Path to your CA certificate
+
+
 Example:
 
 
     {
-        "mode": "TLS-1way",
+        "mode": "TLS-1way"
     }
 
 ### Other modes

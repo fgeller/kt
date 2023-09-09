@@ -5,18 +5,29 @@ import (
 	"os"
 )
 
-// TODO have these all the time
+const AppVersion = "v14.0.0-pre"
+
 var buildVersion, buildTime string
 
-type command interface {
-	run(args []string)
-}
+var versionMessage = fmt.Sprintf(`kt version %s`, AppVersion)
 
 func init() {
-	if len(buildTime) > 0 && len(buildVersion) > 0 {
-		usageMessage = fmt.Sprintf(`%v
-Build %v from %v.`, usageMessage, buildVersion, buildTime)
+	if buildVersion == "" && buildTime == "" {
+		return
 	}
+
+	versionMessage += " ("
+	if buildVersion != "" {
+		versionMessage += buildVersion
+	}
+
+	if buildTime != "" {
+		if buildVersion != "" {
+			versionMessage += " @ "
+		}
+		versionMessage += buildTime
+	}
+	versionMessage += ")"
 }
 
 var usageMessage = fmt.Sprintf(`kt is a tool for Kafka.
@@ -33,7 +44,9 @@ The commands are:
 	group      consumer group information and modification.
 	admin      basic cluster administration.
 
-Use "kt [command] -help" for for information about the command.
+Use "kt [command] -help" for more information about the command.
+
+Use "kt -version" for details on what version you are running.
 
 Authentication:
 
@@ -41,33 +54,34 @@ Authentication with Kafka can be configured via a JSON file.
 You can set the file name via an "-auth" flag to each command or
 set it via the environment variable %s.
 
-More at https://github.com/fgeller/kt`, ENV_AUTH)
+You can find more details at https://github.com/fgeller/kt
 
-func parseArgs() command {
+%s`, ENV_AUTH, versionMessage)
+
+func main() {
 	if len(os.Args) < 2 {
 		failf(usageMessage)
 	}
 
+	var cmd command
 	switch os.Args[1] {
 	case "consume":
-		return &consumeCmd{}
+		cmd = &consumeCmd{}
 	case "produce":
-		return &produceCmd{}
+		cmd = &produceCmd{}
 	case "topic":
-		return &topicCmd{}
+		cmd = &topicCmd{}
 	case "group":
-		return &groupCmd{}
+		cmd = &groupCmd{}
 	case "admin":
-		return &adminCmd{}
+		cmd = &adminCmd{}
 	case "-h", "-help", "--help":
 		quitf(usageMessage)
+	case "-version", "--version":
+		quitf(versionMessage)
 	default:
 		failf(usageMessage)
 	}
-	return nil
-}
 
-func main() {
-	cmd := parseArgs()
 	cmd.run(os.Args[2:])
 }

@@ -12,10 +12,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
+	dps "github.com/markusmobius/go-dateparser"
 )
 
 type groupCmd struct {
+	baseCmd
+
 	brokers      []string
 	auth         authConfig
 	group        string
@@ -24,7 +27,7 @@ type groupCmd struct {
 	topic        string
 	partitions   []int32
 	reset        int64
-	verbose      bool
+	resetTime    bool
 	pretty       bool
 	version      sarama.KafkaVersion
 	offsets      bool
@@ -63,7 +66,7 @@ func (cmd *groupCmd) run(args []string) {
 	}
 
 	brokers := cmd.client.Brokers()
-	fmt.Fprintf(os.Stderr, "found %v brokers\n", len(brokers))
+	cmd.infof("found %v brokers\n", len(brokers))
 
 	groups := []string{cmd.group}
 	if cmd.group == "" {
@@ -74,7 +77,7 @@ func (cmd *groupCmd) run(args []string) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "found %v groups\n", len(groups))
+	cmd.infof("found %v groups\n", len(groups))
 
 	topics := []string{cmd.topic}
 	if cmd.topic == "" {
@@ -85,7 +88,7 @@ func (cmd *groupCmd) run(args []string) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "found %v topics\n", len(topics))
+	cmd.infof("found %v topics\n", len(topics))
 
 	out := make(chan printContext)
 	go print(out, cmd.pretty)
@@ -96,9 +99,7 @@ func (cmd *groupCmd) run(args []string) {
 			out <- ctx
 			<-ctx.done
 
-			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "%v/%v\n", i+1, len(groups))
-			}
+			cmd.infof("%v/%v\n", i+1, len(groups))
 		}
 		return
 	}
@@ -108,7 +109,7 @@ func (cmd *groupCmd) run(args []string) {
 		parts := cmd.partitions
 		if len(parts) == 0 {
 			parts = cmd.fetchPartitions(topic)
-			fmt.Fprintf(os.Stderr, "found partitions=%v for topic=%v\n", parts, topic)
+			cmd.infof("found partitions=%v for topic=%v\n", parts, topic)
 		}
 		topicPartitions[topic] = parts
 	}
@@ -158,15 +159,13 @@ awaitGroupOffsets:
 	}
 }
 
-func (cmd *groupCmd) resolveOffset(top string, part int32, off int64) int64 {
-	resolvedOff, err := cmd.client.GetOffset(top, part, off)
+func (cmd *groupCmd) resolveOffset(top string, part int32, time int64) int64 {
+	resolvedOff, err := cmd.client.GetOffset(top, part, time)
 	if err != nil {
 		failf("failed to get offset to reset to for partition=%d err=%v", part, err)
 	}
 
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "resolved offset %v for topic=%s partition=%d to %v\n", off, top, part, resolvedOff)
-	}
+	cmd.infof("resolved offset %v for topic=%s partition=%d to %v\n", time, top, part, resolvedOff)
 
 	return resolvedOff
 }
@@ -174,9 +173,7 @@ func (cmd *groupCmd) resolveOffset(top string, part int32, off int64) int64 {
 func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part int32, results chan<- groupOffset) {
 	defer wg.Done()
 
-	if cmd.verbose {
-		fmt.Fprintf(os.Stderr, "fetching offset information for group=%v topic=%v partition=%v\n", grp, top, part)
-	}
+	cmd.infof("fetching offset information for group=%v topic=%v partition=%v\n", grp, top, part)
 
 	offsetManager, err := sarama.NewOffsetManagerFromClient(grp, cmd.client)
 	if err != nil {
@@ -190,7 +187,7 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	}
 	defer logClose("partition offset manager", pom)
 
-	specialOffset := cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
+	specialOffset := cmd.resetTime || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
 
 	groupOff, _ := pom.NextOffset()
 	if cmd.reset >= 0 || specialOffset {
@@ -205,12 +202,6 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		}
 
 		groupOff = resolvedOff
-	}
-
-	// we haven't reset it, and it wasn't set before - lag depends on client's config
-	if specialOffset {
-		results <- groupOffset{Partition: part}
-		return
 	}
 
 	partOff := cmd.resolveOffset(top, part, sarama.OffsetNewest)
@@ -323,17 +314,20 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 
 	cfg.Version = cmd.version
 	if usr, err = user.Current(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read current user err=%v", err)
+		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
+	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	setupAuth(cmd.auth, cfg)
+	if err = setupAuth(cmd.auth, cfg); err != nil {
+		failf("failed to setup auth err=%v", err)
+	}
 
 	return cfg
 }
 
 func (cmd *groupCmd) failStartup(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
+	warnf(msg)
 	failf("use \"kt group -help\" for more information")
 }
 
@@ -353,7 +347,10 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
-	cmd.version = kafkaVersion(args.version)
+	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
+	if err != nil {
+		failf("failed to read kafka version err=%v", err)
+	}
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
@@ -387,6 +384,8 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		failf("group and topic are required to reset offsets.")
 	}
 
+	cmd.resetTime = false
+
 	switch args.reset {
 	case "newest":
 		cmd.reset = sarama.OffsetNewest
@@ -398,10 +397,18 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
-			if cmd.verbose {
-				fmt.Fprintf(os.Stderr, "failed to parse set %#v err=%v", args.reset, err)
+			var dt, derr = dps.Parse(nil, args.reset)
+			if derr == nil {
+				err = nil
+				cmd.reset = dt.Time.UnixMilli()
+				cmd.resetTime = true
+			} else {
+				err = derr
 			}
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either newest, oldest or specific offset expected.`, args.reset))
+		}
+		if err != nil {
+			warnf("failed to parse set %#v err=%v", args.reset, err)
+			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. See https://github.com/markusmobius/go-dateparser for supported time formats. `, args.reset))
 		}
 	}
 
@@ -430,6 +437,7 @@ type groupArgs struct {
 	filterGroups string
 	filterTopics string
 	reset        string
+	resetTime    bool
 	verbose      bool
 	pretty       bool
 	version      string
@@ -450,7 +458,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partitions, "partitions", allPartitionsHuman, "comma separated list of partitions to limit offsets to, or all")
-	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defauls to true)")
+	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defaults to true)")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of group:")
@@ -474,7 +482,7 @@ The values supplied on the command line win over environment variable values.
 
 The group command can be used to list groups, their offsets and lag and to reset a group's offset.
 
-When an explicit offset hasn't been set yet, kt prints out the respective sarama constants, cf. https://godoc.org/github.com/Shopify/sarama#pkg-constants
+When an explicit offset hasn't been set yet, kt prints out the respective sarama constants, cf. https://godoc.org/github.com/IBM/sarama#pkg-constants
 
 To simply list all groups:
 

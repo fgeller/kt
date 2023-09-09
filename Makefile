@@ -19,16 +19,19 @@ release-darwin:
 release: testing clean release-linux release-darwin
 
 dep-up:
-	docker-compose -f ./test-dependencies.yml up -d --remove-orphan 
-	sleep 4
+	docker compose -f ./test-dependencies.yml up -d
 
 dep-down:
-	docker-compose -f ./test-dependencies.yml down
+	docker compose -f ./test-dependencies.yml down
 
 testing: dep-up test dep-down
 
 test: clean
-	go test -v -vet=all -failfast
+	go test -v -vet=all -failfast -race
+
+.PHONY: test-secrets
+test-secrets:
+	cd test-secrets ; /usr/bin/env bash create-certs.sh
 
 clean:
 	rm -f kt
