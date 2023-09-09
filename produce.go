@@ -346,16 +346,13 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 			}
 
 			var part int32 = 0
-			if msg.Value != nil && cmd.partitioner == "hashCodeByValue" {
-				part = hashCodePartition(*msg.Value, partitionCount)
-				msg.Partition = &part
-			} else {
-				if msg.Key != nil && cmd.partitioner == "hashCode" {
+			if msg.Partition == nil {
+				if msg.Value != nil && cmd.partitioner == "hashCodeByValue" {
+					part = hashCodePartition(*msg.Value, partitionCount)
+				} else if msg.Key != nil && cmd.partitioner == "hashCode" {
 					part = hashCodePartition(*msg.Key, partitionCount)
 				}
-				if msg.Partition == nil {
-					msg.Partition = &part
-				}
+				msg.Partition = &part
 			}
 
 			out <- msg
