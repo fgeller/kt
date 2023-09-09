@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/IBM/sarama"
+	dps "github.com/markusmobius/go-dateparser"
 )
 
 type groupCmd struct {
@@ -26,6 +27,7 @@ type groupCmd struct {
 	topic        string
 	partitions   []int32
 	reset        int64
+	resetTime    bool
 	pretty       bool
 	version      sarama.KafkaVersion
 	offsets      bool
@@ -157,13 +159,13 @@ awaitGroupOffsets:
 	}
 }
 
-func (cmd *groupCmd) resolveOffset(top string, part int32, off int64) int64 {
-	resolvedOff, err := cmd.client.GetOffset(top, part, off)
+func (cmd *groupCmd) resolveOffset(top string, part int32, time int64) int64 {
+	resolvedOff, err := cmd.client.GetOffset(top, part, time)
 	if err != nil {
 		failf("failed to get offset to reset to for partition=%d err=%v", part, err)
 	}
 
-	cmd.infof("resolved offset %v for topic=%s partition=%d to %v\n", off, top, part, resolvedOff)
+	cmd.infof("resolved offset %v for topic=%s partition=%d to %v\n", time, top, part, resolvedOff)
 
 	return resolvedOff
 }
@@ -185,7 +187,7 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	}
 	defer logClose("partition offset manager", pom)
 
-	specialOffset := cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
+	specialOffset := cmd.resetTime || cmd.reset == sarama.OffsetNewest || cmd.reset == sarama.OffsetOldest
 
 	groupOff, _ := pom.NextOffset()
 	if cmd.reset >= 0 || specialOffset {
@@ -200,12 +202,6 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		}
 
 		groupOff = resolvedOff
-	}
-
-	// we haven't reset it, and it wasn't set before - lag depends on client's config
-	if specialOffset {
-		results <- groupOffset{Partition: part}
-		return
 	}
 
 	partOff := cmd.resolveOffset(top, part, sarama.OffsetNewest)
@@ -388,6 +384,8 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		failf("group and topic are required to reset offsets.")
 	}
 
+	cmd.resetTime = false
+
 	switch args.reset {
 	case "newest":
 		cmd.reset = sarama.OffsetNewest
@@ -399,8 +397,18 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
+			var dt, derr = dps.Parse(nil, args.reset)
+			if derr == nil {
+				err = nil
+				cmd.reset = dt.Time.UnixMilli()
+				cmd.resetTime = true
+			} else {
+				err = derr
+			}
+		}
+		if err != nil {
 			warnf("failed to parse set %#v err=%v", args.reset, err)
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either newest, oldest or specific offset expected.`, args.reset))
+			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. See https://github.com/markusmobius/go-dateparser for supported time formats. `, args.reset))
 		}
 	}
 
@@ -429,6 +437,7 @@ type groupArgs struct {
 	filterGroups string
 	filterTopics string
 	reset        string
+	resetTime    bool
 	verbose      bool
 	pretty       bool
 	version      string
