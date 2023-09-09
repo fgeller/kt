@@ -28,9 +28,7 @@ const (
 	ENV_KAFKA_VERSION = "KT_KAFKA_VERSION"
 )
 
-var (
-	invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-)
+var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 type command interface {
 	run(args []string)
@@ -293,7 +291,7 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 }
 
 func qualifyPath(argFN string, target *string) {
-	if *target != "" && !filepath.IsAbs(*target) {
+	if *target != "" && !filepath.IsAbs(*target) && filepath.Dir(*target) == "." {
 		*target = filepath.Join(filepath.Dir(argFN), *target)
 	}
 }
