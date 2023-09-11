@@ -453,7 +453,7 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.group, "group", "", "Consumer group name.")
 	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
 	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")
-	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (newest, oldest, or specific offset)")
+	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (\"newest\", \"oldest\", a time, or specific offset)")
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
@@ -500,11 +500,17 @@ To filter by topic:
 
 kt group -topic fav-topic
 
-To reset a consumer group's offset:
+To reset a consumer group's offset to a specific value on a single partition:
 
 kt group -reset 23 -topic fav-topic -group specials -partitions 2
 
-To reset a consumer group's offset for all partitions:
+To reset a consumer group's offset to the newest currently available on all partitions:
 
 kt group -reset newest -topic fav-topic -group specials -partitions all
+
+To reset a consumer group's offset to the newest that was available at a specific time on all partitions:
+
+kt group -reset "6 hours ago" -topic fav-topic -group specials -partitions all
+
+See https://github.com/markusmobius/go-dateparser for a list of supported time formats.
 `, ENV_TOPIC, ENV_BROKERS)
