@@ -278,10 +278,10 @@ Example for an authorization configuration that is used for the system tests:
         "ca-certificate": "test-secrets/snakeoil-ca-1.crt"
     }
 
-Relative paths are interpreted with respect to the auth file, e.g. if the
-example above is stored in /some/dir/kt-auth.json, `kt` will expect to find the
-client certificate in /some/dir/test-secrets/kt-test.crt. You can disable this
-behavior by using absolute paths in the configuration file.
+If any certificate or key path is simply the name of the file, it is assumed to
+be in the same directory as the auth file itself. For example if the path to the
+auth file is `/some/dir/kt-auth.json` then a `"client-certificate":
+"kt-test.crt"` will be qualified to `/some/dir/kt-test.crt`.
 
 ### TLS one-way
 
