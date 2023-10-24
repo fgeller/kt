@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -177,7 +176,7 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 		return nil, err
 	}
 
-	caString, err := ioutil.ReadFile(caPath)
+	caString, err := os.ReadFile(caPath)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +241,7 @@ func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 		return nil
 	}
 
-	caString, err := ioutil.ReadFile(auth.CACert)
+	caString, err := os.ReadFile(auth.CACert)
 	if err != nil {
 		return fmt.Errorf("failed to read ca-certificate err=%v", err)
 	}
@@ -265,7 +264,7 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 		return fmt.Errorf("client-certificate, client-certificate-key and ca-certificate are required - got auth=%#v", auth)
 	}
 
-	caString, err := ioutil.ReadFile(auth.CACert)
+	caString, err := os.ReadFile(auth.CACert)
 	if err != nil {
 		return fmt.Errorf("failed to read ca-certificate err=%v", err)
 	}
@@ -306,7 +305,7 @@ func readAuthFile(argFN string, envFN string, target *authConfig) {
 		fn = envFN
 	}
 
-	byts, err := ioutil.ReadFile(fn)
+	byts, err := os.ReadFile(fn)
 	if err != nil {
 		failf("failed to read auth file err=%v", err)
 	}
