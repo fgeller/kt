@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/user"
@@ -89,7 +88,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	cmd.deleteTopic = args.deleteTopic
 
 	if cmd.createTopic != "" {
-		buf, err := ioutil.ReadFile(args.topicDetailPath)
+		buf, err := os.ReadFile(args.topicDetailPath)
 		if err != nil {
 			failf("failed to read topic detail err=%v", err)
 		}

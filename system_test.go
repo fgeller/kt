@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"sort"
@@ -76,7 +75,7 @@ func TestSystem(t *testing.T) {
 	buf, err := json.Marshal(topicDetail)
 	require.NoError(t, err)
 	fnTopicDetail := fmt.Sprintf("topic-detail-%v.json", randomString(6))
-	err = ioutil.WriteFile(fnTopicDetail, buf, 0666)
+	err = os.WriteFile(fnTopicDetail, buf, 0666)
 	require.NoError(t, err)
 	defer os.RemoveAll(fnTopicDetail)
 
